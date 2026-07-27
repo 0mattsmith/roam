@@ -199,7 +199,25 @@ Write-Host ''
 gh run watch $runId --exit-status --compact
 $watchExit = $LASTEXITCODE
 
+# Always stamp the outcome. Writing only on failure makes "file unchanged"
+# ambiguous between green and still-running, which is useless to anyone
+# reading the repo rather than the console.
+$sha     = (git rev-parse --short HEAD).Trim()
+$subject = (git log -1 --pretty=format:'%s')
+$result  = if ($watchExit -eq 0) { 'SUCCESS' } else { 'FAILURE' }
+@(
+    "status:  $result"
+    "run:     $runId"
+    "commit:  $sha  $subject"
+    "branch:  $branch"
+    "when:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    "url:     $actionsUrl/runs/$runId"
+) | Set-Content -Path (Join-Path (Get-Location) 'ci-status.log') -Encoding UTF8
+
 if ($watchExit -eq 0) {
+    # Clear any stale failure log so it cannot be mistaken for current.
+    Remove-Item -Path (Join-Path (Get-Location) 'ci-failure.log') -ErrorAction SilentlyContinue
+    Write-Ok 'ci-status.log written'
     Write-Host "`n  CI green.`n" -ForegroundColor Green
     exit 0
 }

@@ -14,3 +14,4 @@ captures/
 *.aab
 *.sha256
 ci-failure.log
+ci-status.log
