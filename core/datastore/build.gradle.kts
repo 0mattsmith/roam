@@ -18,6 +18,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.kotlinx.coroutines)
     implementation(projects.core.model)
     implementation(libs.datastore)
     implementation(libs.kotlinx.serialization.json)

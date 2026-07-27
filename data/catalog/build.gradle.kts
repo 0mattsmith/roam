@@ -24,6 +24,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.media3.datasource)
     implementation(projects.core.model)
     implementation(projects.core.common)
     implementation(projects.core.database)

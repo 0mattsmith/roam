@@ -211,10 +211,26 @@ Write-Host ''
 Write-Step 'Build failed'
 
 $logPath = Join-Path (Get-Location) 'ci-failure.log'
-$raw = (gh run view $runId --log-failed 2>&1)
 
-if ($LASTEXITCODE -ne 0 -or -not $raw) {
-    Write-Info "Could not fetch the log. Try: gh run view $runId --log-failed"
+# `gh run watch` returns the instant the run reports completion, but GitHub
+# finalises the log archive a few seconds later -- ask too early and
+# --log-failed comes back empty.
+$raw = $null
+for ($try = 1; $try -le 5; $try++) {
+    Start-Sleep -Seconds ($try * 3)
+    $candidate = (gh run view $runId --log-failed 2>&1)
+    if ($LASTEXITCODE -eq 0 -and "$candidate".Trim().Length -gt 400) { $raw = $candidate; break }
+    Write-Info "log archive not ready (attempt $try of 5)..."
+}
+
+if (-not $raw) {
+    Write-Info 'falling back to the complete run log'
+    $candidate = (gh run view $runId --log 2>&1)
+    if ($LASTEXITCODE -eq 0) { $raw = $candidate }
+}
+
+if (-not $raw -or "$raw".Trim().Length -eq 0) {
+    Write-Info "Could not fetch the log. Try: gh run view $runId --log-failed > ci-failure.log"
     Write-Host "`n  $actionsUrl/runs/$runId`n" -ForegroundColor Cyan
     exit 1
 }

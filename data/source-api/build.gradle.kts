@@ -23,6 +23,11 @@ android {
 
 dependencies {
     api(projects.core.model)
+    // Flow<RemoteFile> and DataSource.Factory appear in SourceProvider's public
+    // signature, so these are `api` -- with `implementation` every consumer
+    // module fails to resolve them.
+    api(libs.kotlinx.coroutines)
+    api(libs.media3.datasource)
     implementation(libs.media3.datasource.okhttp)
     implementation(libs.media3.common)
 }

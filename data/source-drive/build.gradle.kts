@@ -25,6 +25,8 @@ android {
 }
 
 dependencies {
+    implementation(libs.media3.datasource)
+    implementation(libs.kotlinx.coroutines)
     implementation(projects.core.model)
     implementation(projects.core.common)
     api(projects.data.sourceApi)

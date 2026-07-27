@@ -21,6 +21,7 @@ ksp {
 }
 
 dependencies {
+    implementation(libs.kotlinx.coroutines)
     implementation(projects.core.model)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
