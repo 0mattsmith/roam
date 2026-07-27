@@ -33,8 +33,13 @@ dependencies {
     implementation(projects.data.catalog)
     implementation(projects.data.sourceApi)
     implementation(libs.media3.exoplayer)
-    implementation(libs.media3.session)
-    implementation(libs.media3.common)
+    // RoamLibraryService is declared in :app's manifest but lives here, and its
+    // supertype chain (MediaLibraryService -> MediaSessionService -> Service)
+    // comes from media3-session. With `implementation`, :app cannot resolve it
+    // and lintVitalRelease fails with "must extend android.app.Service".
+    // Public supertypes belong on the api configuration.
+    api(libs.media3.session)
+    api(libs.media3.common)
     implementation(libs.androidx.lifecycle.service)
     implementation(libs.androidx.core.ktx)
     implementation(libs.hilt.android)

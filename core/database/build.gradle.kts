@@ -23,7 +23,8 @@ ksp {
 dependencies {
     implementation(libs.kotlinx.coroutines)
     implementation(projects.core.model)
-    implementation(libs.room.runtime)
+    // RoamDatabase extends RoomDatabase in this module's public API.
+    api(libs.room.runtime)
     implementation(libs.room.ktx)
     implementation(libs.room.paging)
     implementation(libs.paging.runtime)

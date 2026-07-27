@@ -56,6 +56,54 @@ NEEDS: list[tuple[str, tuple[str, ...]]] = [
     ("com.yausername",             ("youtubedl",)),
 ]
 
+SUPERTYPE = re.compile(
+    r"^(?!.*\b(?:private|internal)\b)"        # public declarations only
+    r"\s*(?:@\w+(?:\([^)]*\))?\s*)*"        # annotations
+    r"(?:abstract\s+|open\s+|sealed\s+|data\s+)*"
+    r"(?:class|interface|object)\s+\w+"
+    r"(?:<[^>]*>)?\s*"
+    r"(?:\([^)]*\))?\s*"                      # primary constructor
+    r":\s*([\w.]+)"                            # <- the supertype
+)
+
+
+def leaked_supertypes(module: str, imports: set[str], gradle: str) -> set[str]:
+    """
+    A public class whose SUPERTYPE comes from an `implementation` dependency is
+    invisible to consumers: they can resolve the class but not walk its
+    hierarchy. Symptoms are baffling -- lint reporting a Service "must extend
+    android.app.Service", or a consumer failing to resolve a method it can see.
+    Supertypes on the public surface belong on `api`.
+    """
+    found: set[str] = set()
+    by_simple = {i.rsplit(".", 1)[-1]: i for i in imports}
+
+    for kt in glob.glob(f"{module}/src/**/*.kt", recursive=True):
+        with open(kt, encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                m = SUPERTYPE.match(line)
+                if not m:
+                    continue
+                fqn = by_simple.get(m.group(1).split(".")[0])
+                if not fqn:
+                    continue
+                for prefix, wants in NEEDS:
+                    if not fqn.startswith(prefix):
+                        continue
+                    for w in wants:
+                        # The table stores bare aliases ("media3.session") but
+                        # build files write them as libs.media3.session.
+                        alias = w[len("libs."):] if w.startswith("libs.") else w
+                        pat = rf"\((?:libs\.)?{re.escape(alias)}\)"
+                        on_impl = re.search(r"implementation" + pat, gradle)
+                        on_api = re.search(r"\bapi" + pat, gradle)
+                        if on_impl and not on_api:
+                            found.add(
+                                f"public supertype {m.group(1)} comes from {alias} "
+                                f"-- should be api(), not implementation()"
+                            )
+    return found
+
 IMPORT = re.compile(r"\s*import\s+([\w.]+)")
 
 
@@ -94,11 +142,15 @@ def main() -> int:
                 if not any(w in gradle for w in wants):
                     problems[module].add(f"imports {prefix}* but declares none of {', '.join(wants)}")
 
+        problems[module] |= leaked_supertypes(module, found, gradle)
+
+    problems = {m: v for m, v in problems.items() if v}
+
     if not problems:
-        print("check-deps: no missing dependencies detected")
+        print("check-deps: no missing dependencies or leaked supertypes detected")
         return 0
 
-    print("check-deps: possible missing dependencies\n")
+    print("check-deps: possible problems\n")
     for module in sorted(problems):
         print(f"  {module}")
         for issue in sorted(problems[module]):
