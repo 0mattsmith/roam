@@ -49,6 +49,39 @@ if (Get-Variable PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAct
     $PSNativeCommandUseErrorActionPreference = $false
 }
 
+<#
+    keytool ships with every JDK but is rarely on PATH on Windows. Android
+    Studio bundles one as the JetBrains Runtime, which is the JDK 17 this
+    project already builds against -- so look there rather than making the
+    user edit their PATH for a one-off chore.
+#>
+function Find-Keytool {
+    $onPath = Get-Command keytool -ErrorAction SilentlyContinue
+    if ($onPath) { return $onPath.Source }
+
+    $exe = if ($env:OS -eq 'Windows_NT') { 'keytool.exe' } else { 'keytool' }
+
+    $candidates = @(
+        (Join-Path $env:JAVA_HOME "bin/$exe")
+        "$env:ProgramFiles/Android/Android Studio/jbr/bin/$exe"
+        "$env:ProgramFiles/Android/Android Studio/jre/bin/$exe"
+        "${env:ProgramFiles(x86)}/Android/Android Studio/jbr/bin/$exe"
+        "$env:LOCALAPPDATA/Programs/Android Studio/jbr/bin/$exe"
+        "$env:LOCALAPPDATA/JetBrains/Toolbox/apps/AndroidStudio/ch-0/*/jbr/bin/$exe"
+        "$env:ProgramFiles/Eclipse Adoptium/jdk*/bin/$exe"
+        "$env:ProgramFiles/Java/jdk*/bin/$exe"
+        "$env:ProgramFiles/Microsoft/jdk*/bin/$exe"
+        "/usr/lib/jvm/*/bin/$exe"
+        "/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/$exe"
+    ) | Where-Object { $_ -and $_ -notmatch '^\\bin' }
+
+    foreach ($c in $candidates) {
+        $hit = Get-Item $c -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+
 function Write-Step { param($m) Write-Host "`n==> $m" -ForegroundColor Cyan }
 function Write-Ok   { param($m) Write-Host "    $([char]0x2713) $m" -ForegroundColor Green }
 function Write-Info { param($m) Write-Host "    $m" -ForegroundColor DarkGray }
@@ -77,9 +110,20 @@ Write-Ok "Repo: $("$slug".Trim())"
 if ($Create) {
     Write-Step 'Generating keystore'
     if (Test-Path $Keystore) { Fail "$Keystore already exists. Refusing to overwrite a signing key." }
-    if (-not (Get-Command keytool -ErrorAction SilentlyContinue)) {
-        Fail 'keytool is not on PATH. It ships with the JDK -- add <jdk>/bin, or use the one under Android Studio/jbr/bin.'
+    $keytool = Find-Keytool
+    if (-not $keytool) {
+        Fail @'
+Could not find keytool.
+
+It ships with every JDK. If Android Studio is installed, it is usually at:
+    C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe
+
+Point the script at it for this run:
+    $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+    ./setup-secrets.ps1 -Create
+'@
     }
+    Write-Info "keytool: $keytool"
 
     $alias = Read-Host 'Key alias [roam]'
     if ([string]::IsNullOrWhiteSpace($alias)) { $alias = 'roam' }
@@ -91,7 +135,7 @@ if ($Create) {
     if ($p1 -ne $p2) { Fail 'Passwords do not match.' }
     if ($p1.Length -lt 6) { Fail 'keytool requires at least 6 characters.' }
 
-    & keytool -genkeypair -v -keystore $Keystore -alias $alias `
+    & $keytool -genkeypair -v -keystore $Keystore -alias $alias `
               -keyalg RSA -keysize 4096 -validity 10000 `
               -storepass $p1 -keypass $p1 `
               -dname "CN=Roam, OU=Personal, O=Roam, C=GB"
@@ -145,7 +189,9 @@ if (-not $storePassword) {
 if (-not $keyPassword) { $keyPassword = $storePassword }
 
 # Fail here rather than in CI, where the error is a wall of Gradle output.
-& keytool -list -keystore $Keystore -alias $keyAlias -storepass $storePassword 2>&1 | Out-Null
+$keytool = Find-Keytool
+if (-not $keytool) { Fail 'Could not find keytool. Set $env:JAVA_HOME to a JDK (Android Studio bundles one at ...\Android Studio\jbr).' }
+& $keytool -list -keystore $Keystore -alias $keyAlias -storepass $storePassword 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail "keytool could not open $Keystore with alias '$keyAlias' and that password." }
 Write-Ok 'Keystore opens with these credentials'
 

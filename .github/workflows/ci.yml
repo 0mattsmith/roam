@@ -52,6 +52,17 @@ jobs:
         continue-on-error: true
         run: ./gradlew lint --no-daemon
 
+      # Always downloadable from the Actions run, signing key or not. Debug
+      # builds carry applicationIdSuffix ".debug", so they install alongside a
+      # release build rather than colliding with it.
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+          retention-days: 14
+
       # gh run view --log-failed reads an archive GitHub takes minutes to
       # publish. An artifact is available as soon as the run ends, so this is
       # what commit.ps1 pulls on a red build.
