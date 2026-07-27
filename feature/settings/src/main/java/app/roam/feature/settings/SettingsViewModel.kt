@@ -49,15 +49,18 @@ class SettingsViewModel @Inject constructor(
     private val updateInstaller: UpdateInstaller,
 ) : AndroidViewModel(app) {
 
-    init {
-        // Read the version from PackageManager rather than BuildConfig: this is
-        // a library module and has no BuildConfig of its own.
-        val ctx = getApplication<Application>()
-        val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
-        _state.update { it.copy(installedVersion = info.versionName.orEmpty()) }
-    }
 
-    private val _state = MutableStateFlow(SettingsUiState())
+    // Seeded here rather than in an init block: initializers run in source
+    // order, and an init block above this line cannot touch _state.
+    // The version comes from PackageManager because library modules have no
+    // BuildConfig of their own.
+    private val _state = MutableStateFlow(
+        SettingsUiState(
+            installedVersion = runCatching {
+                app.packageManager.getPackageInfo(app.packageName, 0).versionName.orEmpty()
+            }.getOrDefault("")
+        )
+    )
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
     /** Emitted when Google needs the user to approve the scope. */
