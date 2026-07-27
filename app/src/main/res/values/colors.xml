@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="ink">#FF070B0D</color>
-    <color name="surface">#FF0C1215</color>
-    <color name="surface_raise">#FF141C20</color>
-    <color name="teal">#FF2DD4BF</color>
-    <color name="teal_core">#FF14B8A6</color>
-    <color name="text_hi">#FFE8EFF0</color>
-</resources>

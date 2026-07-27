@@ -1,8 +1,0 @@
-<resources>
-    <string name="app_name">Roam</string>
-    <string name="tab_artists">Artists</string>
-    <string name="tab_albums">Albums</string>
-    <string name="tab_tracks">Tracks</string>
-    <string name="tab_loved">Loved</string>
-    <string name="shuffle_all">Shuffle all</string>
-</resources>
