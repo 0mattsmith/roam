@@ -13,3 +13,4 @@ captures/
 *.apk
 *.aab
 *.sha256
+ci-failure.log

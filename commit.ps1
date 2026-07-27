@@ -205,31 +205,54 @@ if ($watchExit -eq 0) {
 }
 
 # ----------------------------------------------------------------------------
-# Red. Surface the errors rather than making you go hunting.
+# Red. Write the full log to disk and surface the error lines.
 # ----------------------------------------------------------------------------
 Write-Host ''
-Write-Step 'Build failed - error lines'
+Write-Step 'Build failed'
 
-$log = (gh run view $runId --log-failed 2>&1)
-if ($LASTEXITCODE -eq 0 -and $log) {
-    # Kotlin errors start with "e: ", Gradle with "FAILURE"/"Caused by",
-    # KSP and javac with "error:".
-    $pattern = 'e: |error:|ERROR:|FAILURE:|Caused by:|Execution failed|Unresolved reference|Could not (find|resolve)|not a valid name'
-    $hits = @("$log" -split "`r?`n" | Where-Object { $_ -match $pattern })
+$logPath = Join-Path (Get-Location) 'ci-failure.log'
+$raw = (gh run view $runId --log-failed 2>&1)
 
-    if ($hits.Count -gt 0) {
-        Write-Host ''
-        $hits | Select-Object -First 40 | ForEach-Object {
-            # Strip the timestamp gh prefixes each line with
-            Write-Host ("  " + ($_ -replace '^\S+\s+\S+\s+\d{4}-\d{2}-\d{2}T\S+Z\s*', '')) -ForegroundColor Red
-        }
-        if ($hits.Count -gt 40) { Write-Info "... and $($hits.Count - 40) more" }
-    } else {
-        Write-Info 'No lines matched the usual error patterns. Full log:'
-        Write-Info "gh run view $runId --log-failed"
-    }
+if ($LASTEXITCODE -ne 0 -or -not $raw) {
+    Write-Info "Could not fetch the log. Try: gh run view $runId --log-failed"
+    Write-Host "`
+  $actionsUrl/runs/$runId`
+" -ForegroundColor Cyan
+    exit 1
+}
+
+# gh emits one line per log entry as:  <job>TAB<step>TAB<timestamp> <message>
+# Strip all three, plus ANSI colour codes and the UTF-8 BOM, or the output is
+# an unreadable wall.
+$clean = @("$raw" -split "`?`
+" | ForEach-Object {
+    $parts = $_ -split "`	"
+    $line  = if ($parts.Count -ge 3) { $parts[-1] } else { $_ }
+    $line  = [regex]::Replace($line, '^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s?', '')
+    $line  = [regex]::Replace($line, "\x1B\[[0-9;]*[a-zA-Z]", '')
+    $line.TrimStart([char]0xFEFF)
+})
+
+# Full transcript on disk, gitignored. Paste the path, not the wall of text.
+@(
+    "# CI failure - run $runId"
+    "# $actionsUrl/runs/$runId"
+    "# $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    ""
+) + $clean | Set-Content -Path $logPath -Encoding UTF8
+Write-Ok "full log written to ci-failure.log ($($clean.Count) lines)"
+
+# Kotlin errors start with "e: ", Gradle with FAILURE / Caused by.
+$pattern = '^e: |^w: .*error|error:|ERROR:|^FAILURE:|Caused by:|Execution failed|Unresolved reference|Could not (find|resolve)|not a valid name|Compilation error'
+$hits = @($clean | Where-Object { $_ -match $pattern } |
+                   Where-Object { $_ -notmatch '^\s+at (org\.gradle|org\.jetbrains|java\.|jdk\.)' })
+
+if ($hits.Count -gt 0) {
+    Write-Host ''
+    $hits | Select-Object -First 30 | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+    if ($hits.Count -gt 30) { Write-Info "... $($hits.Count - 30) more in ci-failure.log" }
 } else {
-    Write-Info "gh run view $runId --log-failed"
+    Write-Info 'No lines matched the usual error patterns - see ci-failure.log'
 }
 
 Write-Host ''
