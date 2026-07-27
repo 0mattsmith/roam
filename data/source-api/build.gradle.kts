@@ -11,7 +11,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+        // Most of media3-exoplayer / -datasource is annotated @UnstableApi, which
+        // is @RequiresOptIn(level = ERROR) -- a hard compile error in Kotlin, not
+        // a warning. Opting in per-file would mean an annotation on nearly every
+        // class that touches the player.
+        freeCompilerArgs += listOf("-opt-in=androidx.media3.common.util.UnstableApi")
+    }
 }
 
 dependencies {

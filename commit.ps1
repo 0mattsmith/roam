@@ -215,18 +215,15 @@ $raw = (gh run view $runId --log-failed 2>&1)
 
 if ($LASTEXITCODE -ne 0 -or -not $raw) {
     Write-Info "Could not fetch the log. Try: gh run view $runId --log-failed"
-    Write-Host "`
-  $actionsUrl/runs/$runId`
-" -ForegroundColor Cyan
+    Write-Host "`n  $actionsUrl/runs/$runId`n" -ForegroundColor Cyan
     exit 1
 }
 
 # gh emits one line per log entry as:  <job>TAB<step>TAB<timestamp> <message>
 # Strip all three, plus ANSI colour codes and the UTF-8 BOM, or the output is
 # an unreadable wall.
-$clean = @("$raw" -split "`?`
-" | ForEach-Object {
-    $parts = $_ -split "`	"
+$clean = @("$raw" -split "`r?`n" | ForEach-Object {
+    $parts = $_ -split "`t"
     $line  = if ($parts.Count -ge 3) { $parts[-1] } else { $_ }
     $line  = [regex]::Replace($line, '^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s?', '')
     $line  = [regex]::Replace($line, "\x1B\[[0-9;]*[a-zA-Z]", '')
