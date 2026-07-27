@@ -17,6 +17,14 @@ import javax.inject.Singleton
 private val Context.dataStore by preferencesDataStore("roam_settings")
 
 data class RoamSettings(
+    // Drive source. Lives here rather than the `sources` table until phase 3
+    // brings multi-source sync -- a schema migration to hold one folder id
+    // would be ceremony for no benefit.
+    val driveFolderId: String? = null,
+    val driveFolderName: String? = null,
+    val lastTrackCount: Int? = null,
+    val lastSyncAt: Long? = null,
+
     val cachePolicy: CachePolicy = CachePolicy.NextTracks(10),
     val syncOnWifiOnly: Boolean = true,
     val prefetchOnMobile: Boolean = false,
@@ -33,6 +41,11 @@ data class RoamSettings(
 class SettingsRepository @Inject constructor(@ApplicationContext private val ctx: Context) {
 
     private object K {
+        val DRIVE_FOLDER_ID = stringPreferencesKey("drive_folder_id")
+        val DRIVE_FOLDER_NAME = stringPreferencesKey("drive_folder_name")
+        val LAST_TRACK_COUNT = intPreferencesKey("last_track_count")
+        val LAST_SYNC_AT = longPreferencesKey("last_sync_at")
+
         val CACHE_MODE = stringPreferencesKey("cache_mode")        // "tracks" | "bytes"
         val CACHE_VALUE = longPreferencesKey("cache_value")
         val WIFI_ONLY = booleanPreferencesKey("sync_wifi_only")
@@ -50,6 +63,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val mode = p[K.CACHE_MODE] ?: "tracks"
         val value = p[K.CACHE_VALUE] ?: 10L
         RoamSettings(
+            driveFolderId = p[K.DRIVE_FOLDER_ID],
+            driveFolderName = p[K.DRIVE_FOLDER_NAME],
+            lastTrackCount = p[K.LAST_TRACK_COUNT],
+            lastSyncAt = p[K.LAST_SYNC_AT],
             cachePolicy = if (mode == "bytes") CachePolicy.StorageBudget(value)
                           else CachePolicy.NextTracks(value.toInt()),
             syncOnWifiOnly = p[K.WIFI_ONLY] ?: true,
@@ -69,6 +86,22 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             is CachePolicy.NextTracks -> { p[K.CACHE_MODE] = "tracks"; p[K.CACHE_VALUE] = policy.count.toLong() }
             is CachePolicy.StorageBudget -> { p[K.CACHE_MODE] = "bytes"; p[K.CACHE_VALUE] = policy.bytes }
         }
+    }
+
+    suspend fun setDriveFolder(id: String, name: String) = ctx.dataStore.edit {
+        it[K.DRIVE_FOLDER_ID] = id
+        it[K.DRIVE_FOLDER_NAME] = name
+    }
+
+    suspend fun setSyncResult(trackCount: Int, at: Long = System.currentTimeMillis()) =
+        ctx.dataStore.edit {
+            it[K.LAST_TRACK_COUNT] = trackCount
+            it[K.LAST_SYNC_AT] = at
+        }
+
+    suspend fun clearDriveFolder() = ctx.dataStore.edit {
+        it.remove(K.DRIVE_FOLDER_ID); it.remove(K.DRIVE_FOLDER_NAME)
+        it.remove(K.LAST_TRACK_COUNT); it.remove(K.LAST_SYNC_AT)
     }
 
     suspend fun setLovedMultiplier(v: Float) = ctx.dataStore.edit { it[K.LOVED_MULT] = v }

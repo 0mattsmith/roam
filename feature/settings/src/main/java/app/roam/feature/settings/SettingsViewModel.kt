@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.roam.data.catalog.sync.SyncWorker
+import app.roam.core.datastore.SettingsRepository
 import app.roam.data.source.drive.DriveAuth
 import app.roam.data.source.drive.DriveSourceProvider
 import app.roam.update.AvailableUpdate
@@ -19,6 +20,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -47,6 +49,7 @@ class SettingsViewModel @Inject constructor(
     private val updateChecker: UpdateChecker,
     private val updateDownloader: UpdateDownloader,
     private val updateInstaller: UpdateInstaller,
+    private val settings: SettingsRepository,
 ) : AndroidViewModel(app) {
 
 
@@ -66,6 +69,37 @@ class SettingsViewModel @Inject constructor(
     /** Emitted when Google needs the user to approve the scope. */
     private val _consent = MutableStateFlow<PendingIntent?>(null)
     val consent: StateFlow<PendingIntent?> = _consent.asStateFlow()
+
+    init {
+        restore()
+    }
+
+    /**
+     * The ViewModel dies when you navigate away from Settings, so everything
+     * below has to be recovered rather than assumed. Play Services remembers
+     * the grant, so re-authorising is silent -- it only prompts if consent was
+     * never given or has been revoked.
+     */
+    private fun restore() = viewModelScope.launch {
+        val saved = settings.settings.first()
+        _state.update {
+            it.copy(
+                folderId = saved.driveFolderId,
+                folderName = saved.driveFolderName,
+                tracksFound = saved.lastTrackCount,
+            )
+        }
+
+        // Silent: if this returns NeedsConsent we simply stay disconnected
+        // rather than throwing a consent dialog at someone who just opened
+        // Settings to change the cache size.
+        if (auth.authorize() is DriveAuth.Outcome.Granted) {
+            _state.update { it.copy(connected = true) }
+        }
+
+        // A crawl started earlier may still be running in WorkManager.
+        observeSync()
+    }
 
     fun connect() = viewModelScope.launch {
         _state.update { it.copy(busy = true, message = null) }
@@ -103,6 +137,7 @@ class SettingsViewModel @Inject constructor(
                 it.copy(busy = false, folderName = folder.name, folderId = folder.id, message = null)
             }
         }
+        folder?.let { settings.setDriveFolder(it.id, it.name) }
     }
 
     // ---- updates ----------------------------------------------------------
@@ -171,8 +206,10 @@ class SettingsViewModel @Inject constructor(
                     WorkInfo.State.RUNNING -> _state.update {
                         it.copy(syncing = true, tracksFound = running.takeIf { n -> n >= 0 })
                     }
-                    WorkInfo.State.SUCCEEDED -> _state.update {
-                        it.copy(syncing = false, tracksFound = info.outputData.getInt(SyncWorker.KEY_FOUND, 0))
+                    WorkInfo.State.SUCCEEDED -> {
+                        val found = info.outputData.getInt(SyncWorker.KEY_FOUND, 0)
+                        _state.update { it.copy(syncing = false, tracksFound = found) }
+                        settings.setSyncResult(found)
                     }
                     WorkInfo.State.FAILED -> _state.update {
                         it.copy(syncing = false, message = info.outputData.getString(SyncWorker.KEY_ERROR) ?: "Sync failed")
