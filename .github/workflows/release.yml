@@ -1,0 +1,150 @@
+name: Release
+
+# push.ps1 pushes an annotated tag; this builds, signs and publishes it.
+# The tag's annotation message becomes the release notes.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to rebuild and republish'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0          # tag annotations carry the release notes
+
+      - name: Resolve version
+        id: meta
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          CODE=$(grep -oP 'versionCode\s*=\s*\K\d+' app/build.gradle.kts | head -1)
+          if [ -z "$CODE" ]; then
+            echo "::error::Could not read versionCode from app/build.gradle.kts"
+            exit 1
+          fi
+          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}"   >> "$GITHUB_OUTPUT"
+          echo "code=$CODE"         >> "$GITHUB_OUTPUT"
+          echo "Building $TAG (versionCode $CODE)"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'   # only used if the wrapper is missing
+
+      # Most people only have the Gradle bundled inside Android Studio, so the
+      # wrapper JAR may not be committed yet. setup-gradle put `gradle` on PATH
+      # above; use it to generate the wrapper on the fly.
+      - name: Ensure Gradle wrapper
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "::notice::gradle-wrapper.jar absent - generating with Gradle 8.9"
+            gradle wrapper --gradle-version 8.9
+          fi
+          chmod +x ./gradlew
+
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64:   ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 is not set. Run ./setup-secrets.ps1 once, locally."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > roam-release.jks
+          # Written from env, never echoed. The APK must be signed with the
+          # same key every time or Android refuses to install the update.
+          {
+            printf 'storeFile=../roam-release.jks\n'
+            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n'      "$KEY_ALIAS"
+            printf 'keyPassword=%s\n'   "$KEY_PASSWORD"
+          } > keystore.properties
+
+      - name: Build signed release
+        run: |
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          V="${{ steps.meta.outputs.version }}"
+          shopt -s nullglob
+          for apk in app/build/outputs/apk/release/*.apk; do
+            case "$apk" in *unsigned*) continue ;; esac
+            case "$apk" in
+              *arm64-v8a*)   abi=arm64-v8a ;;
+              *armeabi-v7a*) abi=armeabi-v7a ;;
+              *x86_64*)      abi=x86_64 ;;
+              *x86*)         abi=x86 ;;
+              *)             abi=universal ;;
+            esac
+            name="roam-$V-$abi.apk"
+            cp "$apk" "dist/$name"
+            # The in-app updater refuses to install unless this matches.
+            ( cd dist && sha256sum "$name" > "$name.sha256" )
+          done
+          if [ -z "$(ls -A dist)" ]; then
+            echo "::error::No signed APKs were produced."
+            exit 1
+          fi
+          ls -la dist
+
+      - name: Compose release notes
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          BODY="$(git tag -l --format='%(contents)' "$TAG")"
+          [ -n "$BODY" ] || BODY="Maintenance release."
+          {
+            printf '%s\n\n' "$BODY"
+            # Parsed by UpdateChecker. Comparing tag strings would rank
+            # v1.10.0 below v1.9.0.
+            printf '<!-- roam:versionCode=%s -->\n' "${{ steps.meta.outputs.code }}"
+          } > /tmp/notes.md
+          cat /tmp/notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          TITLE="Roam ${{ steps.meta.outputs.version }}"
+          # --latest is what makes /releases/latest return this build, which is
+          # the single endpoint the auto-updater polls. Never a pre-release.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file /tmp/notes.md \
+                                   --latest --prerelease=false --draft=false
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TITLE" \
+                                            --notes-file /tmp/notes.md --latest
+          fi
+          echo "Published: $(gh release view "$TAG" --json url --jq .url)"
+
+      - name: Clean up signing material
+        if: always()
+        run: rm -f roam-release.jks keystore.properties
