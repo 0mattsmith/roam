@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Roam app icon">
+  <title>Roam</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#162024"/>
+      <stop offset="0.55" stop-color="#0C1215"/>
+      <stop offset="1" stop-color="#06090A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.62">
+      <stop offset="0" stop-color="#14B8A6" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#14B8A6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="blade" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#C6D8DA"/>
+    </linearGradient>
+    <linearGradient id="teal1" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#5EEAD4"/>
+      <stop offset="1" stop-color="#12A594"/>
+    </linearGradient>
+    <linearGradient id="teal2" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#0B7F72"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <path d="M256 0C120 0 68 0 34 34S0 120 0 256s0 188 34 222 86 34 222 34 188 0 222-34 34-86 34-222 0-188-34-222S392 0 256 0Z"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <rect width="512" height="512" fill="url(#glow)"/>
+  </g>
+
+  <g transform="translate(16,0)">
+    <!-- signal arcs: your library, projected forward -->
+    <g fill="none" stroke-linecap="round">
+      <path d="M 271 158 A 118 118 0 0 1 271 354" stroke="url(#teal2)" stroke-width="26" opacity="0.55"/>
+      <path d="M 262 204 A 64 64 0 0 1 262 308" stroke="url(#teal1)" stroke-width="26"/>
+    </g>
+    <!-- play blade -->
+    <path d="M 154 176 L 154 336 L 236 256 Z" fill="url(#blade)" stroke="url(#blade)" stroke-width="26" stroke-linejoin="round"/>
+  </g>
+</svg>
