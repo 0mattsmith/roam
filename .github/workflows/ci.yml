@@ -42,7 +42,8 @@ jobs:
       # needs no secrets and runs on pull requests from anywhere.
       - name: Assemble debug
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
 
       # Informational while the app is a scaffold -- exported service/provider
       # and unused-resource warnings are expected. Compile errors above still
@@ -50,6 +51,17 @@ jobs:
       - name: Lint
         continue-on-error: true
         run: ./gradlew lint --no-daemon
+
+      # gh run view --log-failed reads an archive GitHub takes minutes to
+      # publish. An artifact is available as soon as the run ends, so this is
+      # what commit.ps1 pulls on a red build.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - uses: actions/upload-artifact@v4
         if: always()

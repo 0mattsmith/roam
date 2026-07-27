@@ -97,6 +97,24 @@ Write-Host ''
 Write-Info ("{0} file(s) changed" -f $status.Count)
 
 # ----------------------------------------------------------------------------
+# Dependency sanity check
+# ----------------------------------------------------------------------------
+# Most early CI failures on this project were a module importing something it
+# never declared. This catches that in a second rather than a round trip.
+if (Test-Path 'tools/check-deps.py') {
+    $py = (Get-Command python -ErrorAction SilentlyContinue) ?? (Get-Command python3 -ErrorAction SilentlyContinue)
+    if ($py) {
+        Write-Step 'Checking declared dependencies'
+        & $py.Source tools/check-deps.py
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn 'Push anyway? These are heuristics and can be wrong.'
+            $answer = Read-Host '[y/N]'
+            if ($answer -notmatch '^[Yy]') { Fail 'Stopped before committing.' }
+        }
+    }
+}
+
+# ----------------------------------------------------------------------------
 # Message
 # ----------------------------------------------------------------------------
 if ([string]::IsNullOrWhiteSpace($Message)) {
@@ -233,18 +251,27 @@ $logPath = Join-Path (Get-Location) 'ci-failure.log'
 # `gh run watch` returns the instant the run reports completion, but GitHub
 # finalises the log archive a few seconds later -- ask too early and
 # --log-failed comes back empty.
+# The workflow tees Gradle's output to build.log and uploads it. Artifacts are
+# published the instant the run ends, unlike the log archive behind
+# `gh run view --log-failed`, which can take minutes.
 $raw = $null
-for ($try = 1; $try -le 5; $try++) {
-    Start-Sleep -Seconds ($try * 3)
-    $candidate = (gh run view $runId --log-failed 2>&1)
-    if ($LASTEXITCODE -eq 0 -and "$candidate".Trim().Length -gt 400) { $raw = $candidate; break }
-    Write-Info "log archive not ready (attempt $try of 5)..."
+$dl = Join-Path ([IO.Path]::GetTempPath()) "roam-buildlog-$runId"
+Remove-Item $dl -Recurse -Force -ErrorAction SilentlyContinue
+gh run download $runId -n build-log -D $dl 2>&1 | Out-Null
+$artifact = Join-Path $dl 'build.log'
+if (Test-Path $artifact) {
+    $raw = Get-Content $artifact -Raw
+    Write-Ok 'build log retrieved from artifact'
 }
 
 if (-not $raw) {
-    Write-Info 'falling back to the complete run log'
-    $candidate = (gh run view $runId --log 2>&1)
-    if ($LASTEXITCODE -eq 0) { $raw = $candidate }
+    Write-Info 'artifact unavailable, falling back to the log archive'
+    for ($try = 1; $try -le 5; $try++) {
+        Start-Sleep -Seconds ($try * 4)
+        $candidate = (gh run view $runId --log-failed 2>&1)
+        if ($LASTEXITCODE -eq 0 -and "$candidate".Trim().Length -gt 400) { $raw = $candidate; break }
+        Write-Info "log archive not ready (attempt $try of 5)..."
+    }
 }
 
 if (-not $raw -or "$raw".Trim().Length -eq 0) {

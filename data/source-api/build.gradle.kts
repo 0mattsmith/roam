@@ -23,6 +23,9 @@ android {
 
 dependencies {
     api(projects.core.model)
+    // @MapKey only -- source-api declares the multibinding key that
+    // source modules contribute to. No Hilt, nothing to process here.
+    api(libs.dagger)
     // Flow<RemoteFile> and DataSource.Factory appear in SourceProvider's public
     // signature, so these are `api` -- with `implementation` every consumer
     // module fails to resolve them.

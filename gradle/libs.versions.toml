@@ -61,6 +61,7 @@ media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp"
 media3-ui        = { module = "androidx.media3:media3-ui",        version.ref = "media3" }
 media3-common    = { module = "androidx.media3:media3-common",    version.ref = "media3" }
 
+dagger                = { module = "com.google.dagger:dagger",                version.ref = "hilt" }
 hilt-android          = { module = "com.google.dagger:hilt-android",          version.ref = "hilt" }
 hilt-compiler         = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hilt" }
 hilt-navigation       = { module = "androidx.hilt:hilt-navigation-compose",   version.ref = "hiltWork" }
