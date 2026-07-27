@@ -33,11 +33,10 @@ jobs:
         id: meta
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          CODE=$(grep -oP 'versionCode\s*=\s*\K\d+' app/build.gradle.kts | head -1)
-          if [ -z "$CODE" ]; then
-            echo "::error::Could not read versionCode from app/build.gradle.kts"
-            exit 1
-          fi
+          # Commit count, exactly as ci.yml computes it. Reading a hand-managed
+          # number out of gradle here would let a tagged release carry a LOWER
+          # versionCode than an automatic build, and the updater would ignore it.
+          CODE=$(git rev-list --count HEAD)
           echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}"   >> "$GITHUB_OUTPUT"
           echo "code=$CODE"         >> "$GITHUB_OUTPUT"

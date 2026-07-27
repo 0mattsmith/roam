@@ -26,7 +26,14 @@ android {
         // push.ps1 rewrites these two lines. Keep them on their own line,
         // formatted exactly like this, or the release script will not match them.
         versionCode = 1
-        versionName = "0.0.1"
+        versionName = "0.1.0"
+
+        // CI publishes a release on every green push to main and needs a
+        // strictly increasing versionCode. It derives one from the commit count
+        // and injects it here, so nothing has to commit back to the repo.
+        // Locally these are absent and the literals above apply.
+        System.getenv("ROAM_VERSION_CODE")?.toIntOrNull()?.let { versionCode = it }
+        System.getenv("ROAM_VERSION_NAME")?.let { versionName = it }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -132,6 +132,25 @@ Stages everything, commits, pushes, follows the CI run, and on a red build pulls
 the failed log and prints just the error lines. `push.ps1` is for releases only —
 reaching for it to test a fix burns a version number.
 
+## Continuous delivery
+
+Every green push to `main` publishes a **signed release marked Latest**, with the
+APKs attached, straight to the repo's Releases page. Push code, wait a couple of
+minutes, then either download the APK or let the in-app updater find it.
+
+- `versionCode` = `git rev-list --count HEAD`. Monotonic, deterministic, and no
+  commit-back loop. Android only requires it to increase; it never has to match
+  the tag.
+- `versionName` = the `major.minor` in `app/build.gradle.kts` plus that count.
+  Bump the base there to mark a milestone — `0.1.0` becomes `0.2.x` from then on.
+- **Requires the signing secrets.** Until `./setup-secrets.ps1 -Create` has run,
+  the release job skips with a notice rather than failing. It will never fall
+  back to a debug key: changing signing keys makes every installed copy refuse
+  to update, and recovery means uninstalling.
+- Releases created with `GITHUB_TOKEN` don't trigger further workflows, so this
+  can't set `release.yml` off. `push.ps1` remains for deliberate, hand-versioned
+  milestones.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs `assembleDebug` and `lint` on every push to

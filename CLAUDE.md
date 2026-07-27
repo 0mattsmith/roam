@@ -17,7 +17,18 @@ Store. Full design: `docs/SPEC.md`. Visual reference: `docs/mockups.html`.
 ./setup-secrets.ps1              # one-time: signing key into Actions secrets
 ```
 
-`commit.ps1` is the development loop; `push.ps1` cuts a release. Don't reach for
+**Every green push to main publishes a signed release marked Latest**, with
+APKs attached, via the `release` job in `ci.yml`. `versionCode` is
+`git rev-list --count HEAD`, injected through `ROAM_VERSION_CODE` -- monotonic,
+and nothing has to commit back to the repo. `versionName` is the `major.minor`
+from `app/build.gradle.kts` plus that count, so bumping the base in gradle is
+how you mark a milestone.
+
+The job **skips** (does not fail) when `KEYSTORE_BASE64` is absent, and never
+falls back to debug signing -- switching keys would make every installed copy
+refuse to update.
+
+`commit.ps1` is the development loop; `push.ps1` cuts a hand-versioned release. Don't reach for
 `push.ps1` to test a fix — it burns a version number.
 
 Releases are built by **GitHub Actions**, not locally -- `push.ps1` only bumps
@@ -156,5 +167,6 @@ resumable Drive upload with cached folder IDs.
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
 | MusicBrainz starts 503-ing | Exceeded 1 req/sec, or missing a real User-Agent |
 | Update never installs | Version compared as a string, or the signing key changed |
+| Two releases with the same versionCode | Updater ignores the newer one | `versionCode` is the commit count; never hand-edit it in CI |
 | Update invisible to devices | Release marked pre-release or draft — `/releases/latest` skips both |
 | CI release job fails at signing | `KEYSTORE_BASE64` missing or stale — re-run `./setup-secrets.ps1` |

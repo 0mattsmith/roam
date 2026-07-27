@@ -72,3 +72,147 @@ jobs:
             **/build/reports/problems/**
           if-no-files-found: ignore
           retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # Every green push to main becomes a downloadable, installable, signed build.
+  #
+  # Releases created with GITHUB_TOKEN do not trigger further workflow runs, so
+  # this cannot set release.yml off -- no double builds. push.ps1 still tags
+  # deliberate milestones by hand, and those do trigger release.yml.
+  # --------------------------------------------------------------------------
+  release:
+    name: Publish signed build
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # commit count is the versionCode
+
+      - name: Check signing secrets
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::notice title=Release skipped::No signing key configured. Run ./setup-secrets.ps1 -Create once, then pushes will publish installable builds."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute version
+        if: steps.signing.outputs.ready == 'true'
+        id: ver
+        run: |
+          # Commit count is monotonic and needs no commit-back. Android only
+          # cares that versionCode increases; it never has to match the tag.
+          CODE=$(git rev-list --count HEAD)
+          BASE=$(grep -oP 'versionName\s*=\s*"\K[0-9]+\.[0-9]+' app/build.gradle.kts | head -1)
+          [ -n "$BASE" ] || BASE="0.1"
+          NAME="$BASE.$CODE"
+          echo "code=$CODE"    >> "$GITHUB_OUTPUT"
+          echo "name=$NAME"    >> "$GITHUB_OUTPUT"
+          echo "tag=v$NAME"    >> "$GITHUB_OUTPUT"
+          echo "Publishing $NAME (versionCode $CODE)"
+
+      - uses: actions/setup-java@v4
+        if: steps.signing.outputs.ready == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.signing.outputs.ready == 'true'
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore signing key
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          KEYSTORE_BASE64:   ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > roam-release.jks
+          {
+            printf 'storeFile=../roam-release.jks\n'
+            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n'      "$KEY_ALIAS"
+            printf 'keyPassword=%s\n'   "$KEY_PASSWORD"
+          } > keystore.properties
+
+      - name: Build signed release
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          ROAM_VERSION_CODE: ${{ steps.ver.outputs.code }}
+          ROAM_VERSION_NAME: ${{ steps.ver.outputs.name }}
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then gradle wrapper --gradle-version 8.9; fi
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Collect artifacts
+        if: steps.signing.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          V="${{ steps.ver.outputs.name }}"
+          shopt -s nullglob
+          for apk in app/build/outputs/apk/release/*.apk; do
+            case "$apk" in *unsigned*) continue ;; esac
+            case "$apk" in
+              *arm64-v8a*)   abi=arm64-v8a ;;
+              *armeabi-v7a*) abi=armeabi-v7a ;;
+              *x86_64*)      abi=x86_64 ;;
+              *x86*)         abi=x86 ;;
+              *)             abi=universal ;;
+            esac
+            cp "$apk" "dist/roam-$V-$abi.apk"
+            ( cd dist && sha256sum "roam-$V-$abi.apk" > "roam-$V-$abi.apk.sha256" )
+          done
+          [ -n "$(ls -A dist)" ] || { echo "::error::No signed APKs produced"; exit 1; }
+          ls -la dist
+
+      - name: Compose notes
+        if: steps.signing.outputs.ready == 'true'
+        run: |
+          PREV=$(git describe --tags --abbrev=0 --exclude="${{ steps.ver.outputs.tag }}" 2>/dev/null || true)
+          RANGE=${PREV:+$PREV..HEAD}
+          {
+            git log ${RANGE:-HEAD} --no-merges --pretty='- %s' | head -20
+            printf '\n_Automatic build from `%s` on main._\n\n' "$(git rev-parse --short HEAD)"
+            # Parsed by UpdateChecker. Comparing tag strings would rank
+            # v1.10.0 below v1.9.0.
+            printf '<!-- roam:versionCode=%s -->\n' "${{ steps.ver.outputs.code }}"
+          } > /tmp/notes.md
+          cat /tmp/notes.md
+
+      - name: Publish as Latest
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          TITLE="Roam ${{ steps.ver.outputs.name }}"
+          # --latest, never a pre-release: the updater polls the single
+          # /releases/latest endpoint, which excludes drafts and pre-releases.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file /tmp/notes.md \
+                                   --latest --prerelease=false --draft=false
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TITLE" \
+                                            --notes-file /tmp/notes.md \
+                                            --target "$GITHUB_SHA" --latest
+          fi
+          echo "### Published [$TITLE]($(gh release view "$TAG" --json url --jq .url))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up signing material
+        if: always()
+        run: rm -f roam-release.jks keystore.properties

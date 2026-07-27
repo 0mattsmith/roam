@@ -24,10 +24,12 @@
     If omitted, generated from git log since the last tag.
 
 .PARAMETER Bump
-    patch | minor | major. Default patch. versionCode always increments by 1.
+    minor | major. Default minor. There is no patch: the patch digit is the
+    commit count, which CI fills in, so `0.1` becomes `0.1.<commits>` on every
+    build. This flag only moves the part you actually choose.
 
 .PARAMETER SetVersion
-    Explicit semver, e.g. 2.0.0. Overrides -Bump.
+    Explicit base, e.g. 2.0. Overrides -Bump.
 
 .PARAMETER Verify
     Run ./gradlew assembleDebug locally first. Catches a compile error before
@@ -54,8 +56,8 @@ param(
     [Parameter(Position = 0)]
     [string] $Notes = "",
 
-    [ValidateSet('patch', 'minor', 'major')]
-    [string] $Bump = 'patch',
+    [ValidateSet('minor', 'major')]
+    [string] $Bump = 'minor',
 
     [string] $SetVersion,
 
@@ -181,33 +183,32 @@ Write-Step 'Version'
 $gradleText = Get-Content $GradleFile -Raw
 $script:RollbackGradle = $gradleText
 
-$mCode = [regex]::Match($gradleText, '(?m)^\s*versionCode\s*=\s*(\d+)')
-$mName = [regex]::Match($gradleText, '(?m)^\s*versionName\s*=\s*"([^"]+)"')
-if (-not $mCode.Success) { Fail "Could not find 'versionCode = N' in $GradleFile" }
-if (-not $mName.Success) { Fail "Could not find 'versionName = `"x.y.z`"' in $GradleFile" }
+$mName = [regex]::Match($gradleText, '(?m)^\s*versionName\s*=\s*"(\d+)\.(\d+)')
+if (-not $mName.Success) { Fail "Could not find 'versionName = `"x.y...`"' in $GradleFile" }
 
-$oldCode = [int]$mCode.Groups[1].Value
-$oldName = $mName.Groups[1].Value
-Write-Info "current: $oldName (code $oldCode)"
+$oldMaj = [int]$mName.Groups[1].Value
+$oldMin = [int]$mName.Groups[2].Value
+Write-Info "current base: $oldMaj.$oldMin"
 
 if ($SetVersion) {
-    if ($SetVersion -notmatch '^\d+\.\d+\.\d+$') { Fail "-SetVersion must be x.y.z, got '$SetVersion'" }
-    $newName = $SetVersion
+    if ($SetVersion -notmatch '^(\d+)\.(\d+)') { Fail "-SetVersion must start x.y, got '$SetVersion'" }
+    $maj = [int]$Matches[1]; $min = [int]$Matches[2]
 } else {
-    $p = @($oldName -split '\.')
-    if ($p.Count -ne 3) { Fail "versionName '$oldName' is not semver x.y.z" }
-    $maj = [int]$p[0]; $min = [int]$p[1]; $pat = [int]$p[2]
+    $maj = $oldMaj; $min = $oldMin
     switch ($Bump) {
-        'major' { $maj++; $min = 0; $pat = 0 }
-        'minor' { $min++; $pat = 0 }
-        'patch' { $pat++ }
+        'major' { $maj++; $min = 0 }
+        'minor' { $min++ }
     }
-    $newName = "$maj.$min.$pat"
 }
-$newCode = $oldCode + 1
+
+# The patch digit is the commit count, so the tag matches exactly what CI will
+# build. This script adds precisely one commit, hence +1.
+$newCode = [int](git rev-list --count HEAD).Trim() + 1
+$newName = "$maj.$min.$newCode"
 $tag     = "v$newName"
 
-Write-Ok "new:     $newName (code $newCode)  ->  tag $tag"
+Write-Ok "new:     $newName (versionCode $newCode)  ->  tag $tag"
+Write-Info 'versionCode is the commit count -- never hand-edited, always increasing'
 
 if (git tag --list $tag) { Fail "Tag $tag already exists locally." }
 
@@ -248,8 +249,8 @@ if ($DryRun) {
 # ----------------------------------------------------------------------------
 Write-Step 'Applying version'
 
-$updated = [regex]::Replace($gradleText, '(?m)^(\s*versionCode\s*=\s*)\d+',     "`${1}$newCode")
-$updated = [regex]::Replace($updated,    '(?m)^(\s*versionName\s*=\s*)"[^"]+"', "`${1}`"$newName`"")
+# Only the major.minor base is stored; both workflows append the commit count.
+$updated = [regex]::Replace($gradleText, '(?m)^(\s*versionName\s*=\s*)"[^"]+"', "`${1}`"$maj.$min.0`"")
 Set-Content -Path $GradleFile -Value $updated -NoNewline -Encoding UTF8
 Write-Ok "$GradleFile updated"
 
