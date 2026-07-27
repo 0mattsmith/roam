@@ -10,10 +10,15 @@ Store. Full design: `docs/SPEC.md`. Visual reference: `docs/mockups.html`.
 ./gradlew assembleDebug          # build
 ./gradlew installDebug           # to a connected device
 ./gradlew lint                   # before committing
-./push.ps1 "release notes"       # bump + tag + push; CI builds and publishes
+./commit.ps1 "what changed"      # stage + push + watch CI  <- day to day
+./commit.ps1 -Amend "fix"        # fold into HEAD, force-push with lease
+./push.ps1 "release notes"       # bump + tag + push; CI publishes a signed APK
 ./push.ps1 -DryRun               # show the plan, change nothing
 ./setup-secrets.ps1              # one-time: signing key into Actions secrets
 ```
+
+`commit.ps1` is the development loop; `push.ps1` cuts a release. Don't reach for
+`push.ps1` to test a fix — it burns a version number.
 
 Releases are built by **GitHub Actions**, not locally -- `push.ps1` only bumps
 the version and pushes an annotated tag. `.github/workflows/ci.yml` compiles and
@@ -148,6 +153,7 @@ resumable Drive upload with cached folder IDs.
 | A third of the AAC library untagged | `moov` atom at end of file; needs the tail-range fallback |
 | Blank covers on the head unit | PNG `APIC` — re-encode all covers to JPEG |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
+| `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
 | MusicBrainz starts 503-ing | Exceeded 1 req/sec, or missing a real User-Agent |
 | Update never installs | Version compared as a string, or the signing key changed |
 | Update invisible to devices | Release marked pre-release or draft — `/releases/latest` skips both |

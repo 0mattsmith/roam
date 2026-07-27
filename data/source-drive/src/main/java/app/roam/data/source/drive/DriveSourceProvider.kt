@@ -15,7 +15,7 @@ class DriveSourceProvider(
     override val sourceId: String,
     private val api: DriveApi,
     private val auth: DriveAuth,
-    private val dataSourceFactory: DriveDataSourceFactory,
+    private val dsFactory: DriveDataSourceFactory,
 ) : SourceProvider {
 
     override val capabilities = setOf(Capability.DELTA_SYNC, Capability.RANDOM_ACCESS, Capability.WRITE)
@@ -57,7 +57,7 @@ class DriveSourceProvider(
         TODO("Phase 3: page through changes.list(pageToken = start)")
     }
 
-    override fun dataSourceFactory(): DataSource.Factory = dataSourceFactory
+    override fun dataSourceFactory(): DataSource.Factory = dsFactory
 
     /** Head-range read for tag extraction. See TagExtractor. */
     override suspend fun readRange(remoteId: String, offset: Long, length: Long): ByteArray =

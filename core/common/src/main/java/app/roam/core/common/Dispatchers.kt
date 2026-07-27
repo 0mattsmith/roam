@@ -18,10 +18,14 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DispatchersModule {
     @Provides @IoDispatcher
-    fun io(): CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
+    fun ioDispatcher(): CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
 
+    // NOT `fun default()`. Dagger emits a Java factory whose method name
+    // mirrors this one, and `default` is a Java reserved word -- JavaPoet
+    // fails with "not a valid name: default". Same trap for native, package,
+    // switch, new, final, static.
     @Provides @DefaultDispatcher
-    fun default(): CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default
+    fun defaultDispatcher(): CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default
 
     @Provides @Singleton @ApplicationScope
     fun appScope(@IoDispatcher d: CoroutineDispatcher): CoroutineScope = CoroutineScope(SupervisorJob() + d)

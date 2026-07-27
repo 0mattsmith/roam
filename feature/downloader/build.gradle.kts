@@ -36,8 +36,10 @@ dependencies {
     implementation(libs.hilt.navigation)
     implementation(libs.coil.compose)
     implementation(libs.paging.compose)
-    implementation(libs.youtubedl.library)
-    implementation(libs.youtubedl.ffmpeg)
+    // Phase 4 -- uncomment with the downloader.
+    // implementation(libs.youtubedl.library)
+    // Phase 4 -- uncomment with the downloader.
+    // implementation(libs.youtubedl.ffmpeg)
     implementation(libs.okhttp)
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)

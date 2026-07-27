@@ -120,6 +120,18 @@ Cut a throwaway `v0.0.1` before writing any real code. Proving the pipeline
 while the app is empty is much cheaper than discovering a signing problem at
 v1.0 with a database you care about.
 
+## Day-to-day
+
+```powershell
+./commit.ps1 "Rename Dagger providers off Java reserved words"
+./commit.ps1 -Amend "Second attempt"   # fold into HEAD instead of stacking "fix ci" commits
+./commit.ps1 -DryRun                   # show what would go in
+```
+
+Stages everything, commits, pushes, follows the CI run, and on a red build pulls
+the failed log and prints just the error lines. `push.ps1` is for releases only —
+reaching for it to test a fix burns a version number.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs `assembleDebug` and `lint` on every push to
