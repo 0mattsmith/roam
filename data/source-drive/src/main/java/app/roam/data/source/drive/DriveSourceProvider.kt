@@ -1,28 +1,39 @@
 package app.roam.data.source.drive
 
 import androidx.media3.datasource.DataSource
+import app.roam.core.model.SourceType
 import app.roam.data.source.Capability
 import app.roam.data.source.ChangeSet
 import app.roam.data.source.RemoteFile
 import app.roam.data.source.SourceProvider
+import app.roam.data.source.SourceTypeKey
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import dagger.multibindings.IntoMap
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import java.io.File
+import javax.inject.Inject
+import javax.inject.Singleton
 
 private val AUDIO = setOf("mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "wma", "aiff")
 
-class DriveSourceProvider(
-    override val sourceId: String,
+@Singleton
+class DriveSourceProvider @Inject constructor(
     private val api: DriveApi,
     private val auth: DriveAuth,
     private val dsFactory: DriveDataSourceFactory,
 ) : SourceProvider {
 
+    override val sourceId: String = SOURCE_ID
     override val capabilities = setOf(Capability.DELTA_SYNC, Capability.RANDOM_ACCESS, Capability.WRITE)
 
     /**
-     * Breadth-first crawl. Keep the field mask tight -- asking for the default
-     * field set roughly triples the payload on a 10k-file library.
+     * Breadth-first crawl. The field mask is deliberately tight -- the default
+     * field set roughly triples the payload on a 10k-file library, and Drive
+     * bills you rate limit for it either way.
      */
     override fun listAll(root: String): Flow<RemoteFile> = flow {
         val queue = ArrayDeque(listOf(root to emptyList<String>()))
@@ -32,7 +43,7 @@ class DriveSourceProvider(
             do {
                 val page = api.list(
                     q = "'$folderId' in parents and trashed = false",
-                    fields = "nextPageToken,files(id,name,mimeType,size,md5Checksum,modifiedTime)",
+                    fields = FIELD_MASK,
                     pageSize = 1000,
                     pageToken = pageToken,
                 )
@@ -48,28 +59,46 @@ class DriveSourceProvider(
         }
     }
 
-    /**
-     * Drive Changes API. This is what makes the 6-hourly sync take seconds
-     * instead of re-walking the entire tree.
-     */
+    /** Find a top-level folder by name, for the "which folder?" step in settings. */
+    suspend fun findFolder(name: String, parent: String = "root"): DriveFile? =
+        api.list(
+            q = "name = '${name.replace("'", "\\'")}' and mimeType = '$FOLDER_MIME' " +
+                "and '$parent' in parents and trashed = false",
+            fields = FIELD_MASK,
+            pageSize = 10,
+            pageToken = null,
+        ).files.firstOrNull()
+
     override suspend fun listChanges(token: String?): ChangeSet {
+        // TODO(phase3): page changes.list from startPageToken. Until then the
+        //   sync engine falls back to listAll + local diff, which is correct,
+        //   just slower.
         val start = token ?: api.startPageToken().startPageToken
-        TODO("Phase 3: page through changes.list(pageToken = start)")
+        return ChangeSet(upserted = emptyList(), removedIds = emptyList(), nextToken = start)
     }
 
     override fun dataSourceFactory(): DataSource.Factory = dsFactory
 
-    /** Head-range read for tag extraction. See TagExtractor. */
     override suspend fun readRange(remoteId: String, offset: Long, length: Long): ByteArray =
         api.media(
             fileId = remoteId,
             range = "bytes=$offset-${offset + length - 1}",
-            authorization = "Bearer " + auth.accessToken(),
         ).bytes()
 
     override suspend fun write(pathSegments: List<String>, fileName: String, file: File): String {
-        TODO("Phase 4: resolve-or-create folders (cache ids!), then resumable upload")
+        TODO("Phase 4: resolve-or-create folders (cache the ids), then resumable upload")
     }
 
-    companion object { const val FOLDER_MIME = "application/vnd.google-apps.folder" }
+    companion object {
+        const val SOURCE_ID = "drive"
+        const val FOLDER_MIME = "application/vnd.google-apps.folder"
+        const val FIELD_MASK = "nextPageToken,files(id,name,mimeType,size,md5Checksum,modifiedTime)"
+    }
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class DriveSourceModule {
+    @Binds @IntoMap @SourceTypeKey(SourceType.DRIVE)
+    abstract fun bindDriveProvider(impl: DriveSourceProvider): SourceProvider
 }

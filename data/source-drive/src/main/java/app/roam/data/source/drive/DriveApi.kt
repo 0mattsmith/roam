@@ -44,11 +44,11 @@ interface DriveApi {
     @GET("drive/v3/changes/startPageToken")
     suspend fun startPageToken(): StartToken
 
+    /** Ranged read. Auth comes from DriveAuthInterceptor, per request. */
     @GET("drive/v3/files/{fileId}")
     suspend fun media(
         @Path("fileId") fileId: String,
         @Header("Range") range: String,
-        @Header("Authorization") authorization: String,
         @Query("alt") alt: String = "media",
     ): ResponseBody
 }

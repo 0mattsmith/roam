@@ -19,6 +19,12 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.lifecycle.compose)
+    implementation(projects.data.sourceDrive)
+    implementation(projects.data.sourceApi)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.work.runtime)
+    implementation(libs.kotlinx.coroutines)
     implementation(projects.core.model)
     implementation(projects.core.designsystem)
     implementation(projects.core.database)
