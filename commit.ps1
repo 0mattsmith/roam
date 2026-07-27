@@ -137,13 +137,7 @@ if ($DryRun) {
     exit 0
 }
 
-# Note the newest run BEFORE pushing, so we can tell the new one apart from
-# whatever is already in the list.
-$previousRunId = $null
-$raw = (gh run list --workflow $CiWorkflow --limit 1 --json databaseId 2>&1)
-if ($LASTEXITCODE -eq 0) {
-    try { $previousRunId = @("$raw" | ConvertFrom-Json)[0].databaseId } catch { }
-}
+
 
 # ----------------------------------------------------------------------------
 # Commit and push
@@ -190,20 +184,23 @@ if ($NoWatch) {
 
 Write-Step 'Waiting for CI'
 
+# Match on the commit SHA, never on "a run that isn't the one I saw before".
+# The latter picks up an older run whenever the new one hasn't been created
+# yet, and then reports ITS conclusion -- a stale green is worse than no
+# answer at all.
+$headSha = (git rev-parse HEAD).Trim()
 $runId = $null
-for ($i = 0; $i -lt 15; $i++) {
+for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Seconds 4
-    $raw = (gh run list --workflow $CiWorkflow --limit 5 --json databaseId,headBranch 2>&1)
+    $raw = (gh run list --workflow $CiWorkflow --limit 20 --json databaseId,headSha 2>&1)
     if ($LASTEXITCODE -eq 0) {
         try {
             $runs  = @("$raw" | ConvertFrom-Json)
-            $match = $runs | Where-Object {
-                $_.headBranch -eq $branch -and $_.databaseId -ne $previousRunId
-            } | Select-Object -First 1
+            $match = $runs | Where-Object { $_.headSha -eq $headSha } | Select-Object -First 1
             if ($match) { $runId = $match.databaseId; break }
         } catch { }
     }
-    Write-Info "waiting for the run to appear... ($($i + 1))"
+    Write-Info "waiting for a run on $($headSha.Substring(0,7))... ($($i + 1))"
 }
 
 if (-not $runId) {
@@ -227,6 +224,7 @@ $result  = if ($watchExit -eq 0) { 'SUCCESS' } else { 'FAILURE' }
     "status:  $result"
     "run:     $runId"
     "commit:  $sha  $subject"
+    "headSha: $headSha"
     "branch:  $branch"
     "when:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     "url:     $actionsUrl/runs/$runId"
