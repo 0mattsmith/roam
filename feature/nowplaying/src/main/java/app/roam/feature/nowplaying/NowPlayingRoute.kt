@@ -1,6 +1,8 @@
 package app.roam.feature.nowplaying
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -27,7 +29,11 @@ fun NowPlayingRoute(onCollapse: () -> Unit) {
     ) {
         Text("Now playing", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onCollapse) { Text("Collapse") }
+        // Chevron down, matching the reference player: collapses to the
+        // mini-player rather than reading as a hierarchy "back".
+        IconButton(onClick = onCollapse) {
+            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Collapse")
+        }
     }
 }
 

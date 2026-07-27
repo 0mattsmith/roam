@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,7 +43,12 @@ fun SettingsRoute(
         topBar = {
             TopAppBar(
                 title = { Text("Settings") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        // AutoMirrored flips for right-to-left locales.
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
             )
         }
     ) { padding ->
@@ -99,10 +106,63 @@ fun SettingsRoute(
             Spacer(Modifier.height(24.dp))
             SectionHeader("Cache")
             Text(
-                "Coming in phase 3 — next-N-tracks and storage-budget modes.",
+                "Coming in phase 3 - next-N-tracks and storage-budget modes.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            Spacer(Modifier.height(24.dp))
+            SectionHeader("Updates")
+
+            ListItem(
+                headlineContent = { Text("Roam ${state.installedVersion}") },
+                supportingContent = {
+                    Text(
+                        state.update?.let { "Version ${it.versionName} available" }
+                            ?: "Installed version"
+                    )
+                },
+                trailingContent = {
+                    when {
+                        state.checkingUpdate ->
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        state.downloadPercent != null ->
+                            Text("${state.downloadPercent}%", style = MaterialTheme.typography.labelMedium)
+                        state.update != null ->
+                            Button(onClick = { vm.installUpdate() }) { Text("Update") }
+                        else ->
+                            OutlinedButton(onClick = { vm.checkForUpdate() }) { Text("Check") }
+                    }
+                },
+            )
+
+            state.downloadPercent?.let { pct ->
+                LinearProgressIndicator(
+                    progress = { pct / 100f },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
+            }
+
+            state.update?.notes?.takeIf { it.isNotBlank() }?.let { notes ->
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Text(
+                        notes.lineSequence().take(8).joinToString("\n"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
+
+            state.updateMessage?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium)
+            }
+
             Spacer(Modifier.height(32.dp))
         }
     }

@@ -1,6 +1,8 @@
 package app.roam.feature.downloader
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,7 +27,9 @@ fun DownloaderRoute(onBack: () -> Unit) {
     ) {
         Text("Download", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onBack) { Text("Back") }
+        IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
     }
 }
 

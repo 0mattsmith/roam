@@ -18,6 +18,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.kotlinx.coroutines)
     implementation(projects.core.common)
     implementation(projects.core.datastore)
     implementation(libs.okhttp)

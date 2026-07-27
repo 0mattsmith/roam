@@ -79,8 +79,7 @@ class UpdateChecker @Inject constructor(
     }
 
     companion object {
-        // TODO: set these to your repo before the first release.
-        const val OWNER = "CHANGE_ME"
+        const val OWNER = "0mattsmith"
         const val REPO = "roam"
         const val BASE_URL = "https://api.github.com/"
         val VERSION_CODE_TRAILER = Regex("""<!--\s*roam:versionCode=(\d+)\s*-->""")

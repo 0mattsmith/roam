@@ -10,6 +10,11 @@ import androidx.work.WorkManager
 import app.roam.data.catalog.sync.SyncWorker
 import app.roam.data.source.drive.DriveAuth
 import app.roam.data.source.drive.DriveSourceProvider
+import app.roam.update.AvailableUpdate
+import app.roam.update.UpdateChecker
+import app.roam.update.UpdateDownloader
+import app.roam.update.UpdateInstallReceiver
+import app.roam.update.UpdateInstaller
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +31,12 @@ data class SettingsUiState(
     val tracksFound: Int? = null,
     val message: String? = null,
     val busy: Boolean = false,
+
+    val installedVersion: String = "",
+    val checkingUpdate: Boolean = false,
+    val update: AvailableUpdate? = null,
+    val downloadPercent: Int? = null,
+    val updateMessage: String? = null,
 )
 
 @HiltViewModel
@@ -33,7 +44,18 @@ class SettingsViewModel @Inject constructor(
     app: Application,
     private val auth: DriveAuth,
     private val drive: DriveSourceProvider,
+    private val updateChecker: UpdateChecker,
+    private val updateDownloader: UpdateDownloader,
+    private val updateInstaller: UpdateInstaller,
 ) : AndroidViewModel(app) {
+
+    init {
+        // Read the version from PackageManager rather than BuildConfig: this is
+        // a library module and has no BuildConfig of its own.
+        val ctx = getApplication<Application>()
+        val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+        _state.update { it.copy(installedVersion = info.versionName.orEmpty()) }
+    }
 
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -77,6 +99,53 @@ class SettingsViewModel @Inject constructor(
             } else {
                 it.copy(busy = false, folderName = folder.name, folderId = folder.id, message = null)
             }
+        }
+    }
+
+    // ---- updates ----------------------------------------------------------
+
+    fun checkForUpdate() = viewModelScope.launch {
+        _state.update { it.copy(checkingUpdate = true, updateMessage = null, update = null) }
+        val ctx = getApplication<Application>()
+        val code = ctx.packageManager.getPackageInfo(ctx.packageName, 0).let {
+            if (android.os.Build.VERSION.SDK_INT >= 28) it.longVersionCode.toInt()
+            else @Suppress("DEPRECATION") it.versionCode
+        }
+        runCatching { updateChecker.check(code, updateInstaller.preferredAbi()) }
+            .onSuccess { found ->
+                _state.update {
+                    it.copy(
+                        checkingUpdate = false,
+                        update = found,
+                        updateMessage = if (found == null) "You're on the latest version." else null,
+                    )
+                }
+            }
+            .onFailure { e ->
+                _state.update { it.copy(checkingUpdate = false, updateMessage = "Check failed: ${e.message}") }
+            }
+    }
+
+    fun installUpdate() = viewModelScope.launch {
+        val update = _state.value.update ?: return@launch
+        val ctx = getApplication<Application>()
+
+        if (!updateInstaller.canInstall()) {
+            ctx.startActivity(updateInstaller.unknownSourcesIntent().addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            _state.update { it.copy(updateMessage = "Allow installs from Roam, then tap Update again.") }
+            return@launch
+        }
+
+        _state.update { it.copy(downloadPercent = 0, updateMessage = null) }
+        runCatching {
+            val apk = updateDownloader.download(update) { pct ->
+                _state.update { it.copy(downloadPercent = pct) }
+            }
+            updateInstaller.install(apk, UpdateInstallReceiver.pendingIntent(ctx).intentSender)
+        }.onSuccess {
+            _state.update { it.copy(downloadPercent = null, updateMessage = "Confirm the install when prompted.") }
+        }.onFailure { e ->
+            _state.update { it.copy(downloadPercent = null, updateMessage = "Update failed: ${e.message}") }
         }
     }
 
