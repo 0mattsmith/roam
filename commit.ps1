@@ -252,14 +252,30 @@ $logPath = Join-Path (Get-Location) 'ci-failure.log'
 # The workflow tees Gradle's output to build.log and uploads it. Artifacts are
 # published the instant the run ends, unlike the log archive behind
 # `gh run view --log-failed`, which can take minutes.
+#
+# The artifact is NOT always ready the instant the run reports completion, and
+# `gh run download` can also just time out against the API. A single attempt
+# whose error went to Out-Null is why this has come back empty more than once,
+# so retry, and say what went wrong when it still fails.
 $raw = $null
 $dl = Join-Path ([IO.Path]::GetTempPath()) "roam-buildlog-$runId"
-Remove-Item $dl -Recurse -Force -ErrorAction SilentlyContinue
-gh run download $runId -n build-log -D $dl 2>&1 | Out-Null
 $artifact = Join-Path $dl 'build.log'
-if (Test-Path $artifact) {
-    $raw = Get-Content $artifact -Raw
-    Write-Ok 'build log retrieved from artifact'
+$ghErr = ''
+for ($try = 1; $try -le 4; $try++) {
+    Remove-Item $dl -Recurse -Force -ErrorAction SilentlyContinue
+    $ghErr = (gh run download $runId -n build-log -D $dl 2>&1 | Out-String)
+    if (Test-Path $artifact) {
+        $raw = Get-Content $artifact -Raw
+        Write-Ok "build log retrieved from artifact (attempt $try)"
+        break
+    }
+    if ($try -lt 4) {
+        Write-Info "artifact not ready (attempt $try of 4), waiting..."
+        Start-Sleep -Seconds ($try * 5)
+    }
+}
+if (-not $raw -and $ghErr.Trim()) {
+    Write-Info "gh run download said: $($ghErr.Trim() -split "`n" | Select-Object -First 2)"
 }
 
 if (-not $raw) {
