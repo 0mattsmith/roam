@@ -40,7 +40,7 @@
             singleTop, NOT singleTask. singleTask forces this activity to be the
             root of its own task with clear-top semantics, so returning from an
             external activity (the Google consent screen, the package installer)
-            can tear the task down and rebuild it -- taking the Compose
+            can tear the task down and rebuild it, taking the Compose
             navigation back stack with it. The system Back button then has
             nothing to pop and quits the app instead of going back a screen.
 
