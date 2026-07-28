@@ -16,7 +16,8 @@ import app.roam.core.model.TrackSort
 import android.net.Uri
 import app.roam.core.database.ArtistListItem
 import app.roam.data.catalog.LibraryQueries
-import app.roam.data.catalog.artwork.ArtistPhotoEditor
+import app.roam.core.database.AlbumListItem
+import app.roam.data.catalog.artwork.ArtworkEditor
 import app.roam.feature.player.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -47,7 +48,7 @@ class LibraryViewModel @Inject constructor(
     private val albums: AlbumDao,
     private val artists: ArtistDao,
     private val player: PlayerController,
-    private val photos: ArtistPhotoEditor,
+    private val photos: ArtworkEditor,
 ) : ViewModel() {
 
     private sealed interface Drill {
@@ -182,7 +183,18 @@ class LibraryViewModel @Inject constructor(
 
     fun setArtistPhoto(artist: ArtistListItem, picked: Uri) = viewModelScope.launch {
         // The list redraws itself: the artists PagingSource observes the table.
-        _photoMessage.value = photos.setUserPhoto(artist.id, artist.name, picked)
+        _photoMessage.value = photos.setArtistPhoto(artist.id, artist.name, picked)
+            .fold({ it }, { "Could not update: ${it.message}" })
+    }
+
+    fun saveAlbumCover(album: AlbumListItem) = viewModelScope.launch {
+        val artworkId = album.artworkId ?: return@launch
+        _photoMessage.value = photos.saveToGallery(artworkId, "${album.artistName} - ${album.title}")
+            .fold({ it }, { "Could not save: ${it.message}" })
+    }
+
+    fun setAlbumCover(album: AlbumListItem, picked: Uri) = viewModelScope.launch {
+        _photoMessage.value = photos.setAlbumCover(album.id, album.artistName, album.title, picked)
             .fold({ it }, { "Could not update: ${it.message}" })
     }
 

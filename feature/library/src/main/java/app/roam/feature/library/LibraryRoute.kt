@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
@@ -19,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,6 +61,14 @@ fun LibraryRoute(
     // Back closes a drill-down before it leaves the screen. enabled = false when
     // there is nothing to close, so the system handles it normally.
     BackHandler(enabled = state.drillTitle != null) { vm.closeDrill() }
+
+    // Hoisted deliberately. Drilling into an artist swaps ArtistList out of
+    // composition entirely, which takes any state remembered inside it -- so
+    // coming back landed you at the top. The route itself stays composed, so
+    // holding the positions here is what makes them survive the round trip.
+    val artistsState = rememberLazyListState()
+    val albumsState = rememberLazyListState()
+    val tracksState = rememberLazyListState()
 
     val snackbars = remember { SnackbarHostState() }
     LaunchedEffect(photoMessage) {
@@ -116,10 +127,14 @@ fun LibraryRoute(
             }
 
             when {
-                state.drillTitle != null -> TrackList(vm)
-                state.tab == LibraryTab.TRACKS -> TrackList(vm)
-                state.tab == LibraryTab.ARTISTS -> ArtistList(vm)
-                state.tab == LibraryTab.ALBUMS -> AlbumList(vm)
+                // Keyed on the drill target so each one starts at its own top:
+                // opening an album should show its first track, not wherever
+                // the previously opened album happened to be scrolled to.
+                state.drillTitle != null ->
+                    key(state.drillTitle) { TrackList(vm, rememberLazyListState()) }
+                state.tab == LibraryTab.TRACKS -> TrackList(vm, tracksState)
+                state.tab == LibraryTab.ARTISTS -> ArtistList(vm, artistsState)
+                state.tab == LibraryTab.ALBUMS -> AlbumList(vm, albumsState)
                 else -> PlaylistList(vm)
             }
         }
@@ -164,7 +179,7 @@ private fun SortItem(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TrackList(vm: LibraryViewModel) {
+private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     val tracks = vm.pagedTracks.collectAsLazyPagingItems()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
 
@@ -173,7 +188,7 @@ private fun TrackList(vm: LibraryViewModel) {
         return
     }
 
-    LazyColumn(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
             tracks[index]?.let { track ->
                 TrackRow(
@@ -188,7 +203,7 @@ private fun TrackList(vm: LibraryViewModel) {
 }
 
 @Composable
-private fun ArtistList(vm: LibraryViewModel) {
+private fun ArtistList(vm: LibraryViewModel, listState: LazyListState) {
     val artists = vm.pagedArtists.collectAsLazyPagingItems()
 
     // Long-press target. Held here rather than in the ViewModel because it is
@@ -198,7 +213,7 @@ private fun ArtistList(vm: LibraryViewModel) {
 
     if (artists.itemCount == 0) { EmptyState("No artists yet"); return }
 
-    LazyColumn(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
             artists[index]?.let { artist ->
                 ArtistRow(
@@ -226,11 +241,11 @@ private fun ArtistList(vm: LibraryViewModel) {
 }
 
 @Composable
-private fun AlbumList(vm: LibraryViewModel) {
+private fun AlbumList(vm: LibraryViewModel, listState: LazyListState) {
     val albums = vm.pagedAlbums.collectAsLazyPagingItems()
     if (albums.itemCount == 0) { EmptyState("No albums yet"); return }
 
-    LazyColumn(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = albums.itemCount, key = albums.itemKey { it.id }) { index ->
             albums[index]?.let { album -> AlbumRow(album) { vm.openAlbum(album.id, album.title) } }
         }

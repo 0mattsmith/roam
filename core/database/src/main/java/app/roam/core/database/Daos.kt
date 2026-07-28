@@ -233,6 +233,14 @@ interface AlbumDao {
     @Query("UPDATE albums SET artworkId = :artworkId WHERE id = :albumId AND artworkId IS NULL")
     suspend fun setArtworkIfMissing(albumId: Long, artworkId: String)
 
+    /**
+     * Unconditional, for a cover the user picked. The IF MISSING variant above
+     * is what protects it afterwards: a re-tag will not overwrite an album that
+     * already has artwork.
+     */
+    @Query("UPDATE albums SET artworkId = :artworkId WHERE id = :albumId")
+    suspend fun setArtwork(albumId: Long, artworkId: String)
+
     @Query("""
         UPDATE albums SET
           trackCount = (SELECT COUNT(*) FROM tracks WHERE tracks.albumId = albums.id),

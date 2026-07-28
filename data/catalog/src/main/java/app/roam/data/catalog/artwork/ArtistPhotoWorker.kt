@@ -136,7 +136,7 @@ class ArtistPhotoWorker @AssistedInject constructor(
 
     /** A photo already sitting in the artist's folder. Always wins. */
     private suspend fun fromFolder(provider: SourceProvider, folderId: String): String? {
-        val existing = provider.findInFolder(folderId, ArtistPhotos.NAMES) ?: return null
+        val existing = provider.findInFolder(folderId, ArtworkFiles.ARTIST_NAMES) ?: return null
         val bytes = provider.read(existing.remoteId)
         return artwork.put(bytes, ArtworkSource.FOLDER_JPG)
     }
@@ -150,7 +150,7 @@ class ArtistPhotoWorker @AssistedInject constructor(
         val tmp = File.createTempFile("artist", ".jpg", applicationContext.cacheDir)
         try {
             tmp.writeBytes(photo)
-            provider.write(root, listOf(artistName), ArtistPhotos.UPLOAD_NAME, tmp)
+            provider.write(root, listOf(artistName), ArtworkFiles.ARTIST_UPLOAD_NAME, tmp)
         } finally {
             tmp.delete()
         }
