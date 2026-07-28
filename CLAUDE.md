@@ -149,6 +149,12 @@ resumable Drive upload with cached folder IDs.
 - Hilt for DI. `@HiltWorker` for workers. Modules named `<Thing>Module`.
 - One public composable per file, named `<Screen>Route` for nav entry points.
 - `TODO(phaseN)` markers mean "not yet, and here is when". Grep for them.
+- **Public functions in `:core` and `:data` modules declare explicit return
+  types.** An expression body infers its type from the last call, which can drag
+  a library class into the module's public API and force every consumer to
+  depend on it. `dataStore.edit {}` returning `Preferences` was exactly this.
+  `tools/check-deps.py` catches leaked *supertypes* but not leaked *return
+  types* -- the convention is the guard.
 - Comments explain *why*, not what. If the code needs a "what" comment, rewrite
   the code.
 - Versions are pinned in `gradle/libs.versions.toml` to a known-good set. Run
@@ -165,6 +171,7 @@ resumable Drive upload with cached folder IDs.
 | Blank covers on the head unit | PNG `APIC` — re-encode all covers to JPEG |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
+| `Cannot access class X. Check your module classpath` | A public signature in a dependency module exposes a type from one of ITS `implementation` deps — declare an explicit return type, or promote to `api` |
 | MusicBrainz starts 503-ing | Exceeded 1 req/sec, or missing a real User-Agent |
 | Update never installs | Version compared as a string, or the signing key changed |
 | Two releases with the same versionCode | Updater ignores the newer one | `versionCode` is the commit count; never hand-edit it in CI |

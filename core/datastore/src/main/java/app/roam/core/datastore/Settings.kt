@@ -37,6 +37,12 @@ data class RoamSettings(
     val autoCheckUpdates: Boolean = true,
 )
 
+/**
+ * Every public function here declares an explicit return type. DataStore's
+ * `edit {}` returns Preferences, and an expression body would make that the
+ * inferred return type -- putting an androidx.datastore class in this module's
+ * public API and forcing every consumer to depend on DataStore.
+ */
 @Singleton
 class SettingsRepository @Inject constructor(@ApplicationContext private val ctx: Context) {
 
@@ -81,31 +87,31 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         )
     }
 
-    suspend fun setCachePolicy(policy: CachePolicy) = ctx.dataStore.edit { p ->
+    suspend fun setCachePolicy(policy: CachePolicy): Unit = ctx.dataStore.edit { p ->
         when (policy) {
             is CachePolicy.NextTracks -> { p[K.CACHE_MODE] = "tracks"; p[K.CACHE_VALUE] = policy.count.toLong() }
             is CachePolicy.StorageBudget -> { p[K.CACHE_MODE] = "bytes"; p[K.CACHE_VALUE] = policy.bytes }
         }
     }
 
-    suspend fun setDriveFolder(id: String, name: String) = ctx.dataStore.edit {
+    suspend fun setDriveFolder(id: String, name: String): Unit = ctx.dataStore.edit {
         it[K.DRIVE_FOLDER_ID] = id
         it[K.DRIVE_FOLDER_NAME] = name
     }
 
-    suspend fun setSyncResult(trackCount: Int, at: Long = System.currentTimeMillis()) =
+    suspend fun setSyncResult(trackCount: Int, at: Long = System.currentTimeMillis()): Unit =
         ctx.dataStore.edit {
             it[K.LAST_TRACK_COUNT] = trackCount
             it[K.LAST_SYNC_AT] = at
         }
 
-    suspend fun clearDriveFolder() = ctx.dataStore.edit {
+    suspend fun clearDriveFolder(): Unit = ctx.dataStore.edit {
         it.remove(K.DRIVE_FOLDER_ID); it.remove(K.DRIVE_FOLDER_NAME)
         it.remove(K.LAST_TRACK_COUNT); it.remove(K.LAST_SYNC_AT)
     }
 
-    suspend fun setLovedMultiplier(v: Float) = ctx.dataStore.edit { it[K.LOVED_MULT] = v }
-    suspend fun setAutoCheckUpdates(v: Boolean) = ctx.dataStore.edit { it[K.AUTO_UPDATE] = v }
+    suspend fun setLovedMultiplier(v: Float): Unit = ctx.dataStore.edit { it[K.LOVED_MULT] = v }
+    suspend fun setAutoCheckUpdates(v: Boolean): Unit = ctx.dataStore.edit { it[K.AUTO_UPDATE] = v }
 }
 
 @Module
