@@ -12,6 +12,7 @@ import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
 import app.roam.data.source.drive.DriveAuth
 import app.roam.data.source.drive.DriveSourceProvider
+import app.roam.data.source.drive.DriveSourceProvider.Companion.SOURCE_ID
 import app.roam.update.AvailableUpdate
 import app.roam.update.UpdateChecker
 import app.roam.update.UpdateDownloader
@@ -40,6 +41,10 @@ data class SettingsUiState(
     val update: AvailableUpdate? = null,
     val downloadPercent: Int? = null,
     val updateMessage: String? = null,
+
+    val syncOnLaunch: Boolean = true,
+    val autoCheckUpdates: Boolean = true,
+    val confirmDisconnect: Boolean = false,
 )
 
 @HiltViewModel
@@ -95,8 +100,16 @@ class SettingsViewModel @Inject constructor(
         // Silent: if this returns NeedsConsent we simply stay disconnected
         // rather than throwing a consent dialog at someone who just opened
         // Settings to change the cache size.
+        _state.update {
+            it.copy(syncOnLaunch = saved.syncOnLaunch, autoCheckUpdates = saved.autoCheckUpdates)
+        }
+
         if (auth.authorize() is DriveAuth.Outcome.Granted) {
             _state.update { it.copy(connected = true) }
+            // Connected but no stored folder: either this account predates
+            // folder persistence, or the lookup failed last time. Re-find it
+            // rather than leaving the UI with no way to refresh.
+            if (saved.driveFolderId == null) locateLibraryFolder()
         }
 
         // The catalogue is the source of truth once tracks are stored; the
@@ -136,9 +149,14 @@ class SettingsViewModel @Inject constructor(
 
     fun consentHandled() { _consent.value = null }
 
-    /** Locate the library root. Phase 3 replaces this with a proper picker. */
     private suspend fun onConnected() {
-        _state.update { it.copy(connected = true, busy = true, message = "Looking for /Music…") }
+        _state.update { it.copy(connected = true) }
+        locateLibraryFolder()
+    }
+
+    /** Locate the library root. Phase 3 replaces this with a proper picker. */
+    private suspend fun locateLibraryFolder() {
+        _state.update { it.copy(busy = true, message = "Looking for /Music…") }
         val folder = runCatching { drive.findFolder("Music") }.getOrNull()
         _state.update {
             if (folder == null) {
@@ -197,7 +215,44 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun syncNow() {
+    fun setSyncOnLaunch(v: Boolean) = viewModelScope.launch {
+        _state.update { it.copy(syncOnLaunch = v) }
+        settings.setSyncOnLaunch(v)
+    }
+
+    fun setAutoCheckUpdates(v: Boolean) = viewModelScope.launch {
+        _state.update { it.copy(autoCheckUpdates = v) }
+        settings.setAutoCheckUpdates(v)
+    }
+
+    fun askDisconnect(show: Boolean) {
+        _state.update { it.copy(confirmDisconnect = show) }
+    }
+
+    /**
+     * Forgets the source and its catalogue.
+     *
+     * Play Services' Identity API has no revoke call, so the account's grant to
+     * Roam survives on Google's side -- reconnecting will not re-prompt. To
+     * revoke properly the user has to visit their Google account's third-party
+     * access page, which the UI says.
+     */
+    fun disconnect() = viewModelScope.launch {
+        _state.update { it.copy(confirmDisconnect = false, busy = true) }
+        trackDao.deleteAllForSource(SOURCE_ID)
+        settings.clearDriveFolder()
+        auth.invalidate()
+        _state.update {
+            SettingsUiState(
+                installedVersion = it.installedVersion,
+                syncOnLaunch = it.syncOnLaunch,
+                autoCheckUpdates = it.autoCheckUpdates,
+                message = "Disconnected. Library cleared.",
+            )
+        }
+    }
+
+    fun refreshLibrary() {
         val root = _state.value.folderId ?: return
         _state.update { it.copy(syncing = true, tracksFound = null, message = null) }
         val ctx = getApplication<Application>()

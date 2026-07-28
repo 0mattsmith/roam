@@ -35,6 +35,10 @@ data class RoamSettings(
     val autoUploadToDrive: Boolean = true,
     val filenameTemplate: String = "{track} {title} - {artist}",
     val autoCheckUpdates: Boolean = true,
+    /** Look for new music on the source each time the app opens. */
+    val syncOnLaunch: Boolean = true,
+    /** Version found by the last launch-time check, if any. */
+    val updateAvailable: String? = null,
 )
 
 /**
@@ -63,6 +67,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val UPLOAD = booleanPreferencesKey("auto_upload")
         val TEMPLATE = stringPreferencesKey("filename_template")
         val AUTO_UPDATE = booleanPreferencesKey("auto_check_updates")
+        val SYNC_ON_LAUNCH = booleanPreferencesKey("sync_on_launch")
+        val UPDATE_AVAILABLE = stringPreferencesKey("update_available")
     }
 
     val settings: Flow<RoamSettings> = ctx.dataStore.data.map { p ->
@@ -84,6 +90,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             autoUploadToDrive = p[K.UPLOAD] ?: true,
             filenameTemplate = p[K.TEMPLATE] ?: "{track} {title} - {artist}",
             autoCheckUpdates = p[K.AUTO_UPDATE] ?: true,
+            syncOnLaunch = p[K.SYNC_ON_LAUNCH] ?: true,
+            updateAvailable = p[K.UPDATE_AVAILABLE],
         )
     }
 
@@ -119,6 +127,16 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         ctx.dataStore.edit {
             it.remove(K.DRIVE_FOLDER_ID); it.remove(K.DRIVE_FOLDER_NAME)
             it.remove(K.LAST_TRACK_COUNT); it.remove(K.LAST_SYNC_AT)
+        }
+    }
+
+    suspend fun setSyncOnLaunch(v: Boolean) {
+        ctx.dataStore.edit { it[K.SYNC_ON_LAUNCH] = v }
+    }
+
+    suspend fun setUpdateAvailable(version: String?) {
+        ctx.dataStore.edit {
+            if (version == null) it.remove(K.UPDATE_AVAILABLE) else it[K.UPDATE_AVAILABLE] = version
         }
     }
 

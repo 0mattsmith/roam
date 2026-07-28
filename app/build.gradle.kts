@@ -112,6 +112,7 @@ dependencies {
     implementation(projects.feature.settings)
     implementation(projects.update)
 
+    implementation(libs.kotlinx.coroutines)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime)

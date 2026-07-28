@@ -58,6 +58,10 @@ interface TrackDao {
     @Query("DELETE FROM tracks WHERE sourceId = :sourceId AND remoteId IN (:remoteIds)")
     suspend fun deleteRemote(sourceId: String, remoteIds: List<String>)
 
+    /** Disconnecting a source removes its catalogue entirely. */
+    @Query("DELETE FROM tracks WHERE sourceId = :sourceId")
+    suspend fun deleteAllForSource(sourceId: String)
+
     @Query("SELECT COUNT(*) FROM tracks")
     fun count(): Flow<Int>
 }

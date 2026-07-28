@@ -39,6 +39,23 @@ fun SettingsRoute(
         }
     }
 
+    if (state.confirmDisconnect) {
+        AlertDialog(
+            onDismissRequest = { vm.askDisconnect(false) },
+            title = { Text("Disconnect Google Drive?") },
+            text = {
+                Text(
+                    "Roam will forget the folder and delete its local catalogue. " +
+                        "Nothing on Drive is touched.\n\n" +
+                        "To revoke Roam's access to your account entirely, remove it " +
+                        "under Google Account \u2192 Data & privacy \u2192 Third-party access."
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.disconnect() }) { Text("Disconnect") } },
+            dismissButton = { TextButton(onClick = { vm.askDisconnect(false) }) { Text("Cancel") } },
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -73,29 +90,39 @@ fun SettingsRoute(
                     )
                 },
                 trailingContent = {
-                    if (state.busy) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else if (!state.connected) {
-                        Button(onClick = { vm.connect() }) { Text("Connect") }
+                    when {
+                        state.busy -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        !state.connected -> Button(onClick = { vm.connect() }) { Text("Connect") }
+                        else -> TextButton(onClick = { vm.askDisconnect(true) }) { Text("Disconnect") }
                     }
                 },
             )
 
-            if (state.folderId != null) {
+            if (state.connected) {
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { vm.syncNow() }, enabled = !state.syncing) {
-                        Text(if (state.syncing) "Scanning…" else "Sync now")
+                    Button(
+                        onClick = { vm.refreshLibrary() },
+                        enabled = !state.syncing && state.folderId != null,
+                    ) {
+                        Text(if (state.syncing) "Checking…" else "Refresh library")
                     }
                     Spacer(Modifier.width(16.dp))
                     state.tracksFound?.let { n ->
                         Text(
-                            if (state.syncing) "$n tracks so far…" else "$n tracks found",
+                            if (state.syncing) "$n tracks so far…" else "$n tracks",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
+
+                SwitchRow(
+                    title = "Check for new music on launch",
+                    subtitle = "Only changed files are re-read, so this is quick",
+                    checked = state.syncOnLaunch,
+                    onChange = vm::setSyncOnLaunch,
+                )
             }
 
             state.message?.let {
@@ -143,6 +170,13 @@ fun SettingsRoute(
                 )
             }
 
+            SwitchRow(
+                title = "Check for updates on launch",
+                subtitle = null,
+                checked = state.autoCheckUpdates,
+                onChange = vm::setAutoCheckUpdates,
+            )
+
             state.update?.notes?.takeIf { it.isNotBlank() }?.let { notes ->
                 Spacer(Modifier.height(8.dp))
                 Surface(
@@ -166,6 +200,20 @@ fun SettingsRoute(
             Spacer(Modifier.height(32.dp))
         }
     }
+}
+
+@Composable
+private fun SwitchRow(
+    title: String,
+    subtitle: String?,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = subtitle?.let { { Text(it) } },
+        trailingContent = { Switch(checked = checked, onCheckedChange = onChange) },
+    )
 }
 
 @Composable
