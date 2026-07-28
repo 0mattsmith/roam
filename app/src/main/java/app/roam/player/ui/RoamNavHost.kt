@@ -1,6 +1,9 @@
 package app.roam.player.ui
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -35,16 +38,26 @@ fun RoamNavHost() {
 
     fun go(route: String) = nav.navigate(route) { launchSingleTop = true }
 
-    NavHost(navController = nav, startDestination = Routes.LIBRARY) {
-        composable(Routes.LIBRARY) {
-            LibraryRoute(
-                onOpenPlayer = { go(Routes.NOW_PLAYING) },
-                onOpenSettings = { go(Routes.SETTINGS) },
-                onOpenDownloader = { go(Routes.DOWNLOADER) },
-            )
+    // A Column rather than an overlay: the banner sits below the content so it
+    // cannot cover the mini-player or a screen's own bottom bar.
+    Column(Modifier.fillMaxSize()) {
+        NavHost(
+            navController = nav,
+            startDestination = Routes.LIBRARY,
+            modifier = Modifier.weight(1f),
+        ) {
+            composable(Routes.LIBRARY) {
+                LibraryRoute(
+                    onOpenPlayer = { go(Routes.NOW_PLAYING) },
+                    onOpenSettings = { go(Routes.SETTINGS) },
+                    onOpenDownloader = { go(Routes.DOWNLOADER) },
+                )
+            }
+            composable(Routes.NOW_PLAYING) { NowPlayingRoute(onCollapse = back) }
+            composable(Routes.DOWNLOADER)  { DownloaderRoute(onBack = back) }
+            composable(Routes.SETTINGS)    { SettingsRoute(onBack = back) }
         }
-        composable(Routes.NOW_PLAYING) { NowPlayingRoute(onCollapse = back) }
-        composable(Routes.DOWNLOADER)  { DownloaderRoute(onBack = back) }
-        composable(Routes.SETTINGS)    { SettingsRoute(onBack = back) }
+
+        UpdateBannerHost()
     }
 }
