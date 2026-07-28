@@ -13,8 +13,8 @@ import app.roam.core.model.SourceType
 import app.roam.data.source.SourceProvider
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import app.roam.data.source.RemoteFile
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collect
 import javax.inject.Provider
 
 /**
@@ -32,6 +32,7 @@ class SyncWorker @AssistedInject constructor(
     @Assisted ctx: Context,
     @Assisted params: WorkerParameters,
     private val providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>,
+    private val catalog: CatalogWriter,
 ) : CoroutineWorker(ctx, params) {
 
     override suspend fun doWork(): Result {
@@ -43,21 +44,45 @@ class SyncWorker @AssistedInject constructor(
         val provider = providers[SourceType.valueOf(typeName)]?.get()
             ?: return Result.failure(errorData("No provider for $typeName"))
 
+        // Revisions of everything already stored. An unchanged file costs one
+        // map lookup, which is what makes a re-sync near-instant compared with
+        // the first crawl.
+        val known = catalog.existingRevisions(provider.sourceId)
+
         var found = 0
+        var written = 0
+        val seen = HashSet<String>(known.size.coerceAtLeast(64))
+        val batch = ArrayList<RemoteFile>(BATCH)
         var failure: Throwable? = null
+
+        suspend fun flush() {
+            if (batch.isEmpty()) return
+            written += catalog.writeBatch(provider.sourceId, batch, known)
+            batch.clear()
+        }
 
         provider.listAll(root)
             .catch { failure = it }
-            .collect {
+            .collect { file ->
                 found++
-                // Cheap heartbeat. The crawl is network-bound, so updating on
-                // every file would spend more time on IPC than on Drive.
-                if (found % 25 == 0) setProgress(workDataOf(KEY_FOUND to found))
+                seen += file.remoteId
+                batch += file
+                if (batch.size >= BATCH) {
+                    flush()
+                    // Batched rather than per-file: at 25 updates a second the
+                    // IPC costs more than the work being reported.
+                    setProgress(workDataOf(KEY_FOUND to found))
+                }
             }
 
-        failure?.let { return Result.failure(errorData(it.message ?: it::class.simpleName ?: "Crawl failed")) }
+        failure?.let {
+            return Result.failure(errorData(it.message ?: it::class.simpleName ?: "Crawl failed"))
+        }
 
-        return Result.success(workDataOf(KEY_FOUND to found))
+        flush()
+        catalog.finish(provider.sourceId, seen, known)
+
+        return Result.success(workDataOf(KEY_FOUND to found, KEY_WRITTEN to written))
     }
 
     private fun errorData(message: String): Data = workDataOf(KEY_ERROR to message)
@@ -67,6 +92,9 @@ class SyncWorker @AssistedInject constructor(
         const val KEY_SOURCE_TYPE = "source_type"
         const val KEY_ROOT_ID = "root_id"
         const val KEY_FOUND = "found"
+        const val KEY_WRITTEN = "written"
+        /** Rows per transaction. Large enough to amortise, small enough to stream. */
+        const val BATCH = 250
         const val KEY_ERROR = "error"
 
         fun enqueue(ctx: Context, rootId: String, type: SourceType = SourceType.DRIVE) {

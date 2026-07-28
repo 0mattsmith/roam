@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.roam.data.catalog.sync.SyncWorker
+import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
 import app.roam.data.source.drive.DriveAuth
 import app.roam.data.source.drive.DriveSourceProvider
@@ -50,6 +51,7 @@ class SettingsViewModel @Inject constructor(
     private val updateDownloader: UpdateDownloader,
     private val updateInstaller: UpdateInstaller,
     private val settings: SettingsRepository,
+    private val trackDao: TrackDao,
 ) : AndroidViewModel(app) {
 
 
@@ -95,6 +97,14 @@ class SettingsViewModel @Inject constructor(
         // Settings to change the cache size.
         if (auth.authorize() is DriveAuth.Outcome.Granted) {
             _state.update { it.copy(connected = true) }
+        }
+
+        // The catalogue is the source of truth once tracks are stored; the
+        // DataStore count above is only a fallback for the very first run.
+        launch {
+            trackDao.count().collect { n ->
+                if (!_state.value.syncing) _state.update { it.copy(tracksFound = n) }
+            }
         }
 
         // A crawl started earlier may still be running in WorkManager.

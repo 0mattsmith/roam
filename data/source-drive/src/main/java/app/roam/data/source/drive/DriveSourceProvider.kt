@@ -12,8 +12,12 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoMap
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,28 +39,51 @@ class DriveSourceProvider @Inject constructor(
      * field set roughly triples the payload on a 10k-file library, and Drive
      * bills you rate limit for it either way.
      */
-    override fun listAll(root: String): Flow<RemoteFile> = flow {
-        val queue = ArrayDeque(listOf(root to emptyList<String>()))
-        while (queue.isNotEmpty()) {
-            val (folderId, path) = queue.removeFirst()
+    /**
+     * Parallel breadth-first crawl.
+     *
+     * The cost here is round-trips, not bandwidth: one files.list per folder at
+     * ~250 ms each. A Music/Artist/Album library with 300 albums is ~360
+     * sequential requests -- roughly 90 seconds of pure latency. Fanning out
+     * across folders collapses that to about a tenth.
+     *
+     * The semaphore is the whole safety mechanism. Unbounded recursion over a
+     * large tree would open hundreds of concurrent connections and earn a
+     * 403 userRateLimitExceeded from Drive.
+     */
+    override fun listAll(root: String): Flow<RemoteFile> = channelFlow {
+        val gate = Semaphore(CONCURRENCY)
+
+        suspend fun crawl(folderId: String, path: List<String>) {
+            val subfolders = mutableListOf<Pair<String, List<String>>>()
             var pageToken: String? = null
             do {
-                val page = api.list(
-                    q = "'$folderId' in parents and trashed = false",
-                    fields = FIELD_MASK,
-                    pageSize = 1000,
-                    pageToken = pageToken,
-                )
+                val page = gate.withPermit {
+                    api.list(
+                        q = "'$folderId' in parents and trashed = false",
+                        fields = FIELD_MASK,
+                        pageSize = 1000,
+                        pageToken = pageToken,
+                    )
+                }
                 for (f in page.files) {
                     if (f.mimeType == FOLDER_MIME) {
-                        queue.addLast(f.id to (path + f.name))
+                        subfolders += f.id to (path + f.name)
                     } else if (f.name.substringAfterLast('.', "").lowercase() in AUDIO) {
-                        emit(f.toRemoteFile(path))
+                        send(f.toRemoteFile(path))
                     }
                 }
                 pageToken = page.nextPageToken
             } while (pageToken != null)
+
+            // Structured concurrency: this returns only once every descendant
+            // has been walked, so the flow completes when the tree is done.
+            coroutineScope {
+                subfolders.forEach { (id, p) -> launch { crawl(id, p) } }
+            }
         }
+
+        crawl(root, emptyList())
     }
 
     /** Find a top-level folder by name, for the "which folder?" step in settings. */
@@ -92,6 +119,8 @@ class DriveSourceProvider @Inject constructor(
     companion object {
         const val SOURCE_ID = "drive"
         const val FOLDER_MIME = "application/vnd.google-apps.folder"
+        /** Concurrent files.list calls. Above ~12 Drive starts rate-limiting. */
+        const val CONCURRENCY = 8
         const val FIELD_MASK = "nextPageToken,files(id,name,mimeType,size,md5Checksum,modifiedTime)"
     }
 }

@@ -83,6 +83,13 @@ interface AlbumDao {
 
     @Query("DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT albumId FROM tracks)")
     suspend fun pruneOrphans()
+
+    @Query("""
+        UPDATE albums SET
+          trackCount = (SELECT COUNT(*) FROM tracks WHERE tracks.albumId = albums.id),
+          durationMs = (SELECT COALESCE(SUM(durationMs), 0) FROM tracks WHERE tracks.albumId = albums.id)
+    """)
+    suspend fun recomputeRollups()
 }
 
 @Dao
