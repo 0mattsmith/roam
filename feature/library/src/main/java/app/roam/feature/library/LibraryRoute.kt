@@ -15,7 +15,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.clip
+import coil.compose.AsyncImage
+import app.roam.data.catalog.artwork.ArtworkProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -97,12 +102,26 @@ private fun TrackRow(track: TrackListItem, isCurrent: Boolean, onClick: () -> Un
             )
         },
         leadingContent = {
-            // TODO(phase1): artwork, once the tag pass has extracted covers.
-            Surface(
-                Modifier.size(44.dp),
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-            ) {}
+            val ctx = LocalContext.current
+            if (track.artworkId != null) {
+                AsyncImage(
+                    // content:// rather than a bitmap. Same URI the car will
+                    // use -- Android Auto cannot take bitmaps, and this keeps
+                    // both surfaces on one path.
+                    model = ArtworkProvider.uri(ctx, track.artworkId, size = 320),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(MaterialTheme.shapes.small),
+                )
+            } else {
+                Surface(
+                    Modifier.size(44.dp),
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {}
+            }
         },
     )
 }

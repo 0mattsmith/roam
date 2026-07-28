@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
+import app.roam.core.model.TagState
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -82,6 +83,57 @@ interface TrackDao {
     @Query("UPDATE tracks SET skipCount = skipCount + 1 WHERE id = :id")
     suspend fun markSkipped(id: Long)
 
+    // ---- tag pass ----
+
+    /** Tracks still carrying path-derived metadata, oldest first. */
+    @Query("""
+        SELECT t.id AS id, t.remoteId AS remoteId, t.albumId AS albumId,
+               t.title AS name
+        FROM tracks t
+        WHERE t.sourceId = :sourceId AND t.tagState != 'OK' AND t.tagState != 'FAILED'
+        ORDER BY t.addedAt
+        LIMIT :limit
+    """)
+    suspend fun pendingTags(sourceId: String, limit: Int): List<PendingTagRow>
+
+    /**
+     * Writes only tag-derived columns. loved, playCount, skipCount and
+     * lastPlayedAt are the user's and must never be touched here.
+     * COALESCE keeps the path-inferred value when a tag is absent.
+     */
+    @Query("""
+        UPDATE tracks SET
+          title = COALESCE(:title, title),
+          year = COALESCE(:year, year),
+          genre = COALESCE(:genre, genre),
+          trackNo = COALESCE(:trackNo, trackNo),
+          trackTotal = COALESCE(:trackTotal, trackTotal),
+          discNo = COALESCE(:discNo, discNo),
+          discTotal = COALESCE(:discTotal, discTotal),
+          artworkId = COALESCE(:artworkId, artworkId),
+          tagState = :tagState
+        WHERE id = :id
+    """)
+    suspend fun updateTags(
+        id: Long,
+        title: String?,
+        year: Int?,
+        genre: String?,
+        trackNo: Int?,
+        trackTotal: Int?,
+        discNo: Int?,
+        discTotal: Int?,
+        artworkId: String?,
+        tagState: TagState,
+    )
+
+    /** Stops a file with no tags being re-read on every pass. */
+    @Query("UPDATE tracks SET tagState = 'FAILED' WHERE id IN (:ids) AND tagState != 'OK'")
+    suspend fun markTagsAttempted(ids: List<Long>)
+
+    @Query("SELECT COUNT(*) FROM tracks WHERE tagState != 'OK' AND tagState != 'FAILED'")
+    fun pendingTagCount(): Flow<Int>
+
     // ---- sync ----
     @Query("SELECT id, remoteId, remoteRevision FROM tracks WHERE sourceId = :sourceId")
     suspend fun revisions(sourceId: String): List<RevisionRow>
@@ -96,6 +148,14 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks")
     fun count(): Flow<Int>
 }
+
+data class PendingTagRow(
+    val id: Long,
+    val remoteId: String,
+    val albumId: Long,
+    /** The file's title, used only to sniff the extension for parser choice. */
+    val name: String,
+)
 
 data class TrackListItem(
     val id: Long,
@@ -130,6 +190,10 @@ interface AlbumDao {
 
     @Query("DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT albumId FROM tracks)")
     suspend fun pruneOrphans()
+
+    /** First track to yield a cover supplies the album's; the rest inherit. */
+    @Query("UPDATE albums SET artworkId = :artworkId WHERE id = :albumId AND artworkId IS NULL")
+    suspend fun setArtworkIfMissing(albumId: Long, artworkId: String)
 
     @Query("""
         UPDATE albums SET

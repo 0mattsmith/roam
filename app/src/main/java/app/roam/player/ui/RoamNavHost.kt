@@ -2,6 +2,7 @@ package app.roam.player.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
@@ -40,7 +41,15 @@ fun RoamNavHost() {
 
     // A Column rather than an overlay: the banner sits below the content so it
     // cannot cover the mini-player or a screen's own bottom bar.
-    Column(Modifier.fillMaxSize()) {
+    //
+    // navigationBarsPadding applies once, here, so whatever happens to be
+    // bottom-most clears the system bar. Putting it on the mini-player and the
+    // banner separately would double up whenever both are visible.
+    Column(
+        Modifier
+            .fillMaxSize()
+            .navigationBarsPadding()
+    ) {
         NavHost(
             navController = nav,
             startDestination = Routes.LIBRARY,

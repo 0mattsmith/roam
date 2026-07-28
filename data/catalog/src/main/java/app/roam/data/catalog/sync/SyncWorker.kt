@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.roam.core.model.SourceType
+import app.roam.data.catalog.tags.TagWorker
 import app.roam.data.source.SourceProvider
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -75,12 +76,31 @@ class SyncWorker @AssistedInject constructor(
                 }
             }
 
-        failure?.let {
-            return Result.failure(errorData(it.message ?: it::class.simpleName ?: "Crawl failed"))
+        // Keep what the crawl did manage to read. Discarding a partial result
+        // means one flaky request throws away the whole pass, and the user sees
+        // an unchanged count with no idea why.
+        flush()
+
+        failure?.let { cause ->
+            // Deliberately NOT calling finish(): it deletes rows the crawl did
+            // not see, and a crawl that stopped early did not see plenty of
+            // real tracks. Reconciling against a partial listing would wipe
+            // most of the library.
+            val reason = cause.message ?: cause::class.simpleName ?: "Crawl failed"
+            return Result.failure(
+                workDataOf(
+                    KEY_FOUND to found,
+                    KEY_WRITTEN to written,
+                    KEY_ERROR to "Stopped after $found files ($written added): $reason",
+                )
+            )
         }
 
-        flush()
         catalog.finish(provider.sourceId, seen, known)
+
+        // Second pass: real tags and embedded covers. Separate job so the
+        // catalogue is browsable now rather than after every ranged read.
+        TagWorker.enqueue(applicationContext)
 
         return Result.success(workDataOf(KEY_FOUND to found, KEY_WRITTEN to written))
     }
