@@ -1,55 +1,161 @@
 package app.roam.feature.library
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
+import app.roam.core.database.TrackListItem
 
-
-/**
- * Tabs: Artists / Albums / Tracks / Loved, each backed by a Room PagingSource.
- * A persistent "Shuffle all" FAB sits above the mini-player.
- *
- * Never load 10,000 rows into memory -- LazyColumn over PagingData only.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryRoute(
     onOpenPlayer: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenDownloader: () -> Unit,
+    vm: LibraryViewModel = hiltViewModel(),
 ) {
+    val tracks = vm.pagedTracks.collectAsLazyPagingItems()
+    val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
+
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Roam") }) },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { /* TODO(phase3): weighted shuffle of the whole library */ },
-                text = { Text("Shuffle all") },
-                icon = {},
+        topBar = {
+            TopAppBar(
+                title = { Text("Roam") },
+                actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    }
+                },
             )
         },
+        bottomBar = {
+            if (nowPlaying.hasItem) {
+                MiniPlayer(
+                    title = nowPlaying.title,
+                    artist = nowPlaying.artist,
+                    isPlaying = nowPlaying.isPlaying,
+                    onToggle = vm::togglePlayPause,
+                    onNext = vm::next,
+                    onExpand = onOpenPlayer,
+                )
+            }
+        },
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text("Library", style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "Phase 1: connect Google Drive in Settings, run a sync, then " +
-                    "artists appear here.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(24.dp))
-            Button(onClick = onOpenSettings) { Text("Settings") }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onOpenDownloader) { Text("Download") }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onOpenPlayer) { Text("Now playing") }
+        if (tracks.itemCount == 0) {
+            EmptyLibrary(onOpenSettings, Modifier.padding(padding))
+        } else {
+            LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+                items(
+                    count = tracks.itemCount,
+                    key = tracks.itemKey { it.id },
+                ) { index ->
+                    tracks[index]?.let { track ->
+                        TrackRow(track, isCurrent = track.title == nowPlaying.title) {
+                            vm.playFrom(track)
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
+@Composable
+private fun TrackRow(track: TrackListItem, isCurrent: Boolean, onClick: () -> Unit) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        headlineContent = {
+            Text(
+                track.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (isCurrent) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
+            )
+        },
+        supportingContent = {
+            Text(
+                "${track.artistName} · ${track.albumTitle}",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        leadingContent = {
+            // TODO(phase1): artwork, once the tag pass has extracted covers.
+            Surface(
+                Modifier.size(44.dp),
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {}
+        },
+    )
+}
+
+@Composable
+private fun MiniPlayer(
+    title: String,
+    artist: String,
+    isPlaying: Boolean,
+    onToggle: () -> Unit,
+    onNext: () -> Unit,
+    onExpand: () -> Unit,
+) {
+    Surface(tonalElevation = 3.dp) {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onExpand).padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                     style = MaterialTheme.typography.titleMedium)
+                Text(artist, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                     style = MaterialTheme.typography.bodyMedium,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onToggle) {
+                Icon(
+                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                )
+            }
+            IconButton(onClick = onNext) {
+                Icon(Icons.Filled.SkipNext, contentDescription = "Next")
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyLibrary(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("No music yet", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Connect Google Drive and refresh your library.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(20.dp))
+        Button(onClick = onOpenSettings) { Text("Open settings") }
+    }
+}

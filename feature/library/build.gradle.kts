@@ -19,6 +19,8 @@ android {
 }
 
 dependencies {
+    implementation(libs.kotlinx.coroutines)
+    implementation(libs.paging.runtime)
     implementation(libs.androidx.lifecycle.compose)
     implementation(projects.core.model)
     implementation(projects.core.designsystem)

@@ -28,7 +28,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines)
     implementation(projects.core.model)
     implementation(projects.core.common)
-    implementation(projects.core.database)
+    // PlayerController.play() takes TrackListItem, so consumers need
+    // these types: api, not implementation.
+    api(projects.core.database)
     implementation(projects.core.datastore)
     implementation(projects.data.catalog)
     implementation(projects.data.sourceApi)

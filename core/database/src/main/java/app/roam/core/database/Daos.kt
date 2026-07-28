@@ -29,6 +29,37 @@ interface TrackDao {
     fun pagedAll(): PagingSource<Int, TrackEntity>
 
     /**
+     * Everything a list row needs, joined once in SQL. Fetching TrackEntity and
+     * then looking up each artist and album separately would be a query per
+     * visible row.
+     */
+    @Query("""
+        SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
+               ar.name AS artistName, al.title AS albumTitle,
+               t.trackNo AS trackNo, t.durationMs AS durationMs,
+               t.artworkId AS artworkId, t.loved AS loved
+        FROM tracks t
+        JOIN artists ar ON ar.id = t.artistId
+        JOIN albums  al ON al.id = t.albumId
+        ORDER BY ar.sortName, al.sortTitle, t.discNo, t.trackNo, t.title
+    """)
+    fun pagedListItems(): PagingSource<Int, TrackListItem>
+
+    /** Queue building: same order as the list, but ids and remote ids only. */
+    @Query("""
+        SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
+               ar.name AS artistName, al.title AS albumTitle,
+               t.trackNo AS trackNo, t.durationMs AS durationMs,
+               t.artworkId AS artworkId, t.loved AS loved
+        FROM tracks t
+        JOIN artists ar ON ar.id = t.artistId
+        JOIN albums  al ON al.id = t.albumId
+        ORDER BY ar.sortName, al.sortTitle, t.discNo, t.trackNo, t.title
+        LIMIT :limit
+    """)
+    suspend fun listItems(limit: Int): List<TrackListItem>
+
+    /**
      * Everything the shuffle engine needs, and nothing else. Loading 10k full
      * rows to build a queue is the easiest way to make this app feel slow.
      */
@@ -65,6 +96,18 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks")
     fun count(): Flow<Int>
 }
+
+data class TrackListItem(
+    val id: Long,
+    val remoteId: String,
+    val title: String,
+    val artistName: String,
+    val albumTitle: String,
+    val trackNo: Int?,
+    val durationMs: Long,
+    val artworkId: String?,
+    val loved: Boolean,
+)
 
 data class ShuffleRow(val id: Long, val loved: Boolean, val skipCount: Int, val lastPlayedAt: Long?)
 data class RevisionRow(val id: Long, val remoteId: String, val remoteRevision: String?)
