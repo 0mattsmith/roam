@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.roam.core.datastore.SettingsRepository
 import app.roam.data.catalog.sync.SyncWorker
+import app.roam.data.catalog.artwork.ArtistPhotoWorker
 import app.roam.data.catalog.tags.TagWorker
 import app.roam.update.UpdateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -50,6 +51,10 @@ class StartupViewModel @Inject constructor(
         // never seeing a cover. It is unique work with KEEP, so enqueueing it
         // here is free when one is already running or nothing is pending.
         TagWorker.enqueue(ctx)
+
+        // Artist photos are not in the tags -- they have to come from Deezer.
+        // Also unique/KEEP, and it only looks at artists never tried before.
+        ArtistPhotoWorker.enqueue(ctx)
 
         // Result lands in UpdateRepository, which the banner observes.
         if (saved.autoCheckUpdates) updates.checkQuietly()

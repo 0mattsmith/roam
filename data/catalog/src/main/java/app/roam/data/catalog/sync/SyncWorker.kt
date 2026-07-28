@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.roam.core.model.SourceType
+import app.roam.data.catalog.artwork.ArtistPhotoWorker
 import app.roam.data.catalog.tags.TagWorker
 import app.roam.data.source.SourceProvider
 import dagger.assisted.Assisted
@@ -101,6 +102,7 @@ class SyncWorker @AssistedInject constructor(
         // Second pass: real tags and embedded covers. Separate job so the
         // catalogue is browsable now rather than after every ranged read.
         TagWorker.enqueue(applicationContext)
+        ArtistPhotoWorker.enqueue(applicationContext)
 
         return Result.success(workDataOf(KEY_FOUND to found, KEY_WRITTEN to written))
     }

@@ -26,6 +26,11 @@ data class ArtistEntity(
     val name: String,
     val sortName: String,
     val artworkId: String? = null,
+    /**
+     * When a photo lookup was last attempted, successful or not. Without it an
+     * artist with no photo anywhere gets re-searched on every single run.
+     */
+    val artworkAttemptedAt: Long? = null,
     val albumCount: Int = 0,
     val trackCount: Int = 0,
 )

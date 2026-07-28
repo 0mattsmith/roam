@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.TypeConverters
 import dagger.Module
 import dagger.Provides
@@ -17,7 +19,7 @@ import javax.inject.Singleton
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
         TrackEntity::class, ArtworkEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -29,12 +31,23 @@ abstract class RoamDatabase : RoomDatabase() {
     abstract fun artwork(): ArtworkDao
 }
 
+/**
+ * Additive only. A destructive migration here would take loved flags, play
+ * counts and last-played times with it -- see invariant 3.
+ */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE artists ADD COLUMN artworkAttemptedAt INTEGER")
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
     @Provides @Singleton
     fun db(@ApplicationContext ctx: Context): RoamDatabase =
         Room.databaseBuilder(ctx, RoamDatabase::class.java, "roam.db")
+            .addMigrations(MIGRATION_1_2)
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
 

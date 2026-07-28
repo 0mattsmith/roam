@@ -80,6 +80,11 @@ other — route between them through `:app`.
    `skipCount`, `lastPlayedAt` belong to the user. Sync owns file-derived
    columns only. Getting this wrong wipes someone's loved list on a re-scan.
 
+3b. **Room migrations are additive; never destructive.** Same reasoning as 3 --
+   `fallbackToDestructiveMigration()` would drop loved flags and play counts on
+   every schema bump. Bump `version`, write a `MIGRATION_n_m`, add it to
+   `addMigrations(...)`. Only the *downgrade* fallback is allowed.
+
 4. **Never download a whole file to read tags.** Ranged-read the first 1 MB.
    For M4A, if no `moov` atom is in the head, re-read the *last* 512 KB — on a
    non-faststart file the metadata is at the end.
@@ -171,6 +176,8 @@ resumable Drive upload with cached folder IDs.
 | Playback dies partway through a track | Auth stamped once instead of per request |
 | A third of the AAC library untagged | `moov` atom at end of file; needs the tail-range fallback |
 | Blank covers on the head unit | PNG `APIC` — re-encode all covers to JPEG |
+| Artist avatars blank | Tags carry no artist photo — `ArtistPhotoWorker` pulls them from Deezer (`api.deezer.com/search/artist`, no key). Only a `Ids.normalise`-exact name match is accepted; a wrong face is worse than none |
+| An artist is re-searched every launch | `artworkAttemptedAt` not stamped — it must be written on failure too, not just success |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
 | `Cannot access class X. Check your module classpath` | A public signature in a dependency module exposes a type from one of ITS `implementation` deps — declare an explicit return type, or promote to `api` |

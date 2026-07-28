@@ -188,6 +188,8 @@ data class TrackListItem(
 data class ShuffleRow(val id: Long, val loved: Boolean, val skipCount: Int, val lastPlayedAt: Long?)
 data class RevisionRow(val id: Long, val remoteId: String, val remoteRevision: String?)
 
+data class ArtistPhotoRow(val id: Long, val name: String)
+
 data class ArtistListItem(
     val id: Long,
     val name: String,
@@ -251,6 +253,22 @@ interface ArtistDao {
 
     @RawQuery(observedEntities = [ArtistEntity::class])
     fun pagedListItemsRaw(query: SupportSQLiteQuery): PagingSource<Int, ArtistListItem>
+
+    /** Artists with no photo that have not been looked up yet. */
+    @Query("""
+        SELECT id, name FROM artists
+        WHERE artworkId IS NULL AND artworkAttemptedAt IS NULL
+        ORDER BY trackCount DESC
+        LIMIT :limit
+    """)
+    suspend fun artistsNeedingPhotos(limit: Int): List<ArtistPhotoRow>
+
+    @Query("UPDATE artists SET artworkId = :artworkId, artworkAttemptedAt = :at WHERE id = :id")
+    suspend fun setArtwork(id: Long, artworkId: String?, at: Long)
+
+    /** Marks a lookup as done even when nothing was found, so it is not repeated. */
+    @Query("UPDATE artists SET artworkAttemptedAt = :at WHERE id IN (:ids)")
+    suspend fun markPhotoAttempted(ids: List<Long>, at: Long)
 
     @Query("DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artistId FROM tracks)")
     suspend fun pruneOrphans()
