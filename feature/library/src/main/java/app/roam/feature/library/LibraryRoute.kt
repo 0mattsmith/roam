@@ -103,12 +103,15 @@ private fun TrackRow(track: TrackListItem, isCurrent: Boolean, onClick: () -> Un
         },
         leadingContent = {
             val ctx = LocalContext.current
-            if (track.artworkId != null) {
+            // Captured locally: Kotlin will not smart-cast a property declared
+            // in another module, because it cannot prove the getter is stable.
+            val artworkId = track.artworkId
+            if (artworkId != null) {
                 AsyncImage(
                     // content:// rather than a bitmap. Same URI the car will
                     // use -- Android Auto cannot take bitmaps, and this keeps
                     // both surfaces on one path.
-                    model = ArtworkProvider.uri(ctx, track.artworkId, size = 320),
+                    model = ArtworkProvider.uri(ctx, artworkId, size = 320),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier

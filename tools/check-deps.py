@@ -104,6 +104,51 @@ def leaked_supertypes(module: str, imports: set[str], gradle: str) -> set[str]:
                             )
     return found
 
+SMART_CAST = re.compile(r"if\s*\(\s*(\w+)\.(\w+)\s*!=\s*null\s*\)")
+NULLABLE_PROP = re.compile(r"\s*(?:val|var)\s+(\w+)\s*:\s*[\w<>, ]+\?")
+
+
+def cross_module_nullables() -> set[str]:
+    """Nullable properties declared in :core:* and :data:* modules."""
+    found: set[str] = set()
+    for pattern in ("core/*/src/**/*.kt", "data/*/src/**/*.kt"):
+        for kt in glob.glob(pattern, recursive=True):
+            with open(kt, encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    m = NULLABLE_PROP.match(line)
+                    if m:
+                        found.add(m.group(1))
+    return found
+
+
+def smart_cast_problems(nullables: set[str]) -> dict[str, set[str]]:
+    """
+    Kotlin refuses to smart-cast a property declared in another module: it
+    cannot prove the getter is stable. `if (x.p != null) use(x.p)` compiles
+    inside the declaring module and fails outside it, with an error that reads
+    like a type problem rather than a module-boundary one. Capture to a local.
+    """
+    problems: dict[str, set[str]] = collections.defaultdict(set)
+    for pattern in ("feature/*/src/**/*.kt", "app/src/**/*.kt"):
+        for kt in glob.glob(pattern, recursive=True):
+            with open(kt, encoding="utf-8", errors="ignore") as fh:
+                lines = fh.read().split("\n")
+            for i, line in enumerate(lines):
+                m = SMART_CAST.search(line)
+                if not m:
+                    continue
+                receiver, prop = m.groups()
+                if prop not in nullables:
+                    continue
+                body = "\n".join(lines[i + 1 : i + 15])
+                if re.search(rf"\b{receiver}\.{prop}\b", body):
+                    problems[kt].add(
+                        f"line {i + 1}: {receiver}.{prop} is smart-cast across a module "
+                        f"boundary -- capture it to a local val"
+                    )
+    return problems
+
+
 IMPORT = re.compile(r"\s*import\s+([\w.]+)")
 
 
@@ -144,10 +189,13 @@ def main() -> int:
 
         problems[module] |= leaked_supertypes(module, found, gradle)
 
+    for path, issues in smart_cast_problems(cross_module_nullables()).items():
+        problems[path] |= issues
+
     problems = {m: v for m, v in problems.items() if v}
 
     if not problems:
-        print("check-deps: no missing dependencies or leaked supertypes detected")
+        print("check-deps: no dependency, supertype or smart-cast problems detected")
         return 0
 
     print("check-deps: possible problems\n")
