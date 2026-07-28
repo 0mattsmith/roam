@@ -18,7 +18,13 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,6 +39,9 @@ class DriveSourceProvider @Inject constructor(
 
     override val sourceId: String = SOURCE_ID
     override val capabilities = setOf(Capability.DELTA_SYNC, Capability.RANDOM_ACCESS, Capability.WRITE)
+
+    /** "<parentId>/<name>" -> folder id. Drive folder ids are stable. */
+    private val folderIds = ConcurrentHashMap<String, String>()
 
     /**
      * Breadth-first crawl. The field mask is deliberately tight -- the default
@@ -112,9 +121,100 @@ class DriveSourceProvider @Inject constructor(
             range = "bytes=$offset-${offset + length - 1}",
         ).bytes()
 
-    override suspend fun write(pathSegments: List<String>, fileName: String, file: File): String {
-        TODO("Phase 4: resolve-or-create folders (cache the ids), then resumable upload")
+    override suspend fun read(remoteId: String): ByteArray = api.download(remoteId).bytes()
+
+    /**
+     * One files.list per missing level, then cached for the process lifetime.
+     * The artist-photo pass resolves a folder to look for artist.jpg and then
+     * reuses the same id to upload one, so caching halves the request count.
+     */
+    override suspend fun resolveFolder(
+        root: String,
+        pathSegments: List<String>,
+        create: Boolean,
+    ): String? {
+        var parent = root
+        for (segment in pathSegments) {
+            val key = "$parent/$segment"
+            val cached = folderIds[key]
+            if (cached != null) {
+                parent = cached
+                continue
+            }
+            val existing = api.list(
+                q = "'$parent' in parents and mimeType = '$FOLDER_MIME' " +
+                    "and name = '${escape(segment)}' and trashed = false",
+                fields = FIELD_MASK,
+                pageSize = 10,
+                pageToken = null,
+            ).files.firstOrNull()
+
+            val existingId = existing?.id
+            val id = when {
+                existingId != null -> existingId
+                create -> api.create(NewFile(segment, FOLDER_MIME, listOf(parent))).id
+                else -> return null
+            }
+            folderIds[key] = id
+            parent = id
+        }
+        return parent
     }
+
+    /**
+     * Asks for the folder's images and matches the name locally, because
+     * Drive's `name =` is case-sensitive and real libraries contain both
+     * `folder.jpg` and `Folder.jpg`. Same single request either way.
+     */
+    override suspend fun findInFolder(folderId: String, names: List<String>): RemoteFile? {
+        val wanted = names.map { it.lowercase() }.toSet()
+        return api.list(
+            q = "'$folderId' in parents and mimeType contains 'image/' and trashed = false",
+            fields = FIELD_MASK,
+            pageSize = 50,
+            pageToken = null,
+        ).files
+            .firstOrNull { it.name.lowercase() in wanted }
+            ?.toRemoteFile(emptyList())
+    }
+
+    override suspend fun write(
+        root: String,
+        pathSegments: List<String>,
+        fileName: String,
+        file: File,
+    ): String {
+        val parent = resolveFolder(root, pathSegments, create = true)
+            ?: error("could not resolve ${pathSegments.joinToString("/")}")
+
+        val body = MultipartBody.Builder()
+            .setType("multipart/related".toMediaType())
+            .addPart(
+                // The explicit serializer is the member overload, stable since
+                // 1.0. The reified form is an extension that has moved between
+                // releases and would need an import that comes and goes.
+                Json.encodeToString(NewFile.serializer(), NewFile(fileName, parents = listOf(parent)))
+                    .toRequestBody("application/json; charset=UTF-8".toMediaType())
+            )
+            .addPart(file.asRequestBody(mimeFor(fileName).toMediaType()))
+            .build()
+
+        return api.upload(body).id
+    }
+
+    /**
+     * Drive query strings are single-quoted, so a name like "Guns N' Roses"
+     * breaks the query unless both the backslash and the quote are escaped --
+     * backslash first, or the escapes escape each other.
+     */
+    private fun escape(s: String): String = s.replace("\\", "\\\\").replace("'", "\\'")
+
+    private fun mimeFor(fileName: String): String =
+        when (fileName.substringAfterLast('.', "").lowercase()) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            else -> "application/octet-stream"
+        }
 
     companion object {
         const val SOURCE_ID = "drive"

@@ -123,6 +123,14 @@ fun SettingsRoute(
                     checked = state.syncOnLaunch,
                     onChange = vm::setSyncOnLaunch,
                 )
+
+                SwitchRow(
+                    title = "Save artist photos to Drive",
+                    subtitle = "Writes artist.jpg into each artist folder so photos " +
+                        "survive a reinstall. Never replaces one you added yourself.",
+                    checked = state.saveArtistPhotos,
+                    onChange = vm::setSaveArtistPhotos,
+                )
             }
 
             state.message?.let {

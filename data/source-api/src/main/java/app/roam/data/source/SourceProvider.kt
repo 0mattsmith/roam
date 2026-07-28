@@ -53,6 +53,21 @@ interface SourceProvider {
      */
     suspend fun readRange(remoteId: String, offset: Long, length: Long): ByteArray
 
+    /** Whole-file read. Small assets only -- artwork, never audio. */
+    suspend fun read(remoteId: String): ByteArray
+
+    /**
+     * Resolve a folder path below [root], optionally creating missing levels.
+     * Returns null when a level is absent and [create] is false.
+     *
+     * Implementations are expected to cache: this is called once per artist
+     * and the same ids are then reused for the write.
+     */
+    suspend fun resolveFolder(root: String, pathSegments: List<String>, create: Boolean = false): String?
+
+    /** First non-folder child of [folderId] matching any of [names]. */
+    suspend fun findInFolder(folderId: String, names: List<String>): RemoteFile?
+
     /** Create folders as needed and upload. Returns the new remote id. */
-    suspend fun write(pathSegments: List<String>, fileName: String, file: File): String
+    suspend fun write(root: String, pathSegments: List<String>, fileName: String, file: File): String
 }

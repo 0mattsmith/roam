@@ -44,6 +44,7 @@ data class SettingsUiState(
 
     val syncOnLaunch: Boolean = true,
     val autoCheckUpdates: Boolean = true,
+    val saveArtistPhotos: Boolean = true,
     val confirmDisconnect: Boolean = false,
 )
 
@@ -101,7 +102,11 @@ class SettingsViewModel @Inject constructor(
         // rather than throwing a consent dialog at someone who just opened
         // Settings to change the cache size.
         _state.update {
-            it.copy(syncOnLaunch = saved.syncOnLaunch, autoCheckUpdates = saved.autoCheckUpdates)
+            it.copy(
+                syncOnLaunch = saved.syncOnLaunch,
+                autoCheckUpdates = saved.autoCheckUpdates,
+                saveArtistPhotos = saved.saveArtistPhotosToDrive,
+            )
         }
 
         if (auth.authorize() is DriveAuth.Outcome.Granted) {
@@ -225,6 +230,11 @@ class SettingsViewModel @Inject constructor(
         settings.setAutoCheckUpdates(v)
     }
 
+    fun setSaveArtistPhotos(v: Boolean) = viewModelScope.launch {
+        _state.update { it.copy(saveArtistPhotos = v) }
+        settings.setSaveArtistPhotosToDrive(v)
+    }
+
     fun askDisconnect(show: Boolean) {
         _state.update { it.copy(confirmDisconnect = show) }
     }
@@ -247,6 +257,7 @@ class SettingsViewModel @Inject constructor(
                 installedVersion = it.installedVersion,
                 syncOnLaunch = it.syncOnLaunch,
                 autoCheckUpdates = it.autoCheckUpdates,
+                saveArtistPhotos = it.saveArtistPhotos,
                 message = "Disconnected. Library cleared.",
             )
         }

@@ -102,6 +102,14 @@ other — route between them through `:app`.
    invisible to every installed copy of Roam. Do not add a prerelease path
    back into `UpdateChecker`.
 
+6c. **Artist photos: source first, Deezer second, local always.** Order is
+   `artist.jpg`/`folder.jpg` in the artist's folder, then Deezer, whose result
+   is written back as `artist.jpg` so the lookup happens once per artist ever.
+   The render path is always the local `ArtworkStore` -- reading artwork from
+   the source at browse time would break invariant 1. Roam writes into the
+   user's library folder here, so it never overwrites and it never creates a
+   folder, and the whole behaviour is a Settings switch.
+
 7. **IDs are content-derived** (`Ids.album`, `Ids.track` in `:core:model`), not
    autoincrement. A file that moves in Drive keeps its identity and its loved
    flag. Re-sync must be idempotent.
@@ -176,6 +184,8 @@ resumable Drive upload with cached folder IDs.
 | Playback dies partway through a track | Auth stamped once instead of per request |
 | A third of the AAC library untagged | `moov` atom at end of file; needs the tail-range fallback |
 | Blank covers on the head unit | PNG `APIC` — re-encode all covers to JPEG |
+| Roam created stray folders in the music library | `resolveFolder(create = true)` where the artist tag name did not match a folder. The photo pass resolves with `create = false` and skips when absent |
+| A hand-placed artist photo keeps getting replaced | Precedence inverted — `artist.jpg` on the source must beat Deezer, and an existing file is never overwritten |
 | Artist avatars blank | Tags carry no artist photo — `ArtistPhotoWorker` pulls them from Deezer (`api.deezer.com/search/artist`, no key). Only a `Ids.normalise`-exact name match is accepted; a wrong face is worse than none |
 | An artist is re-searched every launch | `artworkAttemptedAt` not stamped — it must be written on failure too, not just success |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |

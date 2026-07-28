@@ -37,6 +37,13 @@ data class RoamSettings(
     val autoCheckUpdates: Boolean = true,
     /** Look for new music on the source each time the app opens. */
     val syncOnLaunch: Boolean = true,
+    /**
+     * Write artist photos back to the source as artist.jpg, so they survive a
+     * reinstall and can be overridden by hand. Roam never overwrites a file
+     * that is already there, but this is still Roam writing into the user's
+     * own library folder, so it stays visible and reversible.
+     */
+    val saveArtistPhotosToDrive: Boolean = true,
     /** Version found by the last launch-time check, if any. */
     val updateAvailable: String? = null,
 )
@@ -68,6 +75,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val TEMPLATE = stringPreferencesKey("filename_template")
         val AUTO_UPDATE = booleanPreferencesKey("auto_check_updates")
         val SYNC_ON_LAUNCH = booleanPreferencesKey("sync_on_launch")
+        val SAVE_ARTIST_PHOTOS = booleanPreferencesKey("save_artist_photos_to_drive")
         val UPDATE_AVAILABLE = stringPreferencesKey("update_available")
     }
 
@@ -91,6 +99,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             filenameTemplate = p[K.TEMPLATE] ?: "{track} {title} - {artist}",
             autoCheckUpdates = p[K.AUTO_UPDATE] ?: true,
             syncOnLaunch = p[K.SYNC_ON_LAUNCH] ?: true,
+            saveArtistPhotosToDrive = p[K.SAVE_ARTIST_PHOTOS] ?: true,
             updateAvailable = p[K.UPDATE_AVAILABLE],
         )
     }
@@ -146,6 +155,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
 
     suspend fun setAutoCheckUpdates(v: Boolean) {
         ctx.dataStore.edit { it[K.AUTO_UPDATE] = v }
+    }
+
+    suspend fun setSaveArtistPhotosToDrive(v: Boolean) {
+        ctx.dataStore.edit { it[K.SAVE_ARTIST_PHOTOS] = v }
     }
 }
 
