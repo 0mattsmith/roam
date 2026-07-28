@@ -1,31 +1,44 @@
 package app.roam.feature.library
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.draw.clip
-import coil.compose.AsyncImage
-import app.roam.data.catalog.artwork.ArtworkProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import app.roam.core.database.AlbumListItem
+import app.roam.core.database.ArtistListItem
 import app.roam.core.database.TrackListItem
+import app.roam.core.model.AlbumSort
+import app.roam.core.model.ArtistSort
+import app.roam.core.model.LibraryTab
+import app.roam.core.model.TrackSort
+import app.roam.data.catalog.artwork.ArtworkProvider
+import coil.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,14 +48,26 @@ fun LibraryRoute(
     onOpenDownloader: () -> Unit,
     vm: LibraryViewModel = hiltViewModel(),
 ) {
-    val tracks = vm.pagedTracks.collectAsLazyPagingItems()
+    val state by vm.state.collectAsStateWithLifecycle()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
+
+    // Back closes a drill-down before it leaves the screen. enabled = false when
+    // there is nothing to close, so the system handles it normally.
+    BackHandler(enabled = state.drillTitle != null) { vm.closeDrill() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Roam") },
+                title = { Text(state.drillTitle ?: "Roam") },
+                navigationIcon = {
+                    if (state.drillTitle != null) {
+                        IconButton(onClick = { vm.closeDrill() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
                 actions = {
+                    SortMenu(state, vm)
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
@@ -62,27 +87,152 @@ fun LibraryRoute(
             }
         },
     ) { padding ->
-        if (tracks.itemCount == 0) {
-            EmptyLibrary(onOpenSettings, Modifier.padding(padding))
-        } else {
-            LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-                items(
-                    count = tracks.itemCount,
-                    key = tracks.itemKey { it.id },
-                ) { index ->
-                    tracks[index]?.let { track ->
-                        TrackRow(track, isCurrent = track.title == nowPlaying.title) {
-                            vm.playFrom(track)
-                        }
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            // Tabs are hidden inside a drill-down: the list is no longer "all
+            // tracks", so a highlighted Tracks tab would be a lie.
+            if (state.drillTitle == null) {
+                PrimaryTabRow(selectedTabIndex = state.tab.ordinal) {
+                    LibraryTab.entries.forEach { tab ->
+                        Tab(
+                            selected = state.tab == tab,
+                            onClick = { vm.selectTab(tab) },
+                            text = { Text(tab.label) },
+                        )
                     }
                 }
+            }
+
+            when {
+                state.drillTitle != null -> TrackList(vm)
+                state.tab == LibraryTab.TRACKS -> TrackList(vm)
+                state.tab == LibraryTab.ARTISTS -> ArtistList(vm)
+                state.tab == LibraryTab.ALBUMS -> AlbumList(vm)
+                else -> PlaylistList(vm)
             }
         }
     }
 }
 
 @Composable
-private fun TrackRow(track: TrackListItem, isCurrent: Boolean, onClick: () -> Unit) {
+private fun SortMenu(state: LibraryUiState, vm: LibraryViewModel) {
+    var open by remember { mutableStateOf(false) }
+
+    // Playlists is a fixed list of one; nothing to order.
+    if (state.tab == LibraryTab.PLAYLISTS && state.drillTitle == null) return
+
+    IconButton(onClick = { open = true }) {
+        Icon(Icons.Filled.Sort, contentDescription = "Sort")
+    }
+    DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        val showTrackSorts = state.drillTitle != null || state.tab == LibraryTab.TRACKS
+        when {
+            showTrackSorts -> TrackSort.entries.forEach { sort ->
+                SortItem(sort.label, state.trackSort == sort) { vm.setTrackSort(sort); open = false }
+            }
+            state.tab == LibraryTab.ARTISTS -> ArtistSort.entries.forEach { sort ->
+                SortItem(sort.label, state.artistSort == sort) { vm.setArtistSort(sort); open = false }
+            }
+            state.tab == LibraryTab.ALBUMS -> AlbumSort.entries.forEach { sort ->
+                SortItem(sort.label, state.albumSort == sort) { vm.setAlbumSort(sort); open = false }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SortItem(label: String, selected: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        onClick = onClick,
+        leadingIcon = {
+            RadioButton(selected = selected, onClick = null)
+        },
+    )
+}
+
+@Composable
+private fun TrackList(vm: LibraryViewModel) {
+    val tracks = vm.pagedTracks.collectAsLazyPagingItems()
+    val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
+
+    if (tracks.itemCount == 0) {
+        EmptyState("No tracks here yet")
+        return
+    }
+
+    LazyColumn(Modifier.fillMaxSize()) {
+        items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
+            tracks[index]?.let { track ->
+                TrackRow(
+                    track = track,
+                    isCurrent = track.title == nowPlaying.title,
+                    onClick = { vm.playFrom(track) },
+                    onToggleLoved = { vm.toggleLoved(track) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArtistList(vm: LibraryViewModel) {
+    val artists = vm.pagedArtists.collectAsLazyPagingItems()
+    if (artists.itemCount == 0) { EmptyState("No artists yet"); return }
+
+    LazyColumn(Modifier.fillMaxSize()) {
+        items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
+            artists[index]?.let { artist -> ArtistRow(artist) { vm.openArtist(artist.id, artist.name) } }
+        }
+    }
+}
+
+@Composable
+private fun AlbumList(vm: LibraryViewModel) {
+    val albums = vm.pagedAlbums.collectAsLazyPagingItems()
+    if (albums.itemCount == 0) { EmptyState("No albums yet"); return }
+
+    LazyColumn(Modifier.fillMaxSize()) {
+        items(count = albums.itemCount, key = albums.itemKey { it.id }) { index ->
+            albums[index]?.let { album -> AlbumRow(album) { vm.openAlbum(album.id, album.title) } }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistList(vm: LibraryViewModel) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            ListItem(
+                modifier = Modifier.clickable { vm.openLoved() },
+                headlineContent = { Text("Loved") },
+                supportingContent = { Text("Tracks you have hearted") },
+                leadingContent = {
+                    Icon(
+                        Icons.Filled.Favorite,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
+            )
+        }
+        item {
+            ListItem(
+                headlineContent = {
+                    Text("Custom playlists", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                },
+                supportingContent = { Text("Coming in a later phase") },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrackRow(
+    track: TrackListItem,
+    isCurrent: Boolean,
+    onClick: () -> Unit,
+    onToggleLoved: () -> Unit,
+) {
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
         headlineContent = {
@@ -101,32 +251,66 @@ private fun TrackRow(track: TrackListItem, isCurrent: Boolean, onClick: () -> Un
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        leadingContent = {
-            val ctx = LocalContext.current
-            // Captured locally: Kotlin will not smart-cast a property declared
-            // in another module, because it cannot prove the getter is stable.
-            val artworkId = track.artworkId
-            if (artworkId != null) {
-                AsyncImage(
-                    // content:// rather than a bitmap. Same URI the car will
-                    // use -- Android Auto cannot take bitmaps, and this keeps
-                    // both surfaces on one path.
-                    model = ArtworkProvider.uri(ctx, artworkId, size = 320),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(MaterialTheme.shapes.small),
+        leadingContent = { Artwork(track.artworkId) },
+        trailingContent = {
+            IconButton(onClick = onToggleLoved) {
+                Icon(
+                    if (track.loved) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = if (track.loved) "Remove from Loved" else "Add to Loved",
+                    tint = if (track.loved) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            } else {
-                Surface(
-                    Modifier.size(44.dp),
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                ) {}
             }
         },
     )
+}
+
+@Composable
+private fun ArtistRow(artist: ArtistListItem, onClick: () -> Unit) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        headlineContent = { Text(artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = {
+            Text("${artist.albumCount} albums · ${artist.trackCount} tracks")
+        },
+        leadingContent = { Artwork(artist.artworkId, circular = true) },
+    )
+}
+
+@Composable
+private fun AlbumRow(album: AlbumListItem, onClick: () -> Unit) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        headlineContent = { Text(album.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = {
+            val year = album.year?.let { " · $it" }.orEmpty()
+            Text("${album.artistName}$year · ${album.trackCount} tracks",
+                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+        leadingContent = { Artwork(album.artworkId) },
+    )
+}
+
+@Composable
+private fun Artwork(artworkId: String?, circular: Boolean = false) {
+    val ctx = LocalContext.current
+    val shape = if (circular) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.small
+
+    // Captured locally: Kotlin will not smart-cast a property declared in
+    // another module, because it cannot prove the getter is stable.
+    val id = artworkId
+    if (id != null) {
+        AsyncImage(
+            // content:// rather than a bitmap. The same URI the car will use --
+            // Android Auto cannot take bitmaps, so both surfaces share one path.
+            model = ArtworkProvider.uri(ctx, id, size = 320),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(44.dp).clip(shape),
+        )
+    } else {
+        Surface(Modifier.size(44.dp), shape = shape, color = MaterialTheme.colorScheme.surfaceVariant) {}
+    }
 }
 
 @Composable
@@ -140,7 +324,8 @@ private fun MiniPlayer(
 ) {
     Surface(tonalElevation = 3.dp) {
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onExpand).padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().clickable(onClick = onExpand)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -164,20 +349,18 @@ private fun MiniPlayer(
 }
 
 @Composable
-private fun EmptyLibrary(onOpenSettings: () -> Unit, modifier: Modifier = Modifier) {
+private fun EmptyState(message: String) {
     Column(
-        modifier.fillMaxSize().padding(32.dp),
+        Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("No music yet", style = MaterialTheme.typography.headlineSmall)
+        Text(message, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Connect Google Drive and refresh your library.",
+            "Connect Google Drive in settings, then refresh your library.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(20.dp))
-        Button(onClick = onOpenSettings) { Text("Open settings") }
     }
 }

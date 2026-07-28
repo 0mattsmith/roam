@@ -6,6 +6,7 @@ import android.os.Build
 import app.roam.core.datastore.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
@@ -39,6 +40,12 @@ class UpdateRepository @Inject constructor(
     private val _dismissed = MutableStateFlow(false)
     val dismissed: StateFlow<Boolean> = _dismissed.asStateFlow()
 
+    /** Which version the user waved away, so re-checking the same one respects it. */
+    private var dismissedVersion: String? = null
+
+    /** Guards against re-checking on every single return to the foreground. */
+    private var lastCheckedAt = 0L
+
     val installedVersionName: String
         get() = ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName.orEmpty()
 
@@ -51,8 +58,16 @@ class UpdateRepository @Inject constructor(
     /** Returns null when already current. Throws only for genuine failures. */
     suspend fun check(): AvailableUpdate? {
         val found = checker.check(installedVersionCode, installer.preferredAbi())
+        lastCheckedAt = System.currentTimeMillis()
         _available.value = found
-        if (found != null) _dismissed.value = false      // a new build un-dismisses
+
+        // Only a version the user has NOT already dismissed should re-open the
+        // banner. Un-dismissing on every check would mean closing it, switching
+        // apps, and finding it back again on return.
+        if (found != null && found.versionName != dismissedVersion) {
+            _dismissed.value = false
+        }
+
         settings.setUpdateAvailable(found?.versionName)
         return found
     }
@@ -62,8 +77,20 @@ class UpdateRepository @Inject constructor(
         runCatching { check() }
     }
 
+    /**
+     * For returning to the foreground. Throttled because a resume happens every
+     * time the user glances at a notification, and the unauthenticated GitHub
+     * API allows 60 requests an hour.
+     */
+    suspend fun checkOnResume() {
+        if (!settings.settings.first().autoCheckUpdates) return
+        if (System.currentTimeMillis() - lastCheckedAt < RESUME_CHECK_INTERVAL_MS) return
+        checkQuietly()
+    }
+
     fun dismiss() {
         _dismissed.value = true
+        dismissedVersion = _available.value?.versionName
     }
 
     fun clearMessage() {
@@ -90,5 +117,10 @@ class UpdateRepository @Inject constructor(
             _downloadPercent.value = null
             _message.value = "Update failed: ${e.message}"
         }
+    }
+
+    private companion object {
+        /** Long enough that flicking between apps costs nothing. */
+        const val RESUME_CHECK_INTERVAL_MS = 15L * 60 * 1000
     }
 }

@@ -8,6 +8,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.roam.core.database.TrackListItem
+import app.roam.data.catalog.artwork.ArtworkProvider
 import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,8 +20,14 @@ import javax.inject.Singleton
 data class NowPlaying(
     val title: String = "",
     val artist: String = "",
+    val album: String = "",
+    val artworkUri: String? = null,
     val isPlaying: Boolean = false,
     val hasItem: Boolean = false,
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+    val shuffleEnabled: Boolean = false,
+    val repeatMode: Int = Player.REPEAT_MODE_OFF,
 )
 
 /**
@@ -72,7 +79,7 @@ class PlayerController @Inject constructor(
      */
     fun play(tracks: List<TrackListItem>, startIndex: Int) {
         val c = controller ?: return
-        c.setMediaItems(tracks.map { it.toMediaItem() }, startIndex, 0L)
+        c.setMediaItems(tracks.map { it.toMediaItem(ctx) }, startIndex, 0L)
         c.prepare()
         c.play()
     }
@@ -83,20 +90,60 @@ class PlayerController @Inject constructor(
     }
 
     fun next() { controller?.seekToNextMediaItem() }
-    fun previous() { controller?.seekToPreviousMediaItem() }
+
+    /**
+     * Restart the track if we are more than a few seconds in, otherwise go
+     * back one. Matches what every other player does, and stops a mistimed
+     * tap skipping a song you were enjoying.
+     */
+    fun previous() {
+        val c = controller ?: return
+        if (c.currentPosition > RESTART_THRESHOLD_MS) c.seekTo(0) else c.seekToPreviousMediaItem()
+    }
+
+    fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
+
+    fun toggleShuffle() {
+        val c = controller ?: return
+        c.shuffleModeEnabled = !c.shuffleModeEnabled
+    }
+
+    /** Cycles off -> all -> one, the order people expect from the icon. */
+    fun cycleRepeat() {
+        val c = controller ?: return
+        c.repeatMode = when (c.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+
+    /** Position does not emit events, so the UI needs a tick while playing. */
+    fun refreshPosition() {
+        controller?.let { publish(it) }
+    }
 
     private fun publish(player: Player) {
         val meta = player.currentMediaItem?.mediaMetadata
         _nowPlaying.value = NowPlaying(
             title = meta?.title?.toString().orEmpty(),
             artist = meta?.artist?.toString().orEmpty(),
+            album = meta?.albumTitle?.toString().orEmpty(),
+            artworkUri = meta?.artworkUri?.toString(),
             isPlaying = player.isPlaying,
             hasItem = player.currentMediaItem != null,
+            positionMs = player.currentPosition.coerceAtLeast(0),
+            // Duration is C.TIME_UNSET until the track is prepared.
+            durationMs = player.duration.takeIf { it > 0 } ?: 0,
+            shuffleEnabled = player.shuffleModeEnabled,
+            repeatMode = player.repeatMode,
         )
     }
+
+    private companion object { const val RESTART_THRESHOLD_MS = 3_000L }
 }
 
-fun TrackListItem.toMediaItem(): MediaItem = MediaItem.Builder()
+fun TrackListItem.toMediaItem(ctx: Context): MediaItem = MediaItem.Builder()
     .setMediaId(id.toString())
     .setUri("drive://file/$remoteId")
     .setMediaMetadata(
@@ -105,6 +152,9 @@ fun TrackListItem.toMediaItem(): MediaItem = MediaItem.Builder()
             .setArtist(artistName)
             .setAlbumTitle(albumTitle)
             .setTrackNumber(trackNo ?: 0)
+            // content:// rather than a bitmap: Android Auto refuses bitmaps and
+            // they blow the Binder limit, so both surfaces use the same URI.
+            .setArtworkUri(artworkId?.let { ArtworkProvider.uri(ctx, it, size = 640) })
             .setIsBrowsable(false)
             .setIsPlayable(true)
             .build()

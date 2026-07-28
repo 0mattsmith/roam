@@ -1,9 +1,11 @@
 package app.roam.core.database
 
 import androidx.paging.PagingSource
+import androidx.sqlite.db.SupportSQLiteQuery
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
+import androidx.room.RawQuery
 import androidx.room.Query
 import androidx.room.Upsert
 import app.roam.core.model.TagState
@@ -45,6 +47,20 @@ interface TrackDao {
         ORDER BY ar.sortName, al.sortTitle, t.discNo, t.trackNo, t.title
     """)
     fun pagedListItems(): PagingSource<Int, TrackListItem>
+
+    /**
+     * Sorted and optionally filtered listing.
+     *
+     * RawQuery because Room cannot parameterise ORDER BY, and writing one
+     * @Query per sort order across three tabs is a dozen near-identical
+     * queries. The ORDER BY text comes from the TrackSort enum, never from
+     * anything a user can type.
+     */
+    @RawQuery(observedEntities = [TrackEntity::class, AlbumEntity::class, ArtistEntity::class])
+    fun pagedListItemsRaw(query: SupportSQLiteQuery): PagingSource<Int, TrackListItem>
+
+    @RawQuery(observedEntities = [TrackEntity::class, AlbumEntity::class, ArtistEntity::class])
+    suspend fun listItemsRaw(query: SupportSQLiteQuery): List<TrackListItem>
 
     /** Queue building: same order as the list, but ids and remote ids only. */
     @Query("""
@@ -172,6 +188,23 @@ data class TrackListItem(
 data class ShuffleRow(val id: Long, val loved: Boolean, val skipCount: Int, val lastPlayedAt: Long?)
 data class RevisionRow(val id: Long, val remoteId: String, val remoteRevision: String?)
 
+data class ArtistListItem(
+    val id: Long,
+    val name: String,
+    val albumCount: Int,
+    val trackCount: Int,
+    val artworkId: String?,
+)
+
+data class AlbumListItem(
+    val id: Long,
+    val title: String,
+    val artistName: String,
+    val year: Int?,
+    val trackCount: Int,
+    val artworkId: String?,
+)
+
 @Dao
 interface AlbumDao {
     @Upsert suspend fun upsert(albums: List<AlbumEntity>)
@@ -184,6 +217,9 @@ interface AlbumDao {
 
     @Query("SELECT * FROM albums ORDER BY sortTitle")
     fun pagedAll(): PagingSource<Int, AlbumEntity>
+
+    @RawQuery(observedEntities = [AlbumEntity::class, ArtistEntity::class])
+    fun pagedListItemsRaw(query: SupportSQLiteQuery): PagingSource<Int, AlbumListItem>
 
     @Query("SELECT * FROM albums ORDER BY addedAt DESC LIMIT :limit")
     suspend fun recentlyAdded(limit: Int): List<AlbumEntity>
@@ -212,6 +248,9 @@ interface ArtistDao {
 
     @Query("SELECT * FROM artists ORDER BY sortName")
     fun pagedAll(): PagingSource<Int, ArtistEntity>
+
+    @RawQuery(observedEntities = [ArtistEntity::class])
+    fun pagedListItemsRaw(query: SupportSQLiteQuery): PagingSource<Int, ArtistListItem>
 
     @Query("DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artistId FROM tracks)")
     suspend fun pruneOrphans()
