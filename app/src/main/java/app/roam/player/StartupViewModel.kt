@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.roam.core.datastore.SettingsRepository
 import app.roam.data.catalog.sync.SyncWorker
+import app.roam.data.catalog.tags.TagWorker
 import app.roam.update.UpdateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.first
@@ -43,6 +44,12 @@ class StartupViewModel @Inject constructor(
         if (saved.syncOnLaunch && folderId != null) {
             SyncWorker.enqueue(ctx, folderId)
         }
+
+        // Tag pass, independent of sync. SyncWorker chains it on success, but
+        // tying artwork to a successful crawl means a failing sync also means
+        // never seeing a cover. It is unique work with KEEP, so enqueueing it
+        // here is free when one is already running or nothing is pending.
+        TagWorker.enqueue(ctx)
 
         // Result lands in UpdateRepository, which the banner observes.
         if (saved.autoCheckUpdates) updates.checkQuietly()
