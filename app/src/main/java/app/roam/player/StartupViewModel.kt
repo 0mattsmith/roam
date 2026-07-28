@@ -36,10 +36,14 @@ class StartupViewModel @Inject constructor(
         val saved = settings.settings.first()
         val ctx = getApplication<Application>()
 
+        // Captured locally because Kotlin will not smart-cast a property
+        // declared in another module -- it cannot prove the getter is stable.
+        val folderId = saved.driveFolderId
+
         // A refresh is cheap once the catalogue exists -- unchanged files are a
         // hash-map lookup, so this is usually a few seconds of folder listing.
-        if (saved.syncOnLaunch && saved.driveFolderId != null) {
-            SyncWorker.enqueue(ctx, saved.driveFolderId)
+        if (saved.syncOnLaunch && folderId != null) {
+            SyncWorker.enqueue(ctx, folderId)
         }
 
         if (saved.autoCheckUpdates) {
