@@ -36,10 +36,21 @@
             android:name="com.google.android.gms.car.notification.SmallIcon"
             android:resource="@drawable/ic_roam_mono" />
 
+        <!--
+            singleTop, NOT singleTask. singleTask forces this activity to be the
+            root of its own task with clear-top semantics, so returning from an
+            external activity (the Google consent screen, the package installer)
+            can tear the task down and rebuild it -- taking the Compose
+            navigation back stack with it. The system Back button then has
+            nothing to pop and quits the app instead of going back a screen.
+
+            singleTop still prevents duplicate instances when the launcher or a
+            notification re-opens Roam, without touching task structure.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Roam">
             <intent-filter>
