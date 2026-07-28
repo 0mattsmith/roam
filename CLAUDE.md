@@ -108,7 +108,12 @@ other — route between them through `:app`.
    The render path is always the local `ArtworkStore` -- reading artwork from
    the source at browse time would break invariant 1. Roam writes into the
    user's library folder here, so it never overwrites and it never creates a
-   folder, and the whole behaviour is a Settings switch.
+   folder, and the whole behaviour is a Settings switch. The *manual* path
+   (`ArtistPhotoEditor`, long-press an artist) does replace an existing
+   `artist.jpg`, in place via `overwrite` rather than by uploading a second
+   one -- Drive allows duplicate names in a folder, so adding would make which
+   photo wins a matter of luck. That asymmetry is the point: automatic work is
+   cautious, work the user asked for is not.
 
 7. **IDs are content-derived** (`Ids.album`, `Ids.track` in `:core:model`), not
    autoincrement. A file that moves in Drive keeps its identity and its loved
@@ -191,6 +196,7 @@ resumable Drive upload with cached folder IDs.
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
 | `Cannot access class X. Check your module classpath` | A public signature in a dependency module exposes a type from one of ITS `implementation` deps — declare an explicit return type, or promote to `api` |
+| Artist photo saves to Photos do nothing | MediaStore `RELATIVE_PATH`/`IS_PENDING` are API 29+; the version check must *wrap* the call, not early-throw, or lint's NewApi fails `lintVitalRelease` |
 | MusicBrainz starts 503-ing | Exceeded 1 req/sec, or missing a real User-Agent |
 | Update never installs | Version compared as a string, or the signing key changed |
 | Two releases with the same versionCode | Updater ignores the newer one | `versionCode` is the commit count; never hand-edit it in CI |

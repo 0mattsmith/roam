@@ -1,7 +1,9 @@
 package app.roam.feature.library
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -15,6 +17,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,12 +53,22 @@ fun LibraryRoute(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
+    val photoMessage by vm.photoMessage.collectAsStateWithLifecycle()
 
     // Back closes a drill-down before it leaves the screen. enabled = false when
     // there is nothing to close, so the system handles it normally.
     BackHandler(enabled = state.drillTitle != null) { vm.closeDrill() }
 
+    val snackbars = remember { SnackbarHostState() }
+    LaunchedEffect(photoMessage) {
+        photoMessage?.let {
+            snackbars.showSnackbar(it)
+            vm.clearPhotoMessage()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbars) },
         topBar = {
             TopAppBar(
                 title = { Text(state.drillTitle ?: "Roam") },
@@ -177,12 +190,38 @@ private fun TrackList(vm: LibraryViewModel) {
 @Composable
 private fun ArtistList(vm: LibraryViewModel) {
     val artists = vm.pagedArtists.collectAsLazyPagingItems()
+
+    // Long-press target. Held here rather than in the ViewModel because it is
+    // pure view state -- it should not survive a rotation mid-gesture.
+    var sheetFor by remember { mutableStateOf<ArtistListItem?>(null) }
+    var viewing by remember { mutableStateOf<ArtistListItem?>(null) }
+
     if (artists.itemCount == 0) { EmptyState("No artists yet"); return }
 
     LazyColumn(Modifier.fillMaxSize()) {
         items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
-            artists[index]?.let { artist -> ArtistRow(artist) { vm.openArtist(artist.id, artist.name) } }
+            artists[index]?.let { artist ->
+                ArtistRow(
+                    artist = artist,
+                    onClick = { vm.openArtist(artist.id, artist.name) },
+                    onLongClick = { sheetFor = artist },
+                )
+            }
         }
+    }
+
+    sheetFor?.let { artist ->
+        ArtistPhotoSheet(
+            artist = artist,
+            onDismiss = { sheetFor = null },
+            onView = { sheetFor = null; viewing = artist },
+            onSave = { sheetFor = null; vm.saveArtistPhoto(artist) },
+            onPicked = { uri -> sheetFor = null; vm.setArtistPhoto(artist, uri) },
+        )
+    }
+
+    viewing?.let { artist ->
+        ArtistPhotoViewer(artist = artist, onDismiss = { viewing = null })
     }
 }
 
@@ -266,9 +305,14 @@ private fun TrackRow(
 }
 
 @Composable
-private fun ArtistRow(artist: ArtistListItem, onClick: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun ArtistRow(
+    artist: ArtistListItem,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
         headlineContent = { Text(artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
             Text("${artist.albumCount} albums · ${artist.trackCount} tracks")

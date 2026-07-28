@@ -70,4 +70,13 @@ interface SourceProvider {
 
     /** Create folders as needed and upload. Returns the new remote id. */
     suspend fun write(root: String, pathSegments: List<String>, fileName: String, file: File): String
+
+    /**
+     * Replace the contents of an existing file, keeping its id.
+     *
+     * Needed because most sources allow two files with the same name in one
+     * folder -- uploading a second artist.jpg would leave the folder with two
+     * of them and which one wins would be luck.
+     */
+    suspend fun overwrite(remoteId: String, file: File)
 }

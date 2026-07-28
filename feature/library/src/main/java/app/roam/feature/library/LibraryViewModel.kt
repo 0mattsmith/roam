@@ -13,7 +13,10 @@ import app.roam.core.model.AlbumSort
 import app.roam.core.model.ArtistSort
 import app.roam.core.model.LibraryTab
 import app.roam.core.model.TrackSort
+import android.net.Uri
+import app.roam.core.database.ArtistListItem
 import app.roam.data.catalog.LibraryQueries
+import app.roam.data.catalog.artwork.ArtistPhotoEditor
 import app.roam.feature.player.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -44,6 +47,7 @@ class LibraryViewModel @Inject constructor(
     private val albums: AlbumDao,
     private val artists: ArtistDao,
     private val player: PlayerController,
+    private val photos: ArtistPhotoEditor,
 ) : ViewModel() {
 
     private sealed interface Drill {
@@ -157,6 +161,33 @@ class LibraryViewModel @Inject constructor(
             loved = !track.loved,
             at = if (track.loved) null else System.currentTimeMillis(),
         )
+    }
+
+    // ---- artist photos ------------------------------------------------------
+
+    /**
+     * One-shot feedback for the long-press actions. Cleared by the screen once
+     * shown, so rotating does not replay the snackbar.
+     */
+    private val _photoMessage = MutableStateFlow<String?>(null)
+    val photoMessage: StateFlow<String?> = _photoMessage.asStateFlow()
+
+    fun saveArtistPhoto(artist: ArtistListItem) = viewModelScope.launch {
+        // Captured locally: Kotlin will not smart-cast a property declared in
+        // another module, because it cannot prove the getter is stable.
+        val artworkId = artist.artworkId ?: return@launch
+        _photoMessage.value = photos.saveToGallery(artworkId, artist.name)
+            .fold({ it }, { "Could not save: ${it.message}" })
+    }
+
+    fun setArtistPhoto(artist: ArtistListItem, picked: Uri) = viewModelScope.launch {
+        // The list redraws itself: the artists PagingSource observes the table.
+        _photoMessage.value = photos.setUserPhoto(artist.id, artist.name, picked)
+            .fold({ it }, { "Could not update: ${it.message}" })
+    }
+
+    fun clearPhotoMessage() {
+        _photoMessage.value = null
     }
 
     fun togglePlayPause() = player.togglePlayPause()

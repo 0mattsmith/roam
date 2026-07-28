@@ -45,7 +45,10 @@ jobs:
       - name: Assemble debug
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          # Created up front so a crash inside Gradle still leaves an artifact
+          # to download rather than "no artifacts found".
+          echo "== assembleDebug $(date -u +%FT%TZ) ==" > build.log
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee -a build.log
 
       # Informational while the app is a scaffold -- exported service/provider
       # and unused-resource warnings are expected. Compile errors above still
@@ -168,9 +171,20 @@ jobs:
           ROAM_VERSION_CODE: ${{ steps.ver.outputs.code }}
           ROAM_VERSION_NAME: ${{ steps.ver.outputs.name }}
         run: |
+          set -o pipefail
           if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then gradle wrapper --gradle-version 8.9; fi
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee release-build.log
+
+      # This job used to upload no log at all, so a release-only failure left
+      # nothing to read.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-log
+          path: release-build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Collect artifacts
         if: steps.signing.outputs.ready == 'true'

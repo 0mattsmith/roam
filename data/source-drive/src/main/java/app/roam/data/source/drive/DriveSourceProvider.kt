@@ -202,6 +202,10 @@ class DriveSourceProvider @Inject constructor(
         return api.upload(body).id
     }
 
+    override suspend fun overwrite(remoteId: String, file: File) {
+        api.updateMedia(remoteId, file.asRequestBody(mimeFor(file.name).toMediaType()))
+    }
+
     /**
      * Drive query strings are single-quoted, so a name like "Guns N' Roses"
      * breaks the query unless both the backslash and the quote are escaped --

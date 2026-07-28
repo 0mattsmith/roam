@@ -8,6 +8,7 @@ import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -92,6 +93,18 @@ interface DriveApi {
     suspend fun upload(
         @Body body: RequestBody,
         @Query("uploadType") uploadType: String = "multipart",
+        @Query("fields") fields: String = "id,name,mimeType",
+    ): DriveFile
+
+    /**
+     * Replace an existing file's bytes, keeping its id. Media-only, so the body
+     * is the raw file rather than a multipart envelope.
+     */
+    @PATCH("upload/drive/v3/files/{fileId}")
+    suspend fun updateMedia(
+        @Path("fileId") fileId: String,
+        @Body body: RequestBody,
+        @Query("uploadType") uploadType: String = "media",
         @Query("fields") fields: String = "id,name,mimeType",
     ): DriveFile
 }

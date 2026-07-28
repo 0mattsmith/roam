@@ -2,7 +2,8 @@ package app.roam.core.model
 
 enum class SourceType { DRIVE, SMB, WEBDAV }
 enum class TagState { PENDING, OK, FAILED, PATH_INFERRED }
-enum class ArtworkSource { EMBEDDED, FOLDER_JPG, COVER_ART_ARCHIVE, AUDIODB, DEEZER, ITUNES }
+/** Stored as its name, so new values need no migration. */
+enum class ArtworkSource { EMBEDDED, FOLDER_JPG, USER, COVER_ART_ARCHIVE, AUDIODB, DEEZER, ITUNES }
 
 /** How the user bounds the streaming cache. Two shapes over one evictor. */
 sealed interface CachePolicy {

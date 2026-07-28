@@ -246,6 +246,24 @@ Write-Step 'Build failed'
 
 $logPath = Join-Path (Get-Location) 'ci-failure.log'
 
+# Which step failed is on the API the moment the run ends -- no log archive, no
+# artifact, nothing to wait for. Always print it: when the failure is before the
+# Gradle step there IS no build.log, and without this the run looks silent.
+try {
+    $view = gh run view $runId --json jobs 2>$null | ConvertFrom-Json
+    foreach ($j in $view.jobs) {
+        if ($j.conclusion -ne 'failure') { continue }
+        $bad = @($j.steps | Where-Object { $_.conclusion -eq 'failure' } | ForEach-Object { $_.name })
+        if ($bad.Count) {
+            Write-Host "  job '$($j.name)' failed at: $($bad -join ', ')" -ForegroundColor Yellow
+        } else {
+            Write-Host "  job '$($j.name)' failed (no step marked)" -ForegroundColor Yellow
+        }
+    }
+} catch {
+    Write-Info "could not read job status: $($_.Exception.Message)"
+}
+
 # `gh run watch` returns the instant the run reports completion, but GitHub
 # finalises the log archive a few seconds later -- ask too early and
 # --log-failed comes back empty.

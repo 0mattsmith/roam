@@ -104,7 +104,7 @@ class ArtistPhotoWorker @AssistedInject constructor(
                 if (artworkId == null) {
                     val photo = runCatching { fetchFromDeezer(row.name) }.getOrNull()
                     if (photo != null) {
-                        artworkId = artwork.put(photo, ArtworkSource.DEEZER, maxEdge = ARTIST_EDGE)
+                        artworkId = artwork.put(photo, ArtworkSource.DEEZER)
                         if (artworkId != null) fromDeezer++
 
                         // Only when the folder already exists, so this can add a
@@ -136,9 +136,9 @@ class ArtistPhotoWorker @AssistedInject constructor(
 
     /** A photo already sitting in the artist's folder. Always wins. */
     private suspend fun fromFolder(provider: SourceProvider, folderId: String): String? {
-        val existing = provider.findInFolder(folderId, PHOTO_NAMES) ?: return null
+        val existing = provider.findInFolder(folderId, ArtistPhotos.NAMES) ?: return null
         val bytes = provider.read(existing.remoteId)
-        return artwork.put(bytes, ArtworkSource.FOLDER_JPG, maxEdge = ARTIST_EDGE)
+        return artwork.put(bytes, ArtworkSource.FOLDER_JPG)
     }
 
     private suspend fun upload(
@@ -150,7 +150,7 @@ class ArtistPhotoWorker @AssistedInject constructor(
         val tmp = File.createTempFile("artist", ".jpg", applicationContext.cacheDir)
         try {
             tmp.writeBytes(photo)
-            provider.write(root, listOf(artistName), UPLOAD_NAME, tmp)
+            provider.write(root, listOf(artistName), ArtistPhotos.UPLOAD_NAME, tmp)
         } finally {
             tmp.delete()
         }
@@ -210,14 +210,6 @@ class ArtistPhotoWorker @AssistedInject constructor(
 
         private const val BATCH = 40
         private const val REQUEST_GAP_MS = 250L
-        private const val UPLOAD_NAME = "artist.jpg"
-        private val PHOTO_NAMES = listOf("artist.jpg", "artist.jpeg", "artist.png", "folder.jpg")
-
-        /**
-         * Artist photos are only ever drawn as a 44dp avatar, so a 1000px
-         * master would be ~120KB per artist of pixels nothing reads.
-         */
-        private const val ARTIST_EDGE = 320
 
         fun enqueue(ctx: Context) {
             val request = OneTimeWorkRequestBuilder<ArtistPhotoWorker>()

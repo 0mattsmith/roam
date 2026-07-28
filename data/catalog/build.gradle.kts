@@ -30,7 +30,11 @@ dependencies {
     implementation(projects.core.common)
     implementation(projects.core.database)
     implementation(projects.core.datastore)
-    implementation(projects.data.sourceApi)
+    // api, not implementation: ArtistPhotoEditor's public constructor takes a
+    // Map<SourceType, Provider<SourceProvider>>, so any module that injects it
+    // must be able to resolve SourceProvider or Kotlin reports "Cannot access
+    // class ... Check your module classpath".
+    api(projects.data.sourceApi)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.common)
     implementation(libs.work.runtime)
