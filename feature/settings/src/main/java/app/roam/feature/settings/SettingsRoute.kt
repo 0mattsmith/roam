@@ -125,9 +125,10 @@ fun SettingsRoute(
                 )
 
                 SwitchRow(
-                    title = "Save artist photos to Drive",
-                    subtitle = "Writes artist.jpg into each artist folder so photos " +
-                        "survive a reinstall. Never replaces one you added yourself.",
+                    title = "Save artwork to Drive",
+                    subtitle = "Writes artist.jpg and cover.jpg beside your music so " +
+                        "images survive a reinstall. Automatic ones never replace a " +
+                        "file you added yourself.",
                     checked = state.saveArtistPhotos,
                     onChange = vm::setSaveArtistPhotos,
                 )

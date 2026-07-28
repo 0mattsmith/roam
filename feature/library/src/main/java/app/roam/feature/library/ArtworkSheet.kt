@@ -35,24 +35,36 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import app.roam.core.database.ArtistListItem
 import app.roam.data.catalog.artwork.ArtworkProvider
 import coil.compose.AsyncImage
 
 /**
- * Long-press menu for an artist.
+ * What the artwork sheet needs to know, so artists and albums share one
+ * implementation rather than two that drift apart.
+ */
+data class ArtworkTarget(
+    val title: String,
+    val subtitle: String?,
+    val artworkId: String?,
+    /** "photo" or "cover" -- the sheet reads as English either way. */
+    val noun: String,
+)
+
+/**
+ * Long-press menu for an artist or an album.
  *
- * View and save are hidden rather than disabled when there is no photo: a dead
+ * View and save are hidden rather than disabled when there is no image: a dead
  * row invites tapping it to find out why. Adding one is always offered, since
- * that is exactly what an artist with no photo needs.
+ * that is exactly what an entry with no artwork needs.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ArtistPhotoSheet(
-    artist: ArtistListItem,
+fun ArtworkSheet(
+    target: ArtworkTarget,
     onDismiss: () -> Unit,
     onView: () -> Unit,
     onSave: () -> Unit,
@@ -64,23 +76,33 @@ fun ArtistPhotoSheet(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) onPicked(uri) }
 
-    // Captured locally: Kotlin will not smart-cast a property declared in
-    // another module, because it cannot prove the getter is stable.
-    val artworkId = artist.artworkId
+    val artworkId = target.artworkId
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.navigationBarsPadding()) {
             Text(
-                artist.name,
+                target.title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp),
             )
+            target.subtitle?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+                )
+            }
 
             if (artworkId != null) {
                 ListItem(
                     modifier = Modifier.clickable(onClick = onView),
-                    headlineContent = { Text("View photo") },
+                    headlineContent = { Text("View ${target.noun}") },
                     leadingContent = { Icon(Icons.Filled.Visibility, contentDescription = null) },
                 )
                 ListItem(
@@ -98,7 +120,7 @@ fun ArtistPhotoSheet(
                     )
                 },
                 headlineContent = {
-                    Text(if (artworkId == null) "Add a photo" else "Replace photo")
+                    Text(if (artworkId == null) "Add a ${target.noun}" else "Replace ${target.noun}")
                 },
                 supportingContent = { Text("Also saved to Drive, so it sticks") },
                 leadingContent = { Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null) },
@@ -110,15 +132,15 @@ fun ArtistPhotoSheet(
 }
 
 /**
- * Full-screen look at the stored photo.
+ * Full-screen look at the stored image.
  *
- * Reads the full-size file rather than the 320px thumb the list uses -- this is
+ * Reads the full-size file rather than the 320px thumb the lists use -- this is
  * the one place the master actually gets shown.
  */
 @Composable
-fun ArtistPhotoViewer(artist: ArtistListItem, onDismiss: () -> Unit) {
+fun ArtworkViewer(target: ArtworkTarget, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
-    val artworkId = artist.artworkId ?: return
+    val artworkId = target.artworkId ?: return
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -133,7 +155,7 @@ fun ArtistPhotoViewer(artist: ArtistListItem, onDismiss: () -> Unit) {
         ) {
             AsyncImage(
                 model = ArtworkProvider.uri(ctx, artworkId),
-                contentDescription = artist.name,
+                contentDescription = target.title,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxWidth()

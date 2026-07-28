@@ -226,8 +226,8 @@ private fun ArtistList(vm: LibraryViewModel, listState: LazyListState) {
     }
 
     sheetFor?.let { artist ->
-        ArtistPhotoSheet(
-            artist = artist,
+        ArtworkSheet(
+            target = artist.asTarget(),
             onDismiss = { sheetFor = null },
             onView = { sheetFor = null; viewing = artist },
             onSave = { sheetFor = null; vm.saveArtistPhoto(artist) },
@@ -236,21 +236,51 @@ private fun ArtistList(vm: LibraryViewModel, listState: LazyListState) {
     }
 
     viewing?.let { artist ->
-        ArtistPhotoViewer(artist = artist, onDismiss = { viewing = null })
+        ArtworkViewer(target = artist.asTarget(), onDismiss = { viewing = null })
     }
 }
 
 @Composable
 private fun AlbumList(vm: LibraryViewModel, listState: LazyListState) {
     val albums = vm.pagedAlbums.collectAsLazyPagingItems()
+
+    var sheetFor by remember { mutableStateOf<AlbumListItem?>(null) }
+    var viewing by remember { mutableStateOf<AlbumListItem?>(null) }
+
     if (albums.itemCount == 0) { EmptyState("No albums yet"); return }
 
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = albums.itemCount, key = albums.itemKey { it.id }) { index ->
-            albums[index]?.let { album -> AlbumRow(album) { vm.openAlbum(album.id, album.title) } }
+            albums[index]?.let { album ->
+                AlbumRow(
+                    album = album,
+                    onClick = { vm.openAlbum(album.id, album.title) },
+                    onLongClick = { sheetFor = album },
+                )
+            }
         }
     }
+
+    sheetFor?.let { album ->
+        ArtworkSheet(
+            target = album.asTarget(),
+            onDismiss = { sheetFor = null },
+            onView = { sheetFor = null; viewing = album },
+            onSave = { sheetFor = null; vm.saveAlbumCover(album) },
+            onPicked = { uri -> sheetFor = null; vm.setAlbumCover(album, uri) },
+        )
+    }
+
+    viewing?.let { album ->
+        ArtworkViewer(target = album.asTarget(), onDismiss = { viewing = null })
+    }
 }
+
+private fun ArtistListItem.asTarget() =
+    ArtworkTarget(title = name, subtitle = null, artworkId = artworkId, noun = "photo")
+
+private fun AlbumListItem.asTarget() =
+    ArtworkTarget(title = title, subtitle = artistName, artworkId = artworkId, noun = "cover")
 
 @Composable
 private fun PlaylistList(vm: LibraryViewModel) {
@@ -337,9 +367,14 @@ private fun ArtistRow(
 }
 
 @Composable
-private fun AlbumRow(album: AlbumListItem, onClick: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun AlbumRow(
+    album: AlbumListItem,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
         headlineContent = { Text(album.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
             val year = album.year?.let { " · $it" }.orEmpty()
