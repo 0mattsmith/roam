@@ -11,6 +11,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Sideloaded self-update. See UpdateInstaller. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!--
+        Lets Roam replace itself without a confirmation dialog, but only once it
+        is the installer of record for its own package. Normal permission, so it
+        is granted at install time with nothing for the user to approve.
+    -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <application
         android:name=".RoamApp"

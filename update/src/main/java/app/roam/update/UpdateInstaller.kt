@@ -54,6 +54,17 @@ class UpdateInstaller @Inject constructor(
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(ctx.packageName)
             if (Build.VERSION.SDK_INT >= 34) setRequestUpdateOwnership(true)
+
+            // Ask for a silent update. Android grants this only when Roam is
+            // the installer of record for Roam, which it becomes after it has
+            // installed itself once. The first update through the app still
+            // shows the confirmation; every later one should not.
+            //
+            // If any condition is unmet the platform quietly falls back to
+            // prompting, so this can only improve things, never break them.
+            if (Build.VERSION.SDK_INT >= 31) {
+                setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            }
         }
         val sessionId = installer.createSession(params)
         installer.openSession(sessionId).use { session ->
