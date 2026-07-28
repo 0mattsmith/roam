@@ -154,7 +154,9 @@ resumable Drive upload with cached folder IDs.
   a library class into the module's public API and force every consumer to
   depend on it. `dataStore.edit {}` returning `Preferences` was exactly this.
   `tools/check-deps.py` catches leaked *supertypes* but not leaked *return
-  types* -- the convention is the guard.
+  types* -- the convention is the guard. Use a **block body**, not
+  `: Unit = expr`: Kotlin requires an expression body to match the declared
+  type, so that form is a compile error rather than a discard.
 - Comments explain *why*, not what. If the code needs a "what" comment, rewrite
   the code.
 - Versions are pinned in `gradle/libs.versions.toml` to a known-good set. Run
