@@ -111,7 +111,11 @@ class LibraryViewModel @Inject constructor(
 
     fun openArtist(id: Long, name: String) {
         drill.value = Drill.Artist(id, name)
-        _state.update { it.copy(drillTitle = name, showingLoved = false) }
+        // Album order, so the drill-down groups by album the way a discography
+        // reads rather than as one flat alphabetical run of songs.
+        _state.update {
+            it.copy(drillTitle = name, showingLoved = false, trackSort = TrackSort.ALBUM)
+        }
     }
 
     fun openAlbum(id: Long, title: String) {

@@ -101,8 +101,12 @@ class BrowseTree @Inject constructor(
                 )
             }
 
+            // No per-row artwork here: the car already shows the album's cover
+            // as the node you opened, so repeating it down every row is visual
+            // noise and needlessly enlarges the browse payload.
             is MediaId.Album ->
-                tracks.listItemsRaw(LibraryQueries.tracksForAlbum(parent.id)).map { it.toMediaItem() }
+                tracks.listItemsRaw(LibraryQueries.tracksForAlbum(parent.id))
+                    .map { it.toMediaItem(withArtwork = false) }
 
             // Leaves and action rows have no children.
             is MediaId.Track, MediaId.ShuffleAll, MediaId.ShuffleLoved,
@@ -210,7 +214,7 @@ class BrowseTree @Inject constructor(
             )
             .build()
 
-    private fun TrackListItem.toMediaItem(): MediaItem =
+    private fun TrackListItem.toMediaItem(withArtwork: Boolean = true): MediaItem =
         MediaItem.Builder()
             .setMediaId(MediaId.Track(id).raw)
             .setMediaMetadata(
@@ -220,7 +224,11 @@ class BrowseTree @Inject constructor(
                     .setArtist(artistName)
                     .setAlbumTitle(albumTitle)
                     .setTrackNumber(trackNo ?: 0)
-                    .setArtworkUri(artworkId?.let { ArtworkProvider.uri(ctx, it, size = 320) })
+                    .setArtworkUri(
+                        artworkId
+                            ?.takeIf { withArtwork }
+                            ?.let { ArtworkProvider.uri(ctx, it, size = 320) }
+                    )
                     .setIsBrowsable(false)
                     .setIsPlayable(true)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)

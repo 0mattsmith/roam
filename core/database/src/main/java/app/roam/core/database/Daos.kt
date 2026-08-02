@@ -113,6 +113,7 @@ interface TrackDao {
     @Query("""
         SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
                ar.name AS artistName, al.title AS albumTitle,
+               al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                t.trackNo AS trackNo, t.durationMs AS durationMs,
                t.artworkId AS artworkId, t.loved AS loved
         FROM tracks t
@@ -140,6 +141,7 @@ interface TrackDao {
     @Query("""
         SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
                ar.name AS artistName, al.title AS albumTitle,
+               al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                t.trackNo AS trackNo, t.durationMs AS durationMs,
                t.artworkId AS artworkId, t.loved AS loved
         FROM tracks t
@@ -254,6 +256,11 @@ data class TrackListItem(
     val title: String,
     val artistName: String,
     val albumTitle: String,
+    /** Carried so a list can spot album boundaries without a second query. */
+    val albumId: Long,
+    /** The album's own cover, which is what an album header should show. */
+    val albumArtworkId: String?,
+    val albumYear: Int?,
     val trackNo: Int?,
     val durationMs: Long,
     val artworkId: String?,

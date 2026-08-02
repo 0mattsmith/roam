@@ -18,6 +18,7 @@ object LibraryQueries {
     private const val TRACK_COLUMNS = """
         SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
                ar.name AS artistName, al.title AS albumTitle,
+               al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                t.trackNo AS trackNo, t.durationMs AS durationMs,
                t.artworkId AS artworkId, t.loved AS loved
         FROM tracks t

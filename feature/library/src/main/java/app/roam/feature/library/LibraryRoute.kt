@@ -182,6 +182,7 @@ private fun SortItem(label: String, selected: Boolean, onClick: () -> Unit) {
 private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     val tracks = vm.pagedTracks.collectAsLazyPagingItems()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
+    val state by vm.state.collectAsStateWithLifecycle()
 
     if (tracks.itemCount == 0) {
         EmptyState("No tracks here yet")
@@ -192,12 +193,30 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     var sheetEdited by remember { mutableStateOf(false) }
     val editing by vm.editing.collectAsStateWithLifecycle()
 
+    // Album-major orderings get one big cover per album instead of the same
+    // thumbnail repeated down every row.
+    val grouped = state.trackSort == TrackSort.ALBUM || state.drillTitle != null
+
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
             tracks[index]?.let { track ->
+                if (grouped) {
+                    // peek, not get: reading the previous row with the indexed
+                    // accessor would tell Paging that row is in view and drag
+                    // the load window backwards as you scroll.
+                    val previous = if (index == 0) null else tracks.peek(index - 1)
+                    if (previous?.albumId != track.albumId) {
+                        AlbumHeader(
+                            track = track,
+                            onPlay = { vm.playFrom(track) },
+                            onOpen = { vm.openAlbum(track.albumId, track.albumTitle) },
+                        )
+                    }
+                }
                 TrackRow(
                     track = track,
                     isCurrent = track.title == nowPlaying.title,
+                    showArtwork = !grouped,
                     onClick = { vm.playFrom(track) },
                     onLongClick = { sheetFor = track },
                     onToggleLoved = { vm.toggleLoved(track) },
@@ -345,6 +364,7 @@ private fun PlaylistList(vm: LibraryViewModel) {
 private fun TrackRow(
     track: TrackListItem,
     isCurrent: Boolean,
+    showArtwork: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onToggleLoved: () -> Unit,
@@ -367,7 +387,21 @@ private fun TrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        leadingContent = { Artwork(track.artworkId) },
+        leadingContent = {
+            if (showArtwork) {
+                Artwork(track.artworkId)
+            } else {
+                // The track number takes the artwork's place, which is what
+                // makes a grouped album read as a track listing.
+                Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        track.trackNo?.toString().orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
         trailingContent = {
             IconButton(onClick = onToggleLoved) {
                 Icon(
