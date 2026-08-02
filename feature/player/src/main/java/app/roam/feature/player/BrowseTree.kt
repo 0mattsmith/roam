@@ -105,8 +105,15 @@ class BrowseTree @Inject constructor(
             // as the node you opened, so repeating it down every row is visual
             // noise and needlessly enlarges the browse payload.
             is MediaId.Album ->
-                tracks.listItemsRaw(LibraryQueries.tracksForAlbum(parent.id))
-                    .map { it.toMediaItem(withArtwork = false) }
+                tracks.listItemsRaw(LibraryQueries.tracksForAlbum(parent.id)).map { row ->
+                    // The car has no way to draw a heading, but it will group
+                    // consecutive items sharing a group title -- which is what
+                    // this extra is for and why the constant already existed.
+                    row.toMediaItem(
+                        withArtwork = false,
+                        groupTitle = if (row.albumDiscTotal > 1) "Disc ${row.discNo ?: 1}" else null,
+                    )
+                }
 
             // Leaves and action rows have no children.
             is MediaId.Track, MediaId.ShuffleAll, MediaId.ShuffleLoved,
@@ -218,7 +225,10 @@ class BrowseTree @Inject constructor(
             )
             .build()
 
-    private fun TrackListItem.toMediaItem(withArtwork: Boolean = true): MediaItem =
+    private fun TrackListItem.toMediaItem(
+        withArtwork: Boolean = true,
+        groupTitle: String? = null,
+    ): MediaItem =
         MediaItem.Builder()
             .setMediaId(MediaId.Track(id).raw)
             .setMediaMetadata(
@@ -236,6 +246,13 @@ class BrowseTree @Inject constructor(
                     .setIsBrowsable(false)
                     .setIsPlayable(true)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                    .setExtras(
+                        groupTitle?.let {
+                            android.os.Bundle().apply {
+                                putString(CarConstants.EXTRA_CONTENT_STYLE_GROUP_TITLE, it)
+                            }
+                        }
+                    )
                     .build()
             )
             .build()

@@ -122,7 +122,8 @@ interface TrackDao {
         SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
                ar.name AS artistName, al.title AS albumTitle,
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
-               t.trackNo AS trackNo, t.durationMs AS durationMs,
+               al.discTotal AS albumDiscTotal,
+               t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
                t.artworkId AS artworkId, t.loved AS loved
         FROM tracks t
         JOIN artists ar ON ar.id = t.artistId
@@ -150,7 +151,8 @@ interface TrackDao {
         SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
                ar.name AS artistName, al.title AS albumTitle,
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
-               t.trackNo AS trackNo, t.durationMs AS durationMs,
+               al.discTotal AS albumDiscTotal,
+               t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
                t.artworkId AS artworkId, t.loved AS loved
         FROM tracks t
         JOIN artists ar ON ar.id = t.artistId
@@ -269,7 +271,10 @@ data class TrackListItem(
     /** The album's own cover, which is what an album header should show. */
     val albumArtworkId: String?,
     val albumYear: Int?,
+    /** Highest disc number in the album. 1 unless it is a real multi-disc set. */
+    val albumDiscTotal: Int,
     val trackNo: Int?,
+    val discNo: Int?,
     val durationMs: Long,
     val artworkId: String?,
     val loved: Boolean,
@@ -348,7 +353,11 @@ interface AlbumDao {
     @Query("""
         UPDATE albums SET
           trackCount = (SELECT COUNT(*) FROM tracks WHERE tracks.albumId = albums.id),
-          durationMs = (SELECT COALESCE(SUM(durationMs), 0) FROM tracks WHERE tracks.albumId = albums.id)
+          durationMs = (SELECT COALESCE(SUM(durationMs), 0) FROM tracks WHERE tracks.albumId = albums.id),
+          -- Counted from the tracks rather than trusted from a tag: plenty of
+          -- rips carry no discTotal at all, and this is what decides whether
+          -- the album view shows disc headings.
+          discTotal = (SELECT COALESCE(MAX(discNo), 1) FROM tracks WHERE tracks.albumId = albums.id)
     """)
     suspend fun recomputeRollups()
 }

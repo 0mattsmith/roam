@@ -125,3 +125,22 @@ fun AlbumHeader(
         }
     }
 }
+
+/**
+ * A thin rule above each disc of a multi-disc set.
+ *
+ * Shown for every disc including the first, so a two-disc album reads as two
+ * labelled halves rather than one unlabelled run followed by "Disc 2" -- which
+ * leaves you inferring what the tracks above it belonged to.
+ */
+@Composable
+fun DiscHeader(discNo: Int) {
+    Text(
+        "Disc $discNo",
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+    )
+}

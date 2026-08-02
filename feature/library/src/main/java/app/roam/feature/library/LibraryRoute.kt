@@ -209,13 +209,24 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                     // accessor would tell Paging that row is in view and drag
                     // the load window backwards as you scroll.
                     val previous = if (index == 0) null else tracks.peek(index - 1)
-                    if (previous?.albumId != track.albumId) {
+                    val newAlbum = previous?.albumId != track.albumId
+                    if (newAlbum) {
                         AlbumHeader(
                             track = track,
                             onPlay = { vm.playFrom(track) },
                             onOpen = { vm.openAlbum(track.albumId, track.albumTitle) },
                             onLongPress = { headerSheetFor = track },
                         )
+                    }
+                    // Only for genuine multi-disc sets, and only where the disc
+                    // actually changes -- a single-disc album labelled "Disc 1"
+                    // is noise. The list is already ordered by disc, so a
+                    // boundary here is a real one.
+                    if (track.albumDiscTotal > 1) {
+                        val disc = track.discNo ?: 1
+                        if (newAlbum || previous?.discNo != track.discNo) {
+                            DiscHeader(disc)
+                        }
                     }
                 }
                 TrackRow(
