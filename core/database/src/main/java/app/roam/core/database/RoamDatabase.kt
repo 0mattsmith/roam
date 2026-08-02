@@ -19,7 +19,7 @@ import javax.inject.Singleton
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
         TrackEntity::class, ArtworkEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -55,13 +55,19 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE albums ADD COLUMN compilation INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
     @Provides @Singleton
     fun db(@ApplicationContext ctx: Context): RoamDatabase =
         Room.databaseBuilder(ctx, RoamDatabase::class.java, "roam.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
 

@@ -18,13 +18,17 @@ object LibraryQueries {
     private const val TRACK_COLUMNS = """
         SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
                ar.name AS artistName, al.title AS albumTitle,
+               aar.name AS albumArtistName, al.compilation AS compilation,
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                al.discTotal AS albumDiscTotal,
                t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
                t.artworkId AS artworkId, t.loved AS loved
         FROM tracks t
-        JOIN artists ar ON ar.id = t.artistId
-        JOIN albums  al ON al.id = t.albumId
+        JOIN artists ar  ON ar.id  = t.artistId
+        JOIN albums  al  ON al.id  = t.albumId
+        -- The album's own artist, which is what album-major views group by.
+        -- Without this join a compilation fragments across every guest artist.
+        JOIN artists aar ON aar.id = al.artistId
     """
 
     fun tracks(sort: TrackSort): SupportSQLiteQuery =

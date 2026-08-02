@@ -28,6 +28,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,7 +69,7 @@ fun AlbumHeaderSheet(
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp),
             )
             Text(
-                track.artistName,
+                track.albumArtistName,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -124,6 +125,7 @@ fun AlbumBulkEditDialog(
     var yearOn by remember { mutableStateOf(false) }
     var genreOn by remember { mutableStateOf(false) }
     var discOn by remember { mutableStateOf(false) }
+    var compilationOn by remember { mutableStateOf(false) }
 
     var artist by remember { mutableStateOf(initialArtist) }
     var album by remember { mutableStateOf(albumTitle) }
@@ -131,8 +133,10 @@ fun AlbumBulkEditDialog(
     var year by remember { mutableStateOf("") }
     var genre by remember { mutableStateOf("") }
     var disc by remember { mutableStateOf("") }
+    var compilation by remember { mutableStateOf(true) }
 
-    val anyChecked = artistOn || albumOn || albumArtistOn || yearOn || genreOn || discOn
+    val anyChecked = artistOn || albumOn || albumArtistOn || yearOn ||
+        genreOn || discOn || compilationOn
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -149,6 +153,27 @@ fun AlbumBulkEditDialog(
                 )
                 CheckedField(artistOn, { artistOn = it }, artist, "Artist") { artist = it }
                 CheckedField(albumOn, { albumOn = it }, album, "Album") { album = it }
+
+                // Same opt-in rule as the text fields, but the value is a
+                // switch rather than typing -- so an album can be un-marked as
+                // well as marked.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = compilationOn, onCheckedChange = { compilationOn = it })
+                    Spacer(Modifier.width(4.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Compilation", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Groups by album artist, so each track keeps its own",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = compilation,
+                        onCheckedChange = { compilation = it },
+                        enabled = compilationOn,
+                    )
+                }
                 CheckedField(albumArtistOn, { albumArtistOn = it }, albumArtist, "Album artist") {
                     albumArtist = it
                 }
@@ -171,6 +196,7 @@ fun AlbumBulkEditDialog(
                             year = if (yearOn) year.toIntOrNull() else null,
                             genre = genre.takeIf { genreOn },
                             discNo = if (discOn) disc.toIntOrNull() else null,
+                            compilation = compilation.takeIf { compilationOn },
                         )
                     )
                 },

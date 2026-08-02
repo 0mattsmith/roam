@@ -101,8 +101,10 @@ fun AlbumHeader(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    // The ALBUM's artist, so a compilation reads "Various
+                    // Artists" rather than whichever guest happens to open it.
                     Text(
-                        track.artistName,
+                        track.albumArtistName,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

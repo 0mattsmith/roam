@@ -9,7 +9,9 @@ package app.roam.core.model
  */
 enum class TrackSort(val label: String, val orderBy: String) {
     TITLE("Title", "t.title COLLATE NOCASE"),
-    ARTIST("Artist", "ar.sortName, al.sortTitle, t.discNo, t.trackNo"),
+    // aar, not ar: the ALBUM's artist. Grouping a compilation by each track's
+    // own artist scatters it across the library one guest at a time.
+    ARTIST("Artist", "aar.sortName, al.sortTitle, t.discNo, t.trackNo"),
     ALBUM("Album", "al.sortTitle, t.discNo, t.trackNo"),
     RECENT("Recently added", "t.addedAt DESC"),
 }

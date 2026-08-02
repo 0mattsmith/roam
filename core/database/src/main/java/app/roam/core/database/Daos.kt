@@ -121,14 +121,18 @@ interface TrackDao {
     @Query("""
         SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
                ar.name AS artistName, al.title AS albumTitle,
+               aar.name AS albumArtistName, al.compilation AS compilation,
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                al.discTotal AS albumDiscTotal,
                t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
                t.artworkId AS artworkId, t.loved AS loved
         FROM tracks t
-        JOIN artists ar ON ar.id = t.artistId
-        JOIN albums  al ON al.id = t.albumId
-        ORDER BY ar.sortName, al.sortTitle, t.discNo, t.trackNo, t.title
+        JOIN artists ar  ON ar.id  = t.artistId
+        JOIN albums  al  ON al.id  = t.albumId
+        -- The album's own artist, which is what album-major views group by.
+        -- Without this join a compilation fragments across every guest artist.
+        JOIN artists aar ON aar.id = al.artistId
+        ORDER BY aar.sortName, al.sortTitle, t.discNo, t.trackNo, t.title
     """)
     fun pagedListItems(): PagingSource<Int, TrackListItem>
 
@@ -150,14 +154,18 @@ interface TrackDao {
     @Query("""
         SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
                ar.name AS artistName, al.title AS albumTitle,
+               aar.name AS albumArtistName, al.compilation AS compilation,
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                al.discTotal AS albumDiscTotal,
                t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
                t.artworkId AS artworkId, t.loved AS loved
         FROM tracks t
-        JOIN artists ar ON ar.id = t.artistId
-        JOIN albums  al ON al.id = t.albumId
-        ORDER BY ar.sortName, al.sortTitle, t.discNo, t.trackNo, t.title
+        JOIN artists ar  ON ar.id  = t.artistId
+        JOIN albums  al  ON al.id  = t.albumId
+        -- The album's own artist, which is what album-major views group by.
+        -- Without this join a compilation fragments across every guest artist.
+        JOIN artists aar ON aar.id = al.artistId
+        ORDER BY aar.sortName, al.sortTitle, t.discNo, t.trackNo, t.title
         LIMIT :limit
     """)
     suspend fun listItems(limit: Int): List<TrackListItem>
@@ -266,6 +274,9 @@ data class TrackListItem(
     val title: String,
     val artistName: String,
     val albumTitle: String,
+    /** The album's artist. "Various Artists" on a compilation. */
+    val albumArtistName: String,
+    val compilation: Boolean,
     /** Carried so a list can spot album boundaries without a second query. */
     val albumId: Long,
     /** The album's own cover, which is what an album header should show. */
@@ -349,6 +360,9 @@ interface AlbumDao {
      */
     @Query("UPDATE albums SET artworkId = :artworkId WHERE id = :albumId")
     suspend fun setArtwork(albumId: Long, artworkId: String)
+
+    @Query("UPDATE albums SET compilation = :compilation WHERE id = :albumId")
+    suspend fun setCompilation(albumId: Long, compilation: Boolean)
 
     @Query("""
         UPDATE albums SET

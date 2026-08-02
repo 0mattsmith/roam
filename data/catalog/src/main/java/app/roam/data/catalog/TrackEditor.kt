@@ -28,10 +28,11 @@ data class AlbumBulkEdits(
     val year: Int? = null,
     val genre: String? = null,
     val discNo: Int? = null,
+    val compilation: Boolean? = null,
 ) {
     val isEmpty: Boolean
         get() = artist == null && album == null && albumArtist == null &&
-            year == null && genre == null && discNo == null
+            year == null && genre == null && discNo == null && compilation == null
 }
 
 /** The fields the edit form exposes. Everything else is file-derived. */
@@ -44,6 +45,7 @@ data class TrackEdits(
     val discNo: Int?,
     val year: Int?,
     val genre: String?,
+    val compilation: Boolean,
 )
 
 /**
@@ -79,6 +81,7 @@ class TrackEditor @Inject constructor(
             discNo = track.discNo,
             year = track.year,
             genre = track.genre,
+            compilation = albums.byId(track.albumId)?.compilation == true,
         )
     }
 
@@ -88,7 +91,12 @@ class TrackEditor @Inject constructor(
             val albumName = edits.album.trim().ifBlank { UNKNOWN_ALBUM }
             // A blank album artist means "same as the track artist", which is
             // what keeps a normal album together instead of splitting it.
-            val albumArtistName = edits.albumArtist?.trim()?.ifBlank { null } ?: artistName
+            // On a compilation the album artist is what holds the album
+            // together, so it must NOT fall back to this track's artist --
+            // that is precisely what splits a compilation into one album per
+            // guest performer.
+            val albumArtistName = edits.albumArtist?.trim()?.ifBlank { null }
+                ?: if (edits.compilation) VARIOUS_ARTISTS else artistName
 
             val artistId = Ids.artist(artistName)
             val albumArtistId = Ids.artist(albumArtistName)
@@ -128,6 +136,7 @@ class TrackEditor @Inject constructor(
                 year = edits.year,
                 genre = edits.genre?.trim()?.ifBlank { null },
             )
+            albums.setCompilation(albumId, edits.compilation)
 
             // The old artist or album may now hold nothing. Prune before the
             // rollups, or the counts are recomputed for rows about to vanish.
@@ -170,7 +179,9 @@ class TrackEditor @Inject constructor(
                             ?: artists.byId(row.artistId)?.name
                             ?: UNKNOWN_ARTIST
                         val albumName = edits.album ?: existingAlbum?.title ?: UNKNOWN_ALBUM
-                        val albumArtistName = edits.albumArtist ?: row.albumArtist ?: artistName
+                        val compilation = edits.compilation ?: existingAlbum?.compilation ?: false
+                        val albumArtistName = edits.albumArtist
+                            ?: if (compilation) VARIOUS_ARTISTS else (row.albumArtist ?: artistName)
 
                         val newArtistId = Ids.artist(artistName)
                         val newAlbumArtistId = Ids.artist(albumArtistName)
@@ -219,6 +230,18 @@ class TrackEditor @Inject constructor(
                         )
                     }
 
+                    // Applied once, after every track has landed on the new
+                    // album id -- setting it per track would target rows that
+                    // are about to be pruned.
+                    edits.compilation?.let { flag ->
+                        val name = edits.albumArtist
+                            ?: if (flag) VARIOUS_ARTISTS else null
+                        val title = edits.album ?: existingAlbum?.title
+                        if (name != null && title != null) {
+                            albums.setCompilation(Ids.album(name, title), flag)
+                        }
+                    }
+
                     albums.pruneOrphans()
                     artists.pruneOrphans()
                     albums.recomputeRollups()
@@ -232,5 +255,6 @@ class TrackEditor @Inject constructor(
         const val UNKNOWN_ARTIST = "Unknown artist"
         const val UNKNOWN_ALBUM = "Unknown album"
         const val UNKNOWN_TITLE = "Untitled"
+        const val VARIOUS_ARTISTS = "Various Artists"
     }
 }

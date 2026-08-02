@@ -211,6 +211,8 @@ resumable Drive upload with cached folder IDs.
 | Artist photo saves to Photos do nothing | MediaStore `RELATIVE_PATH`/`IS_PENDING` are API 29+; the version check must *wrap* the call, not early-throw, or lint's NewApi fails `lintVitalRelease` |
 | A replaced album cover reverts after a re-tag | `TagWorker` must only ever call `setArtworkIfMissing`; the unconditional `setArtwork` is for user picks alone |
 | An edited track reverts to the filename after a sync | `userEdited` not honoured — sync's `refreshFromPath` and `TagWorker.pendingTags` both filter on it |
+| A compilation scatters across every guest artist | Album-major sorting keyed on the *track* artist. `TRACK_COLUMNS` joins `artists aar` on the album's own artistId, and `TrackSort.ARTIST` orders by `aar.sortName` |
+| Marking a compilation splits it up | The album artist must not fall back to the track artist when `compilation` is set — it defaults to "Various Artists", and that name is half the album's content-derived id |
 | Half an album ends up under a different album | A bulk edit renamed the album outside a transaction. Renaming moves every track to a new content-derived id at once, so `applyToAlbum` wraps the loop in `withTransaction` |
 | A renamed album loses its cover | The new `AlbumEntity` must inherit `artworkId` from the old row — `insertIgnore` creates a fresh row, and a fresh row's default is null |
 | A renamed artist makes tracks disappear | Artist and album ids are content-derived (invariant 7), so renaming moves a track to a *different* row. `TrackEditor` must `insertIgnore` the new parent before pointing at it, or the inner joins drop the track |

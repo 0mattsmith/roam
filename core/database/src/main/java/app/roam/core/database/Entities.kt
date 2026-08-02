@@ -47,6 +47,12 @@ data class AlbumEntity(
     val sortTitle: String,
     /** ALBUM artist, not track artist. Compilations stay together. */
     val artistId: Long,
+    /**
+     * Tracks by many different artists under one album artist. Album-major
+     * views group on the album artist so the album stays whole, while each
+     * row still shows whoever actually performed it.
+     */
+    val compilation: Boolean = false,
     val year: Int? = null,
     val discTotal: Int = 1,
     val trackCount: Int = 0,
