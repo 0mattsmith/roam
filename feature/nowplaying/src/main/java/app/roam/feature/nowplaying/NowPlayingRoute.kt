@@ -70,130 +70,139 @@ fun NowPlayingRoute(
     }
     val animatedProgress by animateFloatAsState(progress, label = "progress")
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surfaceContainerHigh,
-                        MaterialTheme.colorScheme.surface,
+    // Surface, not a bare Column: a background() modifier paints pixels but
+    // does not provide LocalContentColor, so every unstyled Text and IconButton
+    // below fell back to black on a dark theme. Shuffle and Repeat looked fine
+    // only because they happened to set an explicit tint.
+    Surface(
+        Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.surfaceContainerHigh,
+                            MaterialTheme.colorScheme.surface,
+                        )
                     )
                 )
-            )
-            .systemBarsPadding()
-            .padding(horizontal = 24.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onCollapse) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Collapse")
+                .systemBarsPadding()
+                .padding(horizontal = 24.dp),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCollapse) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Collapse")
+                }
             }
-        }
 
-        Spacer(Modifier.weight(0.5f))
+            Spacer(Modifier.weight(0.5f))
 
-        Artwork(
-            uri = state.artworkUri,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(MaterialTheme.shapes.large),
-        )
+            Artwork(
+                uri = state.artworkUri,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(MaterialTheme.shapes.large),
+            )
 
-        Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(32.dp))
 
-        Text(
-            state.title.ifBlank { "Nothing playing" },
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            state.artist,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (state.album.isNotBlank()) {
             Text(
-                state.album,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                state.title.ifBlank { "Nothing playing" },
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                state.artist,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        Slider(
-            value = animatedProgress,
-            onValueChange = { scrubbing = true; scrubTarget = it },
-            onValueChangeFinished = {
-                if (state.durationMs > 0) vm.seekTo((scrubTarget * state.durationMs).toLong())
-                scrubbing = false
-            },
-            enabled = state.durationMs > 0,
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatTime(if (scrubbing) (scrubTarget * state.durationMs).toLong() else state.positionMs),
-                 style = MaterialTheme.typography.labelMedium,
-                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(formatTime(state.durationMs),
-                 style = MaterialTheme.typography.labelMedium,
-                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-
-        Spacer(Modifier.height(20.dp))
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = vm::toggleShuffle, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    Icons.Filled.Shuffle,
-                    contentDescription = "Shuffle",
-                    tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary
-                           else MaterialTheme.colorScheme.onSurfaceVariant,
+            if (state.album.isNotBlank()) {
+                Text(
+                    state.album,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
-            IconButton(onClick = vm::previous, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous",
-                     modifier = Modifier.size(36.dp))
-            }
-            FilledIconButton(onClick = vm::togglePlayPause, modifier = Modifier.size(76.dp)) {
-                Icon(
-                    if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (state.isPlaying) "Pause" else "Play",
-                    modifier = Modifier.size(40.dp),
-                )
-            }
-            IconButton(onClick = vm::next, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Filled.SkipNext, contentDescription = "Next",
-                     modifier = Modifier.size(36.dp))
-            }
-            IconButton(onClick = vm::cycleRepeat, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    if (state.repeatMode == REPEAT_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                    contentDescription = "Repeat",
-                    tint = if (state.repeatMode != REPEAT_OFF) MaterialTheme.colorScheme.primary
-                           else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
 
-        Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(24.dp))
+
+            Slider(
+                value = animatedProgress,
+                onValueChange = { scrubbing = true; scrubTarget = it },
+                onValueChangeFinished = {
+                    if (state.durationMs > 0) vm.seekTo((scrubTarget * state.durationMs).toLong())
+                    scrubbing = false
+                },
+                enabled = state.durationMs > 0,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(formatTime(if (scrubbing) (scrubTarget * state.durationMs).toLong() else state.positionMs),
+                     style = MaterialTheme.typography.labelMedium,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(formatTime(state.durationMs),
+                     style = MaterialTheme.typography.labelMedium,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = vm::toggleShuffle, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        Icons.Filled.Shuffle,
+                        contentDescription = "Shuffle",
+                        tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = vm::previous, modifier = Modifier.size(56.dp)) {
+                    Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous",
+                         modifier = Modifier.size(36.dp))
+                }
+                FilledIconButton(onClick = vm::togglePlayPause, modifier = Modifier.size(76.dp)) {
+                    Icon(
+                        if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (state.isPlaying) "Pause" else "Play",
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
+                IconButton(onClick = vm::next, modifier = Modifier.size(56.dp)) {
+                    Icon(Icons.Filled.SkipNext, contentDescription = "Next",
+                         modifier = Modifier.size(36.dp))
+                }
+                IconButton(onClick = vm::cycleRepeat, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        if (state.repeatMode == REPEAT_ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                        contentDescription = "Repeat",
+                        tint = if (state.repeatMode != REPEAT_OFF) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+        }
     }
 }
 

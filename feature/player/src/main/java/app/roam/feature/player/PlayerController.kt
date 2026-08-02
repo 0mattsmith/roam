@@ -144,7 +144,9 @@ class PlayerController @Inject constructor(
 }
 
 fun TrackListItem.toMediaItem(ctx: Context): MediaItem = MediaItem.Builder()
-    .setMediaId(id.toString())
+    // MediaId.Track, not a bare number: the car parses this id back to find
+    // the current track for the love button, and the two surfaces share a queue.
+    .setMediaId(MediaId.Track(id).raw)
     .setUri("drive://file/$remoteId")
     .setMediaMetadata(
         MediaMetadata.Builder()

@@ -50,10 +50,7 @@ object LibraryQueries {
     fun artists(sort: ArtistSort): SupportSQLiteQuery =
         SimpleSQLiteQuery(
             """
-            SELECT ar.id AS id, ar.name AS name,
-                   ar.albumCount AS albumCount, ar.trackCount AS trackCount,
-                   ar.artworkId AS artworkId
-            FROM artists ar
+            $ARTIST_COLUMNS
             ORDER BY ${sort.orderBy}
             """
         )
@@ -61,12 +58,98 @@ object LibraryQueries {
     fun albums(sort: AlbumSort): SupportSQLiteQuery =
         SimpleSQLiteQuery(
             """
-            SELECT al.id AS id, al.title AS title, ar.name AS artistName,
-                   al.year AS year, al.trackCount AS trackCount,
-                   al.artworkId AS artworkId
-            FROM albums al
-            JOIN artists ar ON ar.id = al.artistId
+            $ALBUM_COLUMNS
             ORDER BY ${sort.orderBy}
             """
         )
+
+    // ---- the car -------------------------------------------------------------
+    //
+    // Android Auto asks for one page at a time rather than observing a
+    // PagingSource, so these take an explicit window. LIMIT and OFFSET are
+    // interpolated, never bound: they come from Media3's page arithmetic and
+    // are Ints by the time they arrive.
+
+    fun artistsPage(sort: ArtistSort, limit: Int, offset: Int): SupportSQLiteQuery =
+        SimpleSQLiteQuery(
+            """
+            $ARTIST_COLUMNS
+            ORDER BY ${sort.orderBy}
+            LIMIT $limit OFFSET $offset
+            """
+        )
+
+    fun albumsPage(sort: AlbumSort, limit: Int, offset: Int): SupportSQLiteQuery =
+        SimpleSQLiteQuery(
+            """
+            $ALBUM_COLUMNS
+            ORDER BY ${sort.orderBy}
+            LIMIT $limit OFFSET $offset
+            """
+        )
+
+    /** An artist's own albums, newest first -- how a discography is usually read. */
+    fun albumsForArtist(artistId: Long): SupportSQLiteQuery =
+        SimpleSQLiteQuery(
+            "$ALBUM_COLUMNS WHERE al.artistId = ? ORDER BY al.year DESC, al.sortTitle",
+            arrayOf(artistId),
+        )
+
+    fun recentAlbums(limit: Int): SupportSQLiteQuery =
+        SimpleSQLiteQuery("$ALBUM_COLUMNS ORDER BY al.addedAt DESC LIMIT $limit")
+
+    fun recentTracks(limit: Int): SupportSQLiteQuery =
+        SimpleSQLiteQuery(
+            "$TRACK_COLUMNS WHERE t.lastPlayedAt IS NOT NULL " +
+                "ORDER BY t.lastPlayedAt DESC LIMIT $limit"
+        )
+
+    fun tracksPage(sort: TrackSort, limit: Int, offset: Int): SupportSQLiteQuery =
+        SimpleSQLiteQuery("$TRACK_COLUMNS ORDER BY ${sort.orderBy} LIMIT $limit OFFSET $offset")
+
+    fun lovedTracksPage(sort: TrackSort, limit: Int, offset: Int): SupportSQLiteQuery =
+        SimpleSQLiteQuery(
+            "$TRACK_COLUMNS WHERE t.loved = 1 ORDER BY ${sort.orderBy} LIMIT $limit OFFSET $offset"
+        )
+
+    fun tracksForArtistLimited(artistId: Long, sort: TrackSort, limit: Int): SupportSQLiteQuery =
+        SimpleSQLiteQuery(
+            "$TRACK_COLUMNS WHERE t.artistId = ? ORDER BY ${sort.orderBy} LIMIT $limit",
+            arrayOf(artistId),
+        )
+
+    /**
+     * Rows for an explicit id list, for a queue the shuffle engine has already
+     * ordered. The placeholders are generated from the list size, never from
+     * anything caller-supplied -- the ids themselves are bound.
+     */
+    fun tracksForIds(ids: List<Long>): SupportSQLiteQuery {
+        val placeholders = List(ids.size) { "?" }.joinToString(",")
+        return SimpleSQLiteQuery(
+            "$TRACK_COLUMNS WHERE t.id IN ($placeholders)",
+            ids.toTypedArray(),
+        )
+    }
+
+    /** Single row lookups, for resolving one browse node. */
+    fun tracksForTrack(trackId: Long): SupportSQLiteQuery =
+        SimpleSQLiteQuery("$TRACK_COLUMNS WHERE t.id = ?", arrayOf(trackId))
+
+    fun albumsForId(albumId: Long): SupportSQLiteQuery =
+        SimpleSQLiteQuery("$ALBUM_COLUMNS WHERE al.id = ?", arrayOf(albumId))
+
+    private const val ARTIST_COLUMNS = """
+        SELECT ar.id AS id, ar.name AS name,
+               ar.albumCount AS albumCount, ar.trackCount AS trackCount,
+               ar.artworkId AS artworkId
+        FROM artists ar
+    """
+
+    private const val ALBUM_COLUMNS = """
+        SELECT al.id AS id, al.title AS title, ar.name AS artistName,
+               al.year AS year, al.trackCount AS trackCount,
+               al.artworkId AS artworkId
+        FROM albums al
+        JOIN artists ar ON ar.id = al.artistId
+    """
 }

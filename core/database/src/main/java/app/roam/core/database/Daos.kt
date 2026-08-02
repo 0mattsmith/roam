@@ -298,6 +298,10 @@ interface AlbumDao {
     @RawQuery(observedEntities = [AlbumEntity::class, ArtistEntity::class])
     fun pagedListItemsRaw(query: SupportSQLiteQuery): PagingSource<Int, AlbumListItem>
 
+    /** One-shot window, for the car -- Android Auto asks page by page. */
+    @RawQuery(observedEntities = [AlbumEntity::class, ArtistEntity::class])
+    suspend fun listItemsRaw(query: SupportSQLiteQuery): List<AlbumListItem>
+
     @Query("SELECT * FROM albums ORDER BY addedAt DESC LIMIT :limit")
     suspend fun recentlyAdded(limit: Int): List<AlbumEntity>
 
@@ -340,6 +344,10 @@ interface ArtistDao {
 
     @RawQuery(observedEntities = [ArtistEntity::class])
     fun pagedListItemsRaw(query: SupportSQLiteQuery): PagingSource<Int, ArtistListItem>
+
+    /** One-shot window, for the car -- Android Auto asks page by page. */
+    @RawQuery(observedEntities = [ArtistEntity::class])
+    suspend fun listItemsRaw(query: SupportSQLiteQuery): List<ArtistListItem>
 
     /** Artists with no photo that have not been looked up yet. */
     @Query("""

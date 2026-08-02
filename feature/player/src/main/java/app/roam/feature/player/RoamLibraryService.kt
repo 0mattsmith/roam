@@ -1,6 +1,8 @@
 package app.roam.feature.player
 
 import android.content.Intent
+import android.os.Bundle
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.datasource.cache.CacheDataSource
@@ -11,13 +13,23 @@ import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import app.roam.core.database.TrackDao
 import app.roam.core.model.SourceType
 import app.roam.data.source.SourceProvider
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
 import javax.inject.Provider
 
@@ -32,11 +44,31 @@ import javax.inject.Provider
 class RoamLibraryService : MediaLibraryService() {
 
     @Inject lateinit var browseTree: BrowseTree
+    @Inject lateinit var queueBuilder: QueueBuilder
     @Inject lateinit var shuffleEngine: ShuffleEngine
+    @Inject lateinit var tracks: TrackDao
     @Inject lateinit var cache: SimpleCache
     @Inject lateinit var providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>
 
     private var session: MediaLibrarySession? = null
+
+    /**
+     * Browse answers come from Room, so they suspend, but Media3 wants a
+     * ListenableFuture. Bridged here rather than with runBlocking -- blocking
+     * the binder thread that asked for a browse page is how the car UI freezes.
+     */
+    private val serviceJob = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + serviceJob)
+
+    private fun <T> CoroutineScope.future(block: suspend () -> T): ListenableFuture<T> {
+        val settable = SettableFuture.create<T>()
+        launch {
+            runCatching { block() }
+                .onSuccess { settable.set(it) }
+                .onFailure { settable.setException(it) }
+        }
+        return settable
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -88,6 +120,7 @@ class RoamLibraryService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        serviceJob.cancel()
         session?.run { player.release(); release() }
         session = null
         super.onDestroy()
@@ -114,33 +147,158 @@ class RoamLibraryService : MediaLibraryService() {
             page: Int,
             pageSize: Int,
             params: LibraryParams?,
-        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
-            Futures.immediateFuture(
-                LibraryResult.ofItemList(browseTree.children(MediaId.parse(parentId), page, pageSize), params)
-            )
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            val parent = MediaId.parse(parentId)
+            return scope.future {
+                LibraryResult.ofItemList(
+                    browseTree.children(parent, page, pageSize),
+                    browseTree.paramsFor(parent, params),
+                )
+            }
+        }
+
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String,
+        ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
+            browseTree.item(MediaId.parse(mediaId))
+                ?.let { LibraryResult.ofItem(it, null) }
+                ?: LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+        }
+
+        /**
+         * The car hands back the browse item it was given, which carries a
+         * media id and no URI. Resolving it here is what turns a tap in the
+         * browse tree into audio -- without this the tree renders perfectly and
+         * nothing plays.
+         */
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+        ): ListenableFuture<MutableList<MediaItem>> = scope.future {
+            mediaItems.flatMap { item ->
+                // An item that already carries a URI came from the phone UI and
+                // is ready to play as-is.
+                if (item.localConfiguration != null) listOf(item)
+                else queueBuilder.resolve(MediaId.parse(item.mediaId))
+            }.toMutableList()
+        }
+
+        /**
+         * Same resolution as onAddMediaItems, but this one can say where to
+         * start. Tapping track five of an album has to begin at five, and only
+         * this callback carries a start index back to the player.
+         */
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+            val single = mediaItems.singleOrNull()
+            if (single != null && single.localConfiguration == null) {
+                val queue = queueBuilder.resolveWithStart(MediaId.parse(single.mediaId))
+                MediaSession.MediaItemsWithStartPosition(
+                    queue.items,
+                    if (startIndex == C.INDEX_UNSET) queue.startIndex else startIndex,
+                    startPositionMs,
+                )
+            } else {
+                MediaSession.MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs)
+            }
+        }
+
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                .buildUpon()
+                .add(SessionCommand(CarConstants.ACTION_LOVE, Bundle.EMPTY))
+                .add(SessionCommand(CarConstants.ACTION_SHUFFLE_QUEUE, Bundle.EMPTY))
+                .build()
+
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(commands)
+                .setCustomLayout(customLayout(loved = false))
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> = when (customCommand.customAction) {
+            CarConstants.ACTION_LOVE -> scope.future {
+                toggleLoveOnCurrent()
+                SessionResult(SessionResult.RESULT_SUCCESS)
+            }
+            CarConstants.ACTION_SHUFFLE_QUEUE -> scope.future {
+                reshuffleQueueTail()
+                SessionResult(SessionResult.RESULT_SUCCESS)
+            }
+            else -> Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+        }
 
         // TODO(phase2): onSearch / onGetSearchResult over the FTS index. Voice
         //   is the only search available in the car -- there is no keyboard
-        //   while driving.
-        // TODO(phase2): onCustomCommand for ACTION_LOVE / ACTION_SHUFFLE_QUEUE.
+        //   while driving. Needs an FTS table, which does not exist yet.
     }
-}
 
-/** Placeholder until phase 2 builds the real tree. */
-class BrowseTree @Inject constructor() {
-    var rootChildrenLimit: Int = CarConstants.DEFAULT_ROOT_TABS
+    /** The heart reflects the current track, so it is rebuilt as tracks change. */
+    private fun customLayout(loved: Boolean): ImmutableList<CommandButton> = ImmutableList.of(
+        CommandButton.Builder()
+            .setDisplayName(if (loved) "Loved" else "Love")
+            .setIconResId(if (loved) R.drawable.ic_car_loved else R.drawable.ic_car_love)
+            .setSessionCommand(SessionCommand(CarConstants.ACTION_LOVE, Bundle.EMPTY))
+            .build(),
+        CommandButton.Builder()
+            .setDisplayName("Shuffle queue")
+            .setIconResId(R.drawable.ic_car_shuffle)
+            .setSessionCommand(SessionCommand(CarConstants.ACTION_SHUFFLE_QUEUE, Bundle.EMPTY))
+            .build(),
+    )
 
-    fun rootItem(): MediaItem = MediaItem.Builder()
-        .setMediaId(MediaId.Root.raw)
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setIsBrowsable(true)
-                .setIsPlayable(false)
-                .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
-                .build()
-        )
-        .build()
+    private suspend fun currentTrackId(): Long? = withContext(Dispatchers.Main) {
+        session?.player?.currentMediaItem?.mediaId
+            ?.let { MediaId.parse(it) as? MediaId.Track }
+            ?.id
+    }
 
-    fun children(parent: MediaId, page: Int, pageSize: Int): ImmutableList<MediaItem> =
-        ImmutableList.of()
+    private suspend fun toggleLoveOnCurrent() {
+        val id = currentTrackId() ?: return
+        val now = tracks.byId(id) ?: return
+        val loved = !now.loved
+        tracks.setLoved(id, loved, if (loved) System.currentTimeMillis() else null)
+        withContext(Dispatchers.Main) {
+            session?.setCustomLayout(customLayout(loved))
+        }
+    }
+
+    /**
+     * Reorders only what has not played yet. Shuffling the whole queue would
+     * move the track currently playing, which stops the audio mid-song.
+     */
+    private suspend fun reshuffleQueueTail() {
+        val player = session?.player ?: return
+        val (ids, index) = withContext(Dispatchers.Main) {
+            val items = (0 until player.mediaItemCount).mapNotNull { i ->
+                (MediaId.parse(player.getMediaItemAt(i).mediaId) as? MediaId.Track)?.id
+            }
+            items to player.currentMediaItemIndex
+        }
+        if (ids.size < 2) return
+
+        val reordered = shuffleEngine.reshuffleTail(ids, index)
+        val items = queueBuilder.itemsForIds(reordered)
+        withContext(Dispatchers.Main) {
+            val position = player.currentPosition
+            player.setMediaItems(items, index, position)
+            player.prepare()
+        }
+    }
 }
