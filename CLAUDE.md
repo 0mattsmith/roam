@@ -80,6 +80,13 @@ other — route between them through `:app`.
    `skipCount`, `lastPlayedAt` belong to the user. Sync owns file-derived
    columns only. Getting this wrong wipes someone's loved list on a re-scan.
 
+3a. **Sync inserts, it does not upsert.** Room's `@Upsert` writes *every*
+   column of the entity you hand it, so a freshly built row's defaults land on
+   top of real data -- this silently reset `loved`/`playCount` and nulled album
+   and artist `artworkId` for any file whose revision changed. Parents use
+   `insertIgnore` (their ids are content-derived, so a rename is a new row);
+   tracks use `insertIgnore` plus explicit updates of file-derived columns only.
+
 3b. **Room migrations are additive; never destructive.** Same reasoning as 3 --
    `fallbackToDestructiveMigration()` would drop loved flags and play counts on
    every schema bump. Bump `version`, write a `MIGRATION_n_m`, add it to
@@ -201,6 +208,7 @@ resumable Drive upload with cached folder IDs.
 | `Cannot access class X. Check your module classpath` | A public signature in a dependency module exposes a type from one of ITS `implementation` deps — declare an explicit return type, or promote to `api` |
 | Artist photo saves to Photos do nothing | MediaStore `RELATIVE_PATH`/`IS_PENDING` are API 29+; the version check must *wrap* the call, not early-throw, or lint's NewApi fails `lintVitalRelease` |
 | A replaced album cover reverts after a re-tag | `TagWorker` must only ever call `setArtworkIfMissing`; the unconditional `setArtwork` is for user picks alone |
+| Loved flags or artwork vanish after replacing a file | Something reintroduced `@Upsert` in the sync path — see invariant 3a |
 | MusicBrainz starts 503-ing | Exceeded 1 req/sec, or missing a real User-Agent |
 | Update never installs | Version compared as a string, or the signing key changed |
 | Two releases with the same versionCode | Updater ignores the newer one | `versionCode` is the commit count; never hand-edit it in CI |

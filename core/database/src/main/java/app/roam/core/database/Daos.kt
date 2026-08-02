@@ -16,6 +16,72 @@ interface TrackDao {
 
     @Upsert suspend fun upsert(tracks: List<TrackEntity>)
 
+    /**
+     * Sync's insert path. IGNORE, never REPLACE: an existing row carries loved,
+     * playCount and lastPlayedAt, and @Upsert would write the freshly built
+     * entity's defaults straight over them.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(tracks: List<TrackEntity>)
+
+    /**
+     * Bookkeeping for a file whose bytes changed. Runs even for an edited
+     * track -- without stamping the new revision the crawl would treat it as
+     * changed on every single sync.
+     */
+    @Query("""
+        UPDATE tracks SET remoteRevision = :remoteRevision, mimeType = :mimeType,
+                          sizeBytes = :sizeBytes
+        WHERE id = :id
+    """)
+    suspend fun updateFileFacts(id: Long, remoteRevision: String?, mimeType: String, sizeBytes: Long)
+
+    /**
+     * Re-applies what the path implies and queues a re-read of the tags.
+     * Skipped for a track the user edited by hand: their titling beats
+     * whatever the filename says, and silently reverting it would be worse
+     * than never having offered the edit.
+     */
+    @Query("""
+        UPDATE tracks SET
+          title = :title, artistId = :artistId, albumId = :albumId,
+          albumArtist = :albumArtist, trackNo = :trackNo, tagState = :tagState
+        WHERE id = :id AND userEdited = 0
+    """)
+    suspend fun refreshFromPath(
+        id: Long,
+        title: String,
+        artistId: Long,
+        albumId: Long,
+        albumArtist: String?,
+        trackNo: Int?,
+        tagState: TagState,
+    )
+
+    /** Everything the edit form writes, in one go. */
+    @Query("""
+        UPDATE tracks SET
+          title = :title, artistId = :artistId, albumId = :albumId,
+          albumArtist = :albumArtist, trackNo = :trackNo, discNo = :discNo,
+          year = :year, genre = :genre, userEdited = 1
+        WHERE id = :id
+    """)
+    suspend fun applyUserEdit(
+        id: Long,
+        title: String,
+        artistId: Long,
+        albumId: Long,
+        albumArtist: String?,
+        trackNo: Int?,
+        discNo: Int?,
+        year: Int?,
+        genre: String?,
+    )
+
+    /** Hands the track back to the file: cleared, the next pass re-reads it. */
+    @Query("UPDATE tracks SET userEdited = 0, tagState = 'PENDING' WHERE id = :id")
+    suspend fun clearUserEdit(id: Long)
+
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun byId(id: Long): TrackEntity?
 
@@ -107,6 +173,7 @@ interface TrackDao {
                t.title AS name
         FROM tracks t
         WHERE t.sourceId = :sourceId AND t.tagState != 'OK' AND t.tagState != 'FAILED'
+          AND t.userEdited = 0
         ORDER BY t.addedAt
         LIMIT :limit
     """)
@@ -128,7 +195,7 @@ interface TrackDao {
           discTotal = COALESCE(:discTotal, discTotal),
           artworkId = COALESCE(:artworkId, artworkId),
           tagState = :tagState
-        WHERE id = :id
+        WHERE id = :id AND userEdited = 0
     """)
     suspend fun updateTags(
         id: Long,
@@ -211,6 +278,14 @@ data class AlbumListItem(
 interface AlbumDao {
     @Upsert suspend fun upsert(albums: List<AlbumEntity>)
 
+    /**
+     * Sync's insert path. The id is derived from artist + title, so a rename
+     * makes a different row -- there is never anything to update, and an
+     * upsert here would null out a cover the user picked.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(albums: List<AlbumEntity>)
+
     @Query("SELECT * FROM albums WHERE id = :id")
     suspend fun byId(id: Long): AlbumEntity?
 
@@ -252,6 +327,10 @@ interface AlbumDao {
 @Dao
 interface ArtistDao {
     @Upsert suspend fun upsert(artists: List<ArtistEntity>)
+
+    /** As AlbumDao.insertIgnore -- an upsert would wipe artworkId and artworkAttemptedAt. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(artists: List<ArtistEntity>)
 
     @Query("SELECT * FROM artists WHERE id = :id")
     suspend fun byId(id: Long): ArtistEntity?

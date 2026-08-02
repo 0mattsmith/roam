@@ -81,6 +81,11 @@ data class TrackEntity(
     val artworkId: String? = null,
 
     // ---- User state. Sync MUST NOT touch these columns. ----
+    /**
+     * Tags typed by hand. While set, neither sync nor TagWorker rewrites the
+     * tag columns -- the file's own tags are exactly what the user overrode.
+     */
+    val userEdited: Boolean = false,
     val loved: Boolean = false,
     val lovedAt: Long? = null,
     val playCount: Int = 0,

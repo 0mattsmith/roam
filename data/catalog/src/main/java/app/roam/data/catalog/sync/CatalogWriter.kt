@@ -96,9 +96,33 @@ class CatalogWriter @Inject constructor(
         }
 
         // Parents first: tracks reference albums which reference artists.
-        artists.upsert(artistRows.values.toList())
-        albums.upsert(albumRows.values.toList())
-        tracks.upsert(trackRows)
+        //
+        // insertIgnore, never upsert. An upsert writes every column of the
+        // freshly built entity, so the defaults would land on top of real
+        // data: loved and playCount on a track, artworkId on an album, and
+        // artworkId plus artworkAttemptedAt on an artist. Ids are derived
+        // from names, so a rename produces a new row and there is genuinely
+        // nothing to update on the parents.
+        artists.insertIgnore(artistRows.values.toList())
+        albums.insertIgnore(albumRows.values.toList())
+        tracks.insertIgnore(trackRows)
+
+        // insertIgnore did nothing for rows that already existed, so refresh
+        // those explicitly -- file facts always, path-inferred tags only when
+        // the user has not overridden them.
+        for (row in trackRows) {
+            if (known[row.remoteId] == null) continue
+            tracks.updateFileFacts(row.id, row.remoteRevision, row.mimeType, row.sizeBytes)
+            tracks.refreshFromPath(
+                id = row.id,
+                title = row.title,
+                artistId = row.artistId,
+                albumId = row.albumId,
+                albumArtist = row.albumArtist,
+                trackNo = row.trackNo,
+                tagState = row.tagState,
+            )
+        }
         return trackRows.size
     }
 
