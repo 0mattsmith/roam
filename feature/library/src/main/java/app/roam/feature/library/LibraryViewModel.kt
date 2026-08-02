@@ -16,6 +16,8 @@ import app.roam.core.model.TrackSort
 import android.net.Uri
 import app.roam.core.database.ArtistListItem
 import app.roam.data.catalog.LibraryQueries
+import app.roam.data.catalog.TrackEditor
+import app.roam.data.catalog.TrackEdits
 import app.roam.core.database.AlbumListItem
 import app.roam.data.catalog.artwork.ArtworkEditor
 import app.roam.feature.player.PlayerController
@@ -49,6 +51,7 @@ class LibraryViewModel @Inject constructor(
     private val artists: ArtistDao,
     private val player: PlayerController,
     private val photos: ArtworkEditor,
+    private val trackEditor: TrackEditor,
 ) : ViewModel() {
 
     private sealed interface Drill {
@@ -201,6 +204,42 @@ class LibraryViewModel @Inject constructor(
     fun clearPhotoMessage() {
         _photoMessage.value = null
     }
+
+    // ---- track editing ------------------------------------------------------
+
+    /** Non-null while the edit form is open, holding the values it started with. */
+    private val _editing = MutableStateFlow<Pair<TrackListItem, TrackEdits>?>(null)
+    val editing: StateFlow<Pair<TrackListItem, TrackEdits>?> = _editing.asStateFlow()
+
+    fun openTrackEditor(track: TrackListItem) = viewModelScope.launch {
+        val current = trackEditor.current(track.id) ?: return@launch
+        _editing.value = track to current
+    }
+
+    fun closeTrackEditor() {
+        _editing.value = null
+    }
+
+    fun saveTrackEdits(trackId: Long, edits: TrackEdits) = viewModelScope.launch {
+        _editing.value = null
+        // Lists redraw themselves: every PagingSource here observes the tables
+        // the edit touches, including the artist and album it may have moved to.
+        _photoMessage.value = trackEditor.apply(trackId, edits)
+            .fold({ "Track updated" }, { "Could not save: ${it.message}" })
+    }
+
+    fun revertTrackEdits(trackId: Long) = viewModelScope.launch {
+        _photoMessage.value = trackEditor.revert(trackId)
+            .fold({ "Reverted - tags will be re-read" }, { "Could not revert: ${it.message}" })
+    }
+
+    fun setTrackArtwork(track: TrackListItem, picked: Uri) = viewModelScope.launch {
+        _photoMessage.value = photos.setTrackArtwork(track.id, picked)
+            .fold({ it }, { "Could not update: ${it.message}" })
+    }
+
+    /** Whether this track carries hand-typed tags, for the revert entry. */
+    suspend fun isEdited(trackId: Long): Boolean = tracks.byId(trackId)?.userEdited == true
 
     fun togglePlayPause() = player.togglePlayPause()
     fun next() = player.next()

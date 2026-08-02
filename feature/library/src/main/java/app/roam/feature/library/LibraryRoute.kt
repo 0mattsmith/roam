@@ -188,6 +188,10 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         return
     }
 
+    var sheetFor by remember { mutableStateOf<TrackListItem?>(null) }
+    var sheetEdited by remember { mutableStateOf(false) }
+    val editing by vm.editing.collectAsStateWithLifecycle()
+
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
             tracks[index]?.let { track ->
@@ -195,10 +199,36 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                     track = track,
                     isCurrent = track.title == nowPlaying.title,
                     onClick = { vm.playFrom(track) },
+                    onLongClick = { sheetFor = track },
                     onToggleLoved = { vm.toggleLoved(track) },
                 )
             }
         }
+    }
+
+    // Asked once when the sheet opens: whether to offer "undo my edits" is the
+    // only thing that needs it, and querying per row would be a read per item.
+    LaunchedEffect(sheetFor) {
+        sheetEdited = sheetFor?.let { vm.isEdited(it.id) } ?: false
+    }
+
+    sheetFor?.let { track ->
+        TrackActionSheet(
+            track = track,
+            edited = sheetEdited,
+            onDismiss = { sheetFor = null },
+            onEdit = { sheetFor = null; vm.openTrackEditor(track) },
+            onRevert = { sheetFor = null; vm.revertTrackEdits(track.id) },
+            onArtworkPicked = { uri -> sheetFor = null; vm.setTrackArtwork(track, uri) },
+        )
+    }
+
+    editing?.let { (track, initial) ->
+        TrackEditDialog(
+            initial = initial,
+            onDismiss = vm::closeTrackEditor,
+            onSave = { edits -> vm.saveTrackEdits(track.id, edits) },
+        )
     }
 }
 
@@ -311,14 +341,16 @@ private fun PlaylistList(vm: LibraryViewModel) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun TrackRow(
     track: TrackListItem,
     isCurrent: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onToggleLoved: () -> Unit,
 ) {
     ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
         headlineContent = {
             Text(
                 track.title,

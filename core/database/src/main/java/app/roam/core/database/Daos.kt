@@ -78,6 +78,14 @@ interface TrackDao {
         genre: String?,
     )
 
+    /**
+     * Artwork for one track, chosen by hand. Local only: the picture the rest
+     * of the world sees lives in the file's APIC frame, and rewriting that
+     * needs the tag writer.
+     */
+    @Query("UPDATE tracks SET artworkId = :artworkId WHERE id = :id")
+    suspend fun setArtwork(id: Long, artworkId: String)
+
     /** Hands the track back to the file: cleared, the next pass re-reads it. */
     @Query("UPDATE tracks SET userEdited = 0, tagState = 'PENDING' WHERE id = :id")
     suspend fun clearUserEdit(id: Long)

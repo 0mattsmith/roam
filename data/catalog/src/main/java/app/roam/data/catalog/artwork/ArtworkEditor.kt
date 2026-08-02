@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import app.roam.core.database.AlbumDao
 import app.roam.core.database.ArtistDao
+import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
 import app.roam.core.model.ArtworkSource
 import app.roam.core.model.SourceType
@@ -36,6 +37,7 @@ class ArtworkEditor @Inject constructor(
     private val artwork: ArtworkStore,
     private val artists: ArtistDao,
     private val albums: AlbumDao,
+    private val tracks: TrackDao,
     private val settings: SettingsRepository,
     private val providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>,
 ) {
@@ -119,6 +121,17 @@ class ArtworkEditor @Inject constructor(
                 candidates = ArtworkFiles.ALBUM_NAMES,
                 bytes = bytes,
             )
+        }
+
+    /**
+     * Artwork for a single track. Unlike an album cover this is not written
+     * back to the source: a per-track picture belongs in that file's APIC
+     * frame, and a cover.jpg beside it would change the whole album.
+     */
+    suspend fun setTrackArtwork(trackId: Long, picked: Uri): Result<String> =
+        adopt(picked) { artworkId, _ ->
+            tracks.setArtwork(trackId, artworkId)
+            false
         }
 
     /** Shared shape: decode, store, hand off to the caller's write, report. */
