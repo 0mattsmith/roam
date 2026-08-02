@@ -202,6 +202,8 @@ resumable Drive upload with cached folder IDs.
 | Roam created stray folders in the music library | `resolveFolder(create = true)` where the artist tag name did not match a folder. The photo pass resolves with `create = false` and skips when absent |
 | A hand-placed artist photo keeps getting replaced | Precedence inverted — `artist.jpg` on the source must beat Deezer, and an existing file is never overwritten |
 | Artist avatars blank | Tags carry no artist photo — `ArtistPhotoWorker` pulls them from Deezer (`api.deezer.com/search/artist`, no key). Only a `Ids.normalise`-exact name match is accepted; a wrong face is worse than none |
+| A band logo renders as a black rectangle | Something sent it down the JPEG path. Logos are transparent PNGs — `ArtworkStore.put(keepAlpha = true)`, and `ArtworkProvider.getType` must report `image/png` for them |
+| Logos never appear | TheAudioDB's shared test key is public and capped at 30 req/min for everyone using it. A failure is shrugged off, not retried; `logoAttemptedAt` stops it being re-asked forever |
 | An artist is re-searched every launch | `artworkAttemptedAt` not stamped — it must be written on failure too, not just success |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |

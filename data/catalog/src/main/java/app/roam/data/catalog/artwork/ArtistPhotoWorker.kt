@@ -124,7 +124,105 @@ class ArtistPhotoWorker @AssistedInject constructor(
             setProgress(progress(fromSource, fromDeezer, attempted))
         }
 
+        runLogoPass(root, provider, mayUpload)
         return Result.success(progress(fromSource, fromDeezer, attempted))
+    }
+
+    /**
+     * Band logos, which are a different thing from a photo of the artist and
+     * come from a different place -- Deezer has no logos at all.
+     *
+     * Source order mirrors the photo pass: a logo.png already in the artist's
+     * folder wins, then TheAudioDB, whose result is written back.
+     */
+    private suspend fun runLogoPass(
+        root: String?,
+        provider: SourceProvider?,
+        mayUpload: Boolean,
+    ) {
+        while (true) {
+            val batch = artists.artistsNeedingLogos(BATCH)
+            if (batch.isEmpty()) break
+
+            for (row in batch) {
+                val now = System.currentTimeMillis()
+                if (isPlaceholder(row.name)) {
+                    artists.setLogo(row.id, null, now)
+                    continue
+                }
+
+                val folderId =
+                    if (root != null && provider != null) {
+                        runCatching { provider.resolveFolder(root, listOf(row.name), create = false) }
+                            .getOrNull()
+                    } else null
+
+                var logoId: String? = null
+
+                if (folderId != null && provider != null) {
+                    logoId = runCatching {
+                        provider.findInFolder(folderId, ArtworkFiles.LOGO_NAMES)?.let { found ->
+                            artwork.put(
+                                provider.read(found.remoteId),
+                                ArtworkSource.FOLDER_JPG,
+                                keepAlpha = true,
+                            )
+                        }
+                    }.getOrNull()
+                }
+
+                if (logoId == null) {
+                    val logo = runCatching { fetchLogo(row.name) }.getOrNull()
+                    if (logo != null) {
+                        // keepAlpha: a logo is a transparent PNG, and the JPEG
+                        // path would flatten it to a black rectangle.
+                        logoId = artwork.put(logo, ArtworkSource.AUDIODB, keepAlpha = true)
+
+                        if (mayUpload && folderId != null && provider != null && root != null) {
+                            runCatching {
+                                uploadBytes(provider, root, row.name, logo, ArtworkFiles.LOGO_UPLOAD_NAME)
+                            }
+                        }
+                    }
+                    delay(AUDIODB_GAP_MS)
+                }
+
+                artists.setLogo(row.id, logoId, now)
+            }
+        }
+    }
+
+    /**
+     * TheAudioDB's shared test key. It is public and capped at 30 requests a
+     * minute across everyone using it, which is why the gap below is generous
+     * -- and why a failure here is shrugged off rather than retried.
+     */
+    private suspend fun fetchLogo(name: String): ByteArray? = withContext(Dispatchers.IO) {
+        val query = URLEncoder.encode(name, "UTF-8")
+        val url = "https://www.theaudiodb.com/api/v1/json/$AUDIODB_KEY/search.php?s=$query"
+
+        val body = client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+            if (!response.isSuccessful) return@withContext null
+            response.body?.string() ?: return@withContext null
+        }
+
+        // "artists": null when nothing matched, rather than an empty array.
+        val results = JSONObject(body).optJSONArray("artists") ?: return@withContext null
+        val wanted = Ids.normalise(name)
+
+        for (i in 0 until results.length()) {
+            val entry = results.optJSONObject(i) ?: continue
+            if (Ids.normalise(entry.optString("strArtist")) != wanted) continue
+
+            val logo = entry.optString("strArtistLogo").takeIf { it.isNotBlank() && it != "null" }
+                ?: entry.optString("strArtistClearart").takeIf { it.isNotBlank() && it != "null" }
+                ?: continue
+
+            return@withContext client.newCall(Request.Builder().url(logo).build()).execute().use {
+                if (!it.isSuccessful) null else it.body?.bytes()
+            }
+        }
+        null
     }
 
     private fun progress(fromSource: Int, fromDeezer: Int, attempted: Int) =
@@ -146,11 +244,20 @@ class ArtistPhotoWorker @AssistedInject constructor(
         root: String,
         artistName: String,
         photo: ByteArray,
+    ) = uploadBytes(provider, root, artistName, photo, ArtworkFiles.ARTIST_UPLOAD_NAME)
+
+    private suspend fun uploadBytes(
+        provider: SourceProvider,
+        root: String,
+        artistName: String,
+        bytes: ByteArray,
+        fileName: String,
     ) = withContext(Dispatchers.IO) {
-        val tmp = File.createTempFile("artist", ".jpg", applicationContext.cacheDir)
+        val tmp = File.createTempFile("artist", ".${fileName.substringAfterLast('.')}",
+                                      applicationContext.cacheDir)
         try {
-            tmp.writeBytes(photo)
-            provider.write(root, listOf(artistName), ArtworkFiles.ARTIST_UPLOAD_NAME, tmp)
+            tmp.writeBytes(bytes)
+            provider.write(root, listOf(artistName), fileName, tmp)
         } finally {
             tmp.delete()
         }
@@ -210,6 +317,10 @@ class ArtistPhotoWorker @AssistedInject constructor(
 
         private const val BATCH = 40
         private const val REQUEST_GAP_MS = 250L
+
+        /** Public shared key. 30 requests a minute for everyone using it. */
+        private const val AUDIODB_KEY = "123"
+        private const val AUDIODB_GAP_MS = 2200L
 
         fun enqueue(ctx: Context) {
             val request = OneTimeWorkRequestBuilder<ArtistPhotoWorker>()

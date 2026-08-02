@@ -183,20 +183,24 @@ class BrowseTree @Inject constructor(
             )
             .build()
 
-    private fun ArtistListItem.toMediaItem(): MediaItem =
-        MediaItem.Builder()
+    private fun ArtistListItem.toMediaItem(): MediaItem {
+        // The car honours the same per-artist choice as the phone, falling back
+        // to whichever image exists.
+        val chosen = if (preferLogo) logoArtworkId ?: artworkId else artworkId ?: logoArtworkId
+        return MediaItem.Builder()
             .setMediaId(MediaId.Artist(id).raw)
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(name)
                     .setSubtitle("$albumCount albums")
-                    .setArtworkUri(artworkId?.let { ArtworkProvider.uri(ctx, it, size = 320) })
+                    .setArtworkUri(chosen?.let { ArtworkProvider.uri(ctx, it, size = 320) })
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_ARTIST)
                     .build()
             )
             .build()
+    }
 
     private fun AlbumListItem.toMediaItem(): MediaItem =
         MediaItem.Builder()

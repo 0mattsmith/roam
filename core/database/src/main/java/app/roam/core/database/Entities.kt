@@ -31,6 +31,11 @@ data class ArtistEntity(
      * artist with no photo anywhere gets re-searched on every single run.
      */
     val artworkAttemptedAt: Long? = null,
+    /** Band logo or wordmark. A different thing from a photo of the artist. */
+    val logoArtworkId: String? = null,
+    val logoAttemptedAt: Long? = null,
+    /** Which of the two this artist should be drawn with. */
+    val preferLogo: Boolean = false,
     val albumCount: Int = 0,
     val trackCount: Int = 0,
 )

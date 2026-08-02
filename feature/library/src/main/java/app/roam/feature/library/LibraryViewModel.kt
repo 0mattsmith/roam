@@ -189,6 +189,11 @@ class LibraryViewModel @Inject constructor(
             .fold({ it }, { "Could not save: ${it.message}" })
     }
 
+    fun setArtistPreferLogo(artist: ArtistListItem, preferLogo: Boolean) = viewModelScope.launch {
+        _photoMessage.value = photos.setPreferLogo(artist.id, preferLogo)
+            .fold({ it }, { "Could not switch: ${it.message}" })
+    }
+
     fun setArtistPhoto(artist: ArtistListItem, picked: Uri) = viewModelScope.launch {
         // The list redraws itself: the artists PagingSource observes the table.
         _photoMessage.value = photos.setArtistPhoto(artist.id, artist.name, picked)

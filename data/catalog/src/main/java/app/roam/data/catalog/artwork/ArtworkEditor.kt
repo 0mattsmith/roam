@@ -158,6 +158,15 @@ class ArtworkEditor @Inject constructor(
             false
         }
 
+    /** Which image an artist is drawn with. Purely a display preference. */
+    suspend fun setPreferLogo(artistId: Long, preferLogo: Boolean): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                artists.setPreferLogo(artistId, preferLogo)
+                if (preferLogo) "Showing the logo" else "Showing the photo"
+            }
+        }
+
     /** Shared shape: decode, store, hand off to the caller's write, report. */
     private suspend fun adopt(
         picked: Uri,

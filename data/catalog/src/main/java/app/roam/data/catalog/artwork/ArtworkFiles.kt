@@ -19,6 +19,11 @@ object ArtworkFiles {
         "front.jpg", "album.jpg",
     )
 
+    /** Kodi and Plex both use logo.png in the artist folder; follow the herd. */
+    val LOGO_NAMES = listOf("logo.png", "logo.jpg", "clearlogo.png")
+
     const val ARTIST_UPLOAD_NAME = "artist.jpg"
+    /** PNG, not JPEG: a logo without its transparency is a black rectangle. */
+    const val LOGO_UPLOAD_NAME = "logo.png"
     const val ALBUM_UPLOAD_NAME = "cover.jpg"
 }

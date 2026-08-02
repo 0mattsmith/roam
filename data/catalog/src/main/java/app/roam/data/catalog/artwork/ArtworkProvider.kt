@@ -43,7 +43,16 @@ class ArtworkProvider : ContentProvider() {
         return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY)
     }
 
-    override fun getType(uri: Uri) = "image/jpeg"
+    /** Logos are PNG so their transparency survives; covers stay JPEG. */
+    override fun getType(uri: Uri): String {
+        val id = uri.lastPathSegment ?: return "image/jpeg"
+        val size = uri.getQueryParameter("size")?.toIntOrNull()
+        return if (store.file(id, size).extension.equals("png", ignoreCase = true)) {
+            "image/png"
+        } else {
+            "image/jpeg"
+        }
+    }
     override fun query(u: Uri, p: Array<out String>?, s: String?, a: Array<out String>?, o: String?): Cursor? = null
     override fun insert(uri: Uri, values: ContentValues?): Uri? = null
     override fun delete(uri: Uri, s: String?, a: Array<out String>?) = 0

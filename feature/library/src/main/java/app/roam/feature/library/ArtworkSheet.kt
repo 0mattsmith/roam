@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -52,7 +53,12 @@ data class ArtworkTarget(
     val artworkId: String?,
     /** "photo" or "cover" -- the sheet reads as English either way. */
     val noun: String,
-)
+    /** Set only for artists that have both a photo and a logo to choose between. */
+    val alternate: Alternate? = null,
+) {
+    /** The other image this entry could be drawn with. */
+    data class Alternate(val usingLogo: Boolean)
+}
 
 /**
  * Long-press menu for an artist or an album.
@@ -69,6 +75,7 @@ fun ArtworkSheet(
     onView: () -> Unit,
     onSave: () -> Unit,
     onPicked: (Uri) -> Unit,
+    onToggleAlternate: (Boolean) -> Unit = {},
 ) {
     // The system photo picker. No storage permission, and it only ever hands
     // back the single item the user chose.
@@ -110,6 +117,19 @@ fun ArtworkSheet(
                     headlineContent = { Text("Save to Photos") },
                     supportingContent = { Text("Copies it to Pictures/Roam") },
                     leadingContent = { Icon(Icons.Filled.Download, contentDescription = null) },
+                )
+            }
+
+            // Offered only when there is genuinely a choice: an artist with no
+            // logo would get a switch that does nothing visible.
+            target.alternate?.let { alternate ->
+                ListItem(
+                    modifier = Modifier.clickable { onToggleAlternate(!alternate.usingLogo) },
+                    headlineContent = {
+                        Text(if (alternate.usingLogo) "Show the photo instead" else "Show the logo instead")
+                    },
+                    supportingContent = { Text("Only changes what this artist looks like") },
+                    leadingContent = { Icon(Icons.Filled.SwapHoriz, contentDescription = null) },
                 )
             }
 

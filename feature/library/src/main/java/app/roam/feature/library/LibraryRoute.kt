@@ -311,6 +311,10 @@ private fun ArtistList(vm: LibraryViewModel, listState: LazyListState) {
             onView = { sheetFor = null; viewing = artist },
             onSave = { sheetFor = null; vm.saveArtistPhoto(artist) },
             onPicked = { uri -> sheetFor = null; vm.setArtistPhoto(artist, uri) },
+            onToggleAlternate = { useLogo ->
+                sheetFor = null
+                vm.setArtistPreferLogo(artist, useLogo)
+            },
         )
     }
 
@@ -355,8 +359,26 @@ private fun AlbumList(vm: LibraryViewModel, listState: LazyListState) {
     }
 }
 
-private fun ArtistListItem.asTarget() =
-    ArtworkTarget(title = name, subtitle = null, artworkId = artworkId, noun = "photo")
+private fun ArtistListItem.asTarget(): ArtworkTarget {
+    // Captured locally: Kotlin will not smart-cast a property declared in
+    // another module, because it cannot prove the getter is stable.
+    val logo = logoArtworkId
+    val photo = artworkId
+    val showingLogo = preferLogo && logo != null
+    return ArtworkTarget(
+        title = name,
+        subtitle = null,
+        artworkId = if (showingLogo) logo else photo,
+        noun = if (showingLogo) "logo" else "photo",
+        alternate = if (logo != null && photo != null) {
+            ArtworkTarget.Alternate(usingLogo = showingLogo)
+        } else null,
+    )
+}
+
+/** What the row actually draws: the chosen image, falling back to the other. */
+private fun ArtistListItem.displayArtworkId(): String? =
+    if (preferLogo) logoArtworkId ?: artworkId else artworkId ?: logoArtworkId
 
 private fun AlbumListItem.asTarget() =
     ArtworkTarget(title = title, subtitle = artistName, artworkId = artworkId, noun = "cover")
@@ -458,7 +480,7 @@ private fun ArtistRow(
         supportingContent = {
             Text("${artist.albumCount} albums · ${artist.trackCount} tracks")
         },
-        leadingContent = { Artwork(artist.artworkId, circular = true) },
+        leadingContent = { Artwork(artist.displayArtworkId(), circular = true) },
     )
 }
 

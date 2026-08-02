@@ -142,7 +142,8 @@ object LibraryQueries {
     private const val ARTIST_COLUMNS = """
         SELECT ar.id AS id, ar.name AS name,
                ar.albumCount AS albumCount, ar.trackCount AS trackCount,
-               ar.artworkId AS artworkId
+               ar.artworkId AS artworkId, ar.logoArtworkId AS logoArtworkId,
+               ar.preferLogo AS preferLogo
         FROM artists ar
     """
 

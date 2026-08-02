@@ -286,6 +286,8 @@ data class ArtistListItem(
     val albumCount: Int,
     val trackCount: Int,
     val artworkId: String?,
+    val logoArtworkId: String?,
+    val preferLogo: Boolean,
 )
 
 data class AlbumListItem(
@@ -383,6 +385,22 @@ interface ArtistDao {
 
     @Query("UPDATE artists SET artworkId = :artworkId, artworkAttemptedAt = :at WHERE id = :id")
     suspend fun setArtwork(id: Long, artworkId: String?, at: Long)
+
+    /** Artists with no logo that have not been looked up yet. */
+    @Query("""
+        SELECT id, name FROM artists
+        WHERE logoArtworkId IS NULL AND logoAttemptedAt IS NULL
+        ORDER BY trackCount DESC
+        LIMIT :limit
+    """)
+    suspend fun artistsNeedingLogos(limit: Int): List<ArtistPhotoRow>
+
+    @Query("UPDATE artists SET logoArtworkId = :logoArtworkId, logoAttemptedAt = :at WHERE id = :id")
+    suspend fun setLogo(id: Long, logoArtworkId: String?, at: Long)
+
+    /** Which image this artist is drawn with. Purely the user's choice. */
+    @Query("UPDATE artists SET preferLogo = :preferLogo WHERE id = :id")
+    suspend fun setPreferLogo(id: Long, preferLogo: Boolean)
 
     /** Marks a lookup as done even when nothing was found, so it is not repeated. */
     @Query("UPDATE artists SET artworkAttemptedAt = :at WHERE id IN (:ids)")
