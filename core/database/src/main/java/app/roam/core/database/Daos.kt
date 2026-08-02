@@ -96,6 +96,14 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE albumId = :albumId ORDER BY discNo, trackNo, title")
     fun byAlbum(albumId: Long): Flow<List<TrackEntity>>
 
+    /** One-shot, for a bulk edit that needs each track's current values. */
+    @Query("SELECT * FROM tracks WHERE albumId = :albumId ORDER BY discNo, trackNo, title")
+    suspend fun entitiesForAlbum(albumId: Long): List<TrackEntity>
+
+    /** Same picture on every track of an album, in one statement. */
+    @Query("UPDATE tracks SET artworkId = :artworkId WHERE albumId = :albumId")
+    suspend fun setArtworkForAlbum(albumId: Long, artworkId: String)
+
     @Query("SELECT * FROM tracks WHERE artistId = :artistId ORDER BY albumId, discNo, trackNo")
     suspend fun byArtist(artistId: Long): List<TrackEntity>
 

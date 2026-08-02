@@ -1,6 +1,7 @@
 package app.roam.feature.library
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,11 +44,13 @@ import coil.compose.AsyncImage
  * Reads the ALBUM's artwork, not the track's. Those usually agree, but a track
  * with its own picture would otherwise change the header as you scrolled past.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AlbumHeader(
     track: TrackListItem,
     onPlay: () -> Unit,
     onOpen: () -> Unit,
+    onLongPress: () -> Unit,
 ) {
     val ctx = LocalContext.current
 
@@ -59,7 +62,7 @@ fun AlbumHeader(
         Column {
             Row(
                 Modifier
-                    .clickable(onClick = onOpen)
+                    .combinedClickable(onClick = onOpen, onLongClick = onLongPress)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,

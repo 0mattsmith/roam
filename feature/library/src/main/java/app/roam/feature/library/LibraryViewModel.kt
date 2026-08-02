@@ -16,6 +16,7 @@ import app.roam.core.model.TrackSort
 import android.net.Uri
 import app.roam.core.database.ArtistListItem
 import app.roam.data.catalog.LibraryQueries
+import app.roam.data.catalog.AlbumBulkEdits
 import app.roam.data.catalog.TrackEditor
 import app.roam.data.catalog.TrackEdits
 import app.roam.core.database.AlbumListItem
@@ -241,6 +242,42 @@ class LibraryViewModel @Inject constructor(
         _photoMessage.value = photos.setTrackArtwork(track.id, picked)
             .fold({ it }, { "Could not update: ${it.message}" })
     }
+
+    // ---- bulk album editing -------------------------------------------------
+
+    /** Non-null while the bulk form is open, holding the album it applies to. */
+    private val _bulkEditing = MutableStateFlow<TrackListItem?>(null)
+    val bulkEditing: StateFlow<TrackListItem?> = _bulkEditing.asStateFlow()
+
+    fun openAlbumBulkEditor(track: TrackListItem) {
+        _bulkEditing.value = track
+    }
+
+    fun closeAlbumBulkEditor() {
+        _bulkEditing.value = null
+    }
+
+    fun applyAlbumEdits(albumId: Long, edits: AlbumBulkEdits) = viewModelScope.launch {
+        _bulkEditing.value = null
+        _photoMessage.value = trackEditor.applyToAlbum(albumId, edits)
+            .fold(
+                { count -> if (count == 0) "Nothing to change" else "Updated $count tracks" },
+                { "Could not save: ${it.message}" },
+            )
+    }
+
+    fun setAlbumArtwork(track: TrackListItem, picked: Uri) = viewModelScope.launch {
+        _photoMessage.value = photos.setAlbumArtworkEverywhere(
+            albumId = track.albumId,
+            albumArtist = track.artistName,
+            albumTitle = track.albumTitle,
+            picked = picked,
+        ).fold({ it }, { "Could not update: ${it.message}" })
+    }
+
+    /** How many tracks a bulk edit would touch, for the dialog's title. */
+    suspend fun albumTrackCount(albumId: Long): Int =
+        tracks.listItemsRaw(LibraryQueries.tracksForAlbum(albumId)).size
 
     /** Whether this track carries hand-typed tags, for the revert entry. */
     suspend fun isEdited(trackId: Long): Boolean = tracks.byId(trackId)?.userEdited == true

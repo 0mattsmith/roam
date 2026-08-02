@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -191,7 +192,10 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
 
     var sheetFor by remember { mutableStateOf<TrackListItem?>(null) }
     var sheetEdited by remember { mutableStateOf(false) }
+    var headerSheetFor by remember { mutableStateOf<TrackListItem?>(null) }
+    var bulkCount by remember { mutableIntStateOf(0) }
     val editing by vm.editing.collectAsStateWithLifecycle()
+    val bulkEditing by vm.bulkEditing.collectAsStateWithLifecycle()
 
     // Album-major orderings get one big cover per album instead of the same
     // thumbnail repeated down every row.
@@ -210,6 +214,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                             track = track,
                             onPlay = { vm.playFrom(track) },
                             onOpen = { vm.openAlbum(track.albumId, track.albumTitle) },
+                            onLongPress = { headerSheetFor = track },
                         )
                     }
                 }
@@ -247,6 +252,31 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             initial = initial,
             onDismiss = vm::closeTrackEditor,
             onSave = { edits -> vm.saveTrackEdits(track.id, edits) },
+        )
+    }
+
+    headerSheetFor?.let { track ->
+        AlbumHeaderSheet(
+            track = track,
+            onDismiss = { headerSheetFor = null },
+            onBulkEdit = { headerSheetFor = null; vm.openAlbumBulkEditor(track) },
+            onArtworkPicked = { uri -> headerSheetFor = null; vm.setAlbumArtwork(track, uri) },
+        )
+    }
+
+    // Counted once when the form opens rather than per recomposition: it is
+    // only there to say "Edit 12 tracks" honestly.
+    LaunchedEffect(bulkEditing) {
+        bulkCount = bulkEditing?.let { vm.albumTrackCount(it.albumId) } ?: 0
+    }
+
+    bulkEditing?.let { track ->
+        AlbumBulkEditDialog(
+            albumTitle = track.albumTitle,
+            trackCount = bulkCount,
+            initialArtist = track.artistName,
+            onDismiss = vm::closeAlbumBulkEditor,
+            onSave = { edits -> vm.applyAlbumEdits(track.albumId, edits) },
         )
     }
 }

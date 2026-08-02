@@ -124,6 +124,30 @@ class ArtworkEditor @Inject constructor(
         }
 
     /**
+     * One picture for the album row and every track in it.
+     *
+     * setAlbumCover alone changes what the album shows; a track still carries
+     * its own artworkId, which is what an ungrouped list draws. Someone asking
+     * to change "the album's artwork" means both.
+     */
+    suspend fun setAlbumArtworkEverywhere(
+        albumId: Long,
+        albumArtist: String,
+        albumTitle: String,
+        picked: Uri,
+    ): Result<String> =
+        adopt(picked) { artworkId, bytes ->
+            albums.setArtwork(albumId, artworkId)
+            tracks.setArtworkForAlbum(albumId, artworkId)
+            pushToSource(
+                pathSegments = listOf(albumArtist, albumTitle),
+                fileName = ArtworkFiles.ALBUM_UPLOAD_NAME,
+                candidates = ArtworkFiles.ALBUM_NAMES,
+                bytes = bytes,
+            )
+        }
+
+    /**
      * Artwork for a single track. Unlike an album cover this is not written
      * back to the source: a per-track picture belongs in that file's APIC
      * frame, and a cover.jpg beside it would change the whole album.

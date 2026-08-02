@@ -4,12 +4,35 @@ import app.roam.core.database.AlbumDao
 import app.roam.core.database.AlbumEntity
 import app.roam.core.database.ArtistDao
 import app.roam.core.database.ArtistEntity
+import app.roam.core.database.RoamDatabase
 import app.roam.core.database.TrackDao
 import app.roam.core.model.Ids
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * A bulk edit over one album. A null field means the box was left unticked and
+ * that column should not be written -- distinct from a ticked-but-empty field,
+ * which clears it.
+ *
+ * No title and no track number: those are what distinguish the tracks from each
+ * other, so applying one value across an album is never the intent.
+ */
+data class AlbumBulkEdits(
+    val artist: String? = null,
+    val album: String? = null,
+    val albumArtist: String? = null,
+    val year: Int? = null,
+    val genre: String? = null,
+    val discNo: Int? = null,
+) {
+    val isEmpty: Boolean
+        get() = artist == null && album == null && albumArtist == null &&
+            year == null && genre == null && discNo == null
+}
 
 /** The fields the edit form exposes. Everything else is file-derived. */
 data class TrackEdits(
@@ -41,6 +64,7 @@ class TrackEditor @Inject constructor(
     private val tracks: TrackDao,
     private val artists: ArtistDao,
     private val albums: AlbumDao,
+    private val db: RoamDatabase,
 ) {
 
     /** Current values, for populating the form. */
@@ -118,6 +142,91 @@ class TrackEditor @Inject constructor(
     suspend fun revert(trackId: Long): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching { tracks.clearUserEdit(trackId) }
     }
+
+    /**
+     * Applies the ticked fields to every track in an album.
+     *
+     * Wrapped in a transaction because renaming the album moves all of its
+     * tracks to a new content-derived id at once. Halfway through, half the
+     * album would point at the new id and half at the old, splitting it in two
+     * with no obvious way back.
+     *
+     * Titles and track numbers are deliberately absent: those are what make one
+     * track different from another, and overwriting them across an album is
+     * never what someone means by "bulk edit".
+     */
+    suspend fun applyToAlbum(albumId: Long, edits: AlbumBulkEdits): Result<Int> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                if (edits.isEmpty) return@runCatching 0
+                val rows = tracks.entitiesForAlbum(albumId)
+                if (rows.isEmpty()) return@runCatching 0
+
+                val existingAlbum = albums.byId(albumId)
+
+                db.withTransaction {
+                    for (row in rows) {
+                        val artistName = edits.artist
+                            ?: artists.byId(row.artistId)?.name
+                            ?: UNKNOWN_ARTIST
+                        val albumName = edits.album ?: existingAlbum?.title ?: UNKNOWN_ALBUM
+                        val albumArtistName = edits.albumArtist ?: row.albumArtist ?: artistName
+
+                        val newArtistId = Ids.artist(artistName)
+                        val newAlbumArtistId = Ids.artist(albumArtistName)
+                        val newAlbumId = Ids.album(albumArtistName, albumName)
+
+                        artists.insertIgnore(
+                            buildList {
+                                add(ArtistEntity(newArtistId, artistName, Ids.normalise(artistName)))
+                                if (newAlbumArtistId != newArtistId) {
+                                    add(
+                                        ArtistEntity(
+                                            newAlbumArtistId,
+                                            albumArtistName,
+                                            Ids.normalise(albumArtistName),
+                                        )
+                                    )
+                                }
+                            }
+                        )
+                        albums.insertIgnore(
+                            listOf(
+                                AlbumEntity(
+                                    id = newAlbumId,
+                                    title = albumName,
+                                    sortTitle = Ids.normalise(albumName),
+                                    artistId = newAlbumArtistId,
+                                    year = edits.year ?: existingAlbum?.year,
+                                    // The new row inherits the cover, or renaming
+                                    // an album would silently lose its artwork.
+                                    artworkId = existingAlbum?.artworkId,
+                                    addedAt = existingAlbum?.addedAt ?: System.currentTimeMillis(),
+                                )
+                            )
+                        )
+
+                        tracks.applyUserEdit(
+                            id = row.id,
+                            title = row.title,
+                            artistId = newArtistId,
+                            albumId = newAlbumId,
+                            albumArtist = albumArtistName,
+                            trackNo = row.trackNo,
+                            discNo = edits.discNo ?: row.discNo,
+                            year = edits.year ?: row.year,
+                            genre = edits.genre?.ifBlank { null } ?: row.genre.takeIf { edits.genre == null },
+                        )
+                    }
+
+                    albums.pruneOrphans()
+                    artists.pruneOrphans()
+                    albums.recomputeRollups()
+                    artists.recomputeRollups()
+                }
+                rows.size
+            }
+        }
 
     private companion object {
         const val UNKNOWN_ARTIST = "Unknown artist"

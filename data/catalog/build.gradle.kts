@@ -29,6 +29,12 @@ dependencies {
     implementation(projects.core.model)
     implementation(projects.core.common)
     implementation(projects.core.database)
+    // withTransaction: a bulk album edit re-parents every track at once, and
+    // half an album pointing at a new id and half at the old one would split it.
+    // room-runtime is declared explicitly rather than leant on arriving through
+    // core:database's api() -- this module names RoamDatabase directly now.
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
     implementation(projects.core.datastore)
     // api, not implementation: ArtistPhotoEditor's public constructor takes a
     // Map<SourceType, Provider<SourceProvider>>, so any module that injects it
