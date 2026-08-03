@@ -48,30 +48,27 @@ class BrowseTree @Inject constructor(
      */
     var rootChildrenLimit: Int = CarConstants.DEFAULT_ROOT_TABS
 
-    /**
-     * Whether the unit will render a playable item at the root. Nothing in the
-     * hints means nothing was advertised rather than "no", and Android Auto
-     * does accept one, so the default is yes; only an explicit browsable-only
-     * answer takes the shuffle row away.
-     */
-    var rootPlayableAllowed: Boolean = true
-
     fun rootItem(): MediaItem = browsable(MediaId.Root, title = "Roam")
 
     /**
-     * Root children after the shuffle row, in the order they earn their place.
+     * The four tabs, in the order they earn their place.
      *
-     * This list is taken FROM THE FRONT, never the back. When the unit
-     * advertises a smaller limit -- which is what happens in the narrow panel
-     * beside maps -- whatever sits last falls off the end. Home is last because
-     * its headline row is "Shuffle everything", and that has been promoted to
-     * the root itself; what is left inside it is the two recency lists.
+     * All browsable. Nothing playable sits at the root, because every list
+     * below leads with its own shuffle row instead -- which is better in three
+     * ways: no head unit can refuse it (some accept only browsable children at
+     * the root), it shuffles the thing you are actually looking at rather than
+     * always the whole library, and Library is the first tab, so opening Roam
+     * already puts "Shuffle all" at the top of the screen.
+     *
+     * Taken FROM THE FRONT, never the back: the unit shrinks its limit when
+     * maps takes most of the screen, so whatever sits last falls off.
      */
     private val rootTabs: List<Pair<MediaId, String>> = listOf(
+        MediaId.Library to "Library",
         MediaId.Artists to "Artists",
         MediaId.Albums to "Albums",
+        // TODO(phase5): becomes "Playlists", with Loved as its first entry.
         MediaId.Loved to "Loved",
-        MediaId.Home to "Home",
     )
 
     suspend fun children(parent: MediaId, page: Int, pageSize: Int): ImmutableList<MediaItem> {
@@ -79,23 +76,39 @@ class BrowseTree @Inject constructor(
         val offset = page * size
 
         val items: List<MediaItem> = when (parent) {
-            // Shuffle first, so it survives any limit down to one. One tap and
-            // the library is playing, which is the only thing worth doing on a
-            // panel this small while the car is moving.
-            MediaId.Root -> buildList {
-                if (rootPlayableAllowed) add(playableAction(MediaId.ShuffleAll, SHUFFLE_EVERYTHING))
-                rootTabs.forEach { (id, title) -> add(browsable(id, title)) }
-            }.take(rootChildrenLimit.coerceAtLeast(1))
+            MediaId.Root -> rootTabs.take(rootChildrenLimit.coerceAtLeast(1))
+                .map { (id, title) -> browsable(id, title) }
 
-            MediaId.Home -> homeChildren()
+            // Home, under its own name. Shuffle first because it is the one
+            // thing worth doing while the car is moving, then the two recency
+            // lists, then everything.
+            MediaId.Library -> buildList {
+                if (page == 0) {
+                    add(playableAction(MediaId.ShuffleAll, SHUFFLE_ALL))
+                    add(browsable(MediaId.RecentlyAdded, "Recently added"))
+                    add(browsable(MediaId.RecentlyPlayed, "Recently played"))
+                }
+                addAll(
+                    tracks.listItemsRaw(LibraryQueries.tracksPage(TrackSort.ARTIST, size, offset))
+                        .map { it.toMediaItem() }
+                )
+            }
 
-            MediaId.Artists ->
-                artists.listItemsRaw(LibraryQueries.artistsPage(ArtistSort.NAME, size, offset))
-                    .map { it.toMediaItem() }
+            MediaId.Artists -> buildList {
+                if (page == 0) add(playableAction(MediaId.ShuffleAll, SHUFFLE_ALL))
+                addAll(
+                    artists.listItemsRaw(LibraryQueries.artistsPage(ArtistSort.NAME, size, offset))
+                        .map { it.toMediaItem() }
+                )
+            }
 
-            MediaId.Albums ->
-                albums.listItemsRaw(LibraryQueries.albumsPage(AlbumSort.ARTIST, size, offset))
-                    .map { it.toMediaItem() }
+            MediaId.Albums -> buildList {
+                if (page == 0) add(playableAction(MediaId.ShuffleAll, SHUFFLE_ALL))
+                addAll(
+                    albums.listItemsRaw(LibraryQueries.albumsPage(AlbumSort.ARTIST, size, offset))
+                        .map { it.toMediaItem() }
+                )
+            }
 
             MediaId.Loved -> buildList {
                 // The action row belongs on the first page only, or it repeats
@@ -125,16 +138,21 @@ class BrowseTree @Inject constructor(
             // No per-row artwork here: the car already shows the album's cover
             // as the node you opened, so repeating it down every row is visual
             // noise and needlessly enlarges the browse payload.
-            is MediaId.Album ->
-                tracks.listItemsRaw(LibraryQueries.tracksForAlbum(parent.id)).map { row ->
-                    // The car has no way to draw a heading, but it will group
-                    // consecutive items sharing a group title -- which is what
-                    // this extra is for and why the constant already existed.
-                    row.toMediaItem(
-                        withArtwork = false,
-                        groupTitle = if (row.albumDiscTotal > 1) "Disc ${row.discNo ?: 1}" else null,
-                    )
-                }
+            is MediaId.Album -> buildList {
+                if (page == 0) add(playableAction(MediaId.ShuffleAlbum(parent.id), "Shuffle this album"))
+                addAll(
+                    tracks.listItemsRaw(LibraryQueries.tracksForAlbum(parent.id)).map { row ->
+                        // The car has no way to draw a heading, but it will
+                        // group consecutive items sharing a group title --
+                        // which is what this extra is for and why the constant
+                        // already existed.
+                        row.toMediaItem(
+                            withArtwork = false,
+                            groupTitle = if (row.albumDiscTotal > 1) "Disc ${row.discNo ?: 1}" else null,
+                        )
+                    }
+                )
+            }
 
             // Leaves and action rows have no children.
             is MediaId.Track, MediaId.ShuffleAll, MediaId.ShuffleLoved,
@@ -146,8 +164,8 @@ class BrowseTree @Inject constructor(
     /** A single node, for onGetItem. */
     suspend fun item(id: MediaId): MediaItem? = when (id) {
         MediaId.Root -> rootItem()
-        // A root child now, so the browser will ask for it by id.
-        MediaId.ShuffleAll -> playableAction(MediaId.ShuffleAll, SHUFFLE_EVERYTHING)
+        // Heads three different lists, so the browser does ask for it by id.
+        MediaId.ShuffleAll -> playableAction(MediaId.ShuffleAll, SHUFFLE_ALL)
         is MediaId.Track -> tracks.listItemsRaw(LibraryQueries.tracksForTrack(id.id))
             .firstOrNull()?.toMediaItem()
         is MediaId.Album -> albums.listItemsRaw(LibraryQueries.albumsForId(id.id))
@@ -162,7 +180,7 @@ class BrowseTree @Inject constructor(
      */
     fun paramsFor(parent: MediaId, requested: LibraryParams?): LibraryParams {
         val browsableStyle = when (parent) {
-            MediaId.Root, MediaId.Home -> CarConstants.STYLE_LIST
+            MediaId.Root, MediaId.Library -> CarConstants.STYLE_LIST
             MediaId.Artists, MediaId.Albums, is MediaId.Artist -> CarConstants.STYLE_GRID
             else -> CarConstants.STYLE_LIST
         }
@@ -173,15 +191,6 @@ class BrowseTree @Inject constructor(
         }
         return LibraryParams.Builder().setExtras(extras).build()
     }
-
-    // Kept here as well as at the root, deliberately. On a unit that refuses a
-    // playable root child this is the only place it appears, and Home is
-    // usually off the end of the tab list anyway, so the two rarely both show.
-    private fun homeChildren(): List<MediaItem> = listOf(
-        playableAction(MediaId.ShuffleAll, SHUFFLE_EVERYTHING),
-        browsable(MediaId.RecentlyAdded, "Recently added"),
-        browsable(MediaId.RecentlyPlayed, "Recently played"),
-    )
 
     // ---- item builders -------------------------------------------------------
 
@@ -286,7 +295,7 @@ class BrowseTree @Inject constructor(
             .build()
 
     private companion object {
-        /** One label, so the root row and the Home row cannot drift apart. */
-        const val SHUFFLE_EVERYTHING = "Shuffle everything"
+        /** One label, so the three lists it heads cannot drift apart. */
+        const val SHUFFLE_ALL = "Shuffle all"
     }
 }

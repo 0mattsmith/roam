@@ -72,7 +72,7 @@ class QueueBuilder @Inject constructor(
             Queue(tracks.listItemsRaw(LibraryQueries.tracksForAlbum(id.id)).toItems().shuffled(), 0)
 
         // Browsable containers are not playable; the car should never ask.
-        MediaId.Root, MediaId.Home, MediaId.Artists, MediaId.Albums,
+        MediaId.Root, MediaId.Library, MediaId.Artists, MediaId.Albums,
         MediaId.RecentlyAdded, MediaId.RecentlyPlayed -> Queue(emptyList(), 0)
     }
 

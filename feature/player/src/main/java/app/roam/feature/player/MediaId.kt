@@ -9,13 +9,16 @@ sealed interface MediaId {
 
     data object Root : MediaId { override val raw = "root" }
 
-    data object Home : MediaId { override val raw = "home" }
+    /** The car's first tab: everything, with the recency lists above it. */
+    data object Library : MediaId { override val raw = "library" }
     data object Artists : MediaId { override val raw = "artists" }
     data object Albums : MediaId { override val raw = "albums" }
+
+    /** Renamed to Playlists in phase 5, with Loved as the first entry. */
     data object Loved : MediaId { override val raw = "loved" }
 
-    data object RecentlyAdded : MediaId { override val raw = "home/recent_added" }
-    data object RecentlyPlayed : MediaId { override val raw = "home/recent_played" }
+    data object RecentlyAdded : MediaId { override val raw = "library/recent_added" }
+    data object RecentlyPlayed : MediaId { override val raw = "library/recent_played" }
 
     data class Artist(val id: Long) : MediaId { override val raw = "artist/$id" }
     data class Album(val id: Long) : MediaId { override val raw = "album/$id" }
@@ -30,12 +33,12 @@ sealed interface MediaId {
     companion object {
         fun parse(raw: String): MediaId = when {
             raw == "root" -> Root
-            raw == "home" -> Home
+            raw == "library" -> Library
             raw == "artists" -> Artists
             raw == "albums" -> Albums
             raw == "loved" -> Loved
-            raw == "home/recent_added" -> RecentlyAdded
-            raw == "home/recent_played" -> RecentlyPlayed
+            raw == "library/recent_added" -> RecentlyAdded
+            raw == "library/recent_played" -> RecentlyPlayed
             raw == "action/shuffle_all" -> ShuffleAll
             raw == "action/shuffle_loved" -> ShuffleLoved
             raw.startsWith("action/shuffle_artist/") -> ShuffleArtist(raw.substringAfterLast('/').toLong())

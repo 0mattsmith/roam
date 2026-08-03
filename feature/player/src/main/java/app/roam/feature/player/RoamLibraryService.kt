@@ -151,15 +151,9 @@ class RoamLibraryService : MediaLibraryService() {
         ): ListenableFuture<LibraryResult<MediaItem>> {
             // The head unit advertises how many root tabs it can render, and
             // shrinks that number when it hands most of the screen to maps.
-            val hints = params?.extras
             browseTree.rootChildrenLimit =
-                hints?.getInt(CarConstants.ROOT_HINT_CHILDREN_LIMIT, 0)?.takeIf { it > 0 }
+                params?.extras?.getInt(CarConstants.ROOT_HINT_CHILDREN_LIMIT, 0)?.takeIf { it > 0 }
                     ?: CarConstants.DEFAULT_ROOT_TABS
-
-            // Zero means the unit said nothing, not that it said no.
-            val flags = hints?.getInt(CarConstants.ROOT_HINT_CHILDREN_SUPPORTED_FLAGS, 0) ?: 0
-            browseTree.rootPlayableAllowed =
-                flags == 0 || (flags and CarConstants.FLAG_PLAYABLE) != 0
 
             return Futures.immediateFuture(LibraryResult.ofItem(browseTree.rootItem(), params))
         }

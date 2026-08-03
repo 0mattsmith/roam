@@ -150,13 +150,14 @@ other — route between them through `:app`.
 10. **Do not hardcode 4 root tabs.** The head unit advertises its limit in the
     root hints (`CarConstants.ROOT_HINT_CHILDREN_LIMIT`). Read it and clamp.
 
-10a. **The root list is ordered by value and taken from the FRONT.** The unit
-    shrinks its limit when maps takes most of the screen, so whatever is last
-    falls off -- currently Home, whose headline row was promoted to the root.
-    "Shuffle everything" is first and must stay first: it is the only thing
-    worth doing on a narrow panel while the car is moving. It is a *playable*
-    root child, which some units refuse, so `ROOT_HINT_CHILDREN_SUPPORTED_FLAGS`
-    is checked first and an absent hint means yes, not no.
+10a. **The root is four browsable tabs and nothing else.** Library, Artists,
+    Albums, Loved -- taken from the FRONT, because the unit shrinks its limit
+    when maps takes most of the screen and whatever sits last falls off.
+    Nothing playable goes at the root: every list leads with its own shuffle
+    row instead, which no head unit can refuse (some accept only browsable
+    root children), shuffles the thing you are looking at rather than always
+    the whole library, and still lands "Shuffle all" at the top of the screen
+    because Library is the first tab.
 
 11. **Playback state is restored, never resumed by index alone.** The saved
     queue is re-found by the *current track's id*; a sync between sessions can
@@ -181,7 +182,7 @@ store + provider; ExoPlayer with `CacheDataSource`.
 *Done when:* a Drive track plays on the phone with correct title and cover.
 
 **Phase 2 — the car.**
-`BrowseTree` proper (Home / Artists / Albums / Loved), content styles,
+`BrowseTree` proper (Library / Artists / Albums / Loved), content styles,
 `MediaLibrarySession` with custom actions (`ACTION_LOVE`, `ACTION_SHUFFLE_QUEUE`),
 voice search over FTS.
 *Done when:* the DHU browses Artists → Album → track with artwork.
@@ -196,6 +197,16 @@ Cover Art Archive → TheAudioDB → Deezer → iTunes cascade, review sheet,
 resumable Drive upload with cached folder IDs.
 
 **Phase 5 —** SMB/WebDAV sources, playlists, AcoustID fingerprinting, AAOS.
+
+*Playlists parking lot.* Ideas land here as they come up, rather than being
+argued about mid-flight:
+
+- The car's fourth tab is called **Loved** today and becomes **Playlists**,
+  with Loved as its first entry. `MediaId.Loved` carries a `TODO(phase5)`.
+- A **plus icon on the album header**, beside the heart: "New playlist..." or
+  an existing one.
+- Loved stays a column on `tracks`, not a playlist row -- the heart in the car
+  has to be one write, and every browse query already reads it.
 
 ## Conventions
 
@@ -229,8 +240,8 @@ resumable Drive upload with cached folder IDs.
 | Roam resumes a few tracks off after a sync | The stored index was trusted. Re-find the row by `currentTrackId` |
 | The saved queue is empty every launch | A snapshot taken while the player was still starting got written. `snapshot` returns null on an empty player and `save` refuses an empty list -- keep both |
 | Position always resumes up to ten seconds early | By design: position emits no events, so it is polled. Pausing writes exactly |
-| "Shuffle everything" is not the first thing in the car's list | Something reordered `rootTabs`, or the unit advertised browsable-only root children and the row was dropped |
-| Recently added / played unreachable in the car | Expected at a 4-tab limit -- Home is last in the root order. Swap it above Loved if that trade is wrong |
+| "Shuffle all" is not the first row in a list | The `page == 0` guard was dropped or reordered. It must be first in Library, Artists, Albums and each album, and only on the first page or it repeats down the list |
+| A tab is missing in the car | Expected below a 4-tab limit -- `rootTabs` is taken from the front, so Loved goes first, then Albums |
 | A third of the AAC library untagged | `moov` atom at end of file; needs the tail-range fallback |
 | Blank covers on the head unit | PNG `APIC` — re-encode all covers to JPEG |
 | Roam created stray folders in the music library | `resolveFolder(create = true)` where the artist tag name did not match a folder. The photo pass resolves with `create = false` and skips when absent |
