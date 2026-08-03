@@ -77,6 +77,18 @@
             </intent-filter>
         </service>
 
+        <!-- Playback resumption. The car and Bluetooth headsets send
+             ACTION_MEDIA_BUTTON to wake an app that is not running; without
+             this receiver the intent goes nowhere, Media3 never calls
+             onPlaybackResumption, and pressing play in the car starts silence. -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <!-- Android Auto and AAOS require artwork as a local content:// URI.
              Passing bitmaps blows the 1 MB Binder limit. -->
         <provider

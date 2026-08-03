@@ -150,6 +150,22 @@ other — route between them through `:app`.
 10. **Do not hardcode 4 root tabs.** The head unit advertises its limit in the
     root hints (`CarConstants.ROOT_HINT_CHILDREN_LIMIT`). Read it and clamp.
 
+10a. **The root list is ordered by value and taken from the FRONT.** The unit
+    shrinks its limit when maps takes most of the screen, so whatever is last
+    falls off -- currently Home, whose headline row was promoted to the root.
+    "Shuffle everything" is first and must stay first: it is the only thing
+    worth doing on a narrow panel while the car is moving. It is a *playable*
+    root child, which some units refuse, so `ROOT_HINT_CHILDREN_SUPPORTED_FLAGS`
+    is checked first and an absent hint means yes, not no.
+
+11. **Playback state is restored, never resumed by index alone.** The saved
+    queue is re-found by the *current track's id*; a sync between sessions can
+    drop a track ahead of it and shift every index after. Restore also refuses
+    to run once `player.mediaItemCount > 0` -- a tap in the car beats the Room
+    query, and the person's choice wins. Nothing ever persists an empty queue,
+    because the player is briefly empty while the service starts and letting
+    that land would wipe the state the restore is about to read.
+
 ## Phase plan
 
 Work in order. Each phase ends somewhere testable.
@@ -208,6 +224,13 @@ resumable Drive upload with cached folder IDs.
 | App absent from Android Auto entirely | Missing `android.media.browse.MediaBrowserService` action in the service intent-filter, or missing `automotive_app_desc.xml` |
 | Car UI hangs while browsing | Bitmaps in browse results — use artwork URIs |
 | Playback dies partway through a track | Auth stamped once instead of per request |
+| Play in the car starts silence, or does nothing at all | `androidx.media3.session.MediaButtonReceiver` missing from the manifest. Media3 never receives `ACTION_MEDIA_BUTTON`, so `onPlaybackResumption` is never asked what "play" means |
+| Resumption resumes nothing and the log says the app misbehaved | `onPlaybackResumption` returned an empty list. The contract is to FAIL the future when there is nothing to resume |
+| Roam resumes a few tracks off after a sync | The stored index was trusted. Re-find the row by `currentTrackId` |
+| The saved queue is empty every launch | A snapshot taken while the player was still starting got written. `snapshot` returns null on an empty player and `save` refuses an empty list -- keep both |
+| Position always resumes up to ten seconds early | By design: position emits no events, so it is polled. Pausing writes exactly |
+| "Shuffle everything" is not the first thing in the car's list | Something reordered `rootTabs`, or the unit advertised browsable-only root children and the row was dropped |
+| Recently added / played unreachable in the car | Expected at a 4-tab limit -- Home is last in the root order. Swap it above Loved if that trade is wrong |
 | A third of the AAC library untagged | `moov` atom at end of file; needs the tail-range fallback |
 | Blank covers on the head unit | PNG `APIC` — re-encode all covers to JPEG |
 | Roam created stray folders in the music library | `resolveFolder(create = true)` where the artist tag name did not match a folder. The photo pass resolves with `create = false` and skips when absent |

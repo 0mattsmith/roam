@@ -22,6 +22,19 @@ object CarConstants {
     const val ROOT_HINT_CHILDREN_LIMIT = "androidx.media.MediaBrowserCompat.Extras.KEY_ROOT_CHILDREN_LIMIT"
     const val DEFAULT_ROOT_TABS = 4
 
+    /**
+     * Some head units will only render browsable items at the root. Asked here
+     * before putting "Shuffle everything" there, because a unit that refuses
+     * playable root children drops the row silently rather than complaining.
+     *
+     * The values are MediaBrowserCompat.MediaItem's flags, restated so this
+     * file does not drag in the legacy media-compat library for two integers.
+     */
+    const val ROOT_HINT_CHILDREN_SUPPORTED_FLAGS =
+        "androidx.media.MediaBrowserCompat.Extras.KEY_ROOT_CHILDREN_SUPPORTED_FLAGS"
+    const val FLAG_BROWSABLE = 1
+    const val FLAG_PLAYABLE = 2
+
     /** Keeps prev/next from being pushed out by custom actions. */
     const val SLOT_RESERVATION_PREV = "androidx.media3.session.SLOT_RESERVATION_SEEK_TO_PREV"
     const val SLOT_RESERVATION_NEXT = "androidx.media3.session.SLOT_RESERVATION_SEEK_TO_NEXT"

@@ -5,6 +5,8 @@ import android.os.Bundle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
@@ -18,6 +20,8 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import app.roam.core.database.TrackDao
+import app.roam.core.datastore.PlaybackStateStore
+import app.roam.core.datastore.SavedPlayback
 import app.roam.core.model.SourceType
 import app.roam.data.source.SourceProvider
 import com.google.common.collect.ImmutableList
@@ -27,6 +31,10 @@ import com.google.common.util.concurrent.SettableFuture
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +55,7 @@ class RoamLibraryService : MediaLibraryService() {
     @Inject lateinit var queueBuilder: QueueBuilder
     @Inject lateinit var shuffleEngine: ShuffleEngine
     @Inject lateinit var tracks: TrackDao
+    @Inject lateinit var playbackState: PlaybackStateStore
     @Inject lateinit var cache: SimpleCache
     @Inject lateinit var providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>
 
@@ -96,6 +105,13 @@ class RoamLibraryService : MediaLibraryService() {
             )
             .build()
 
+        // Wired before the session is built: the saved queue goes back in
+        // straight away, so both the phone and the car open on the last track
+        // rather than an empty Now Playing screen.
+        player.addListener(SaveOnChange())
+        startSaveLoop(player)
+        scope.launch { restoreQueue(player) }
+
         session = MediaLibrarySession.Builder(this, player, Callback())
             .setSessionActivity(
                 packageManager.getLaunchIntentForPackage(packageName)?.let {
@@ -133,10 +149,18 @@ class RoamLibraryService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            // The head unit advertises how many root tabs it can render.
-            val limit = params?.extras?.getInt(CarConstants.ROOT_HINT_CHILDREN_LIMIT, 0)
-                ?.takeIf { it > 0 } ?: CarConstants.DEFAULT_ROOT_TABS
-            browseTree.rootChildrenLimit = limit
+            // The head unit advertises how many root tabs it can render, and
+            // shrinks that number when it hands most of the screen to maps.
+            val hints = params?.extras
+            browseTree.rootChildrenLimit =
+                hints?.getInt(CarConstants.ROOT_HINT_CHILDREN_LIMIT, 0)?.takeIf { it > 0 }
+                    ?: CarConstants.DEFAULT_ROOT_TABS
+
+            // Zero means the unit said nothing, not that it said no.
+            val flags = hints?.getInt(CarConstants.ROOT_HINT_CHILDREN_SUPPORTED_FLAGS, 0) ?: 0
+            browseTree.rootPlayableAllowed =
+                flags == 0 || (flags and CarConstants.FLAG_PLAYABLE) != 0
+
             return Futures.immediateFuture(LibraryResult.ofItem(browseTree.rootItem(), params))
         }
 
@@ -211,6 +235,23 @@ class RoamLibraryService : MediaLibraryService() {
             }
         }
 
+        /**
+         * Asked when the car or a Bluetooth headset sends play to an app that
+         * is not running -- Roam has to say what "play" means before anything
+         * has been drawn. Handing back the stored queue is what makes getting
+         * into the car and pressing play continue the last song.
+         *
+         * The future is expected to FAIL when there is nothing to resume; an
+         * empty list would be reported as a broken app instead of a quiet no.
+         */
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+            val saved = playbackState.load() ?: error("Nothing to resume")
+            resolveSaved(saved) ?: error("The saved queue no longer resolves")
+        }
+
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -247,6 +288,140 @@ class RoamLibraryService : MediaLibraryService() {
         // TODO(phase2): onSearch / onGetSearchResult over the FTS index. Voice
         //   is the only search available in the car -- there is no keyboard
         //   while driving. Needs an FTS table, which does not exist yet.
+    }
+
+    // ---- resuming where we left off ------------------------------------------
+
+    /**
+     * Rebuilds a stored queue into playable items and works out where in it to
+     * start. Null when none of the saved tracks survive in the library.
+     */
+    private suspend fun resolveSaved(
+        saved: SavedPlayback,
+    ): MediaSession.MediaItemsWithStartPosition? {
+        val items = queueBuilder.itemsForIds(saved.trackIds)
+        if (items.isEmpty()) return null
+
+        // The track is found by id rather than by the stored index, because a
+        // sync between sessions can have dropped something ahead of it and
+        // shifted everything after. Resuming three songs adrift is worse than
+        // not resuming at all. If the track itself is gone, the position with
+        // it belongs to nothing, so playback starts at the top of whatever
+        // took its place.
+        val found = items.indexOfFirst { it.mediaId == MediaId.Track(saved.currentTrackId).raw }
+        return MediaSession.MediaItemsWithStartPosition(
+            items,
+            if (found >= 0) found else saved.index.coerceIn(0, items.lastIndex),
+            if (found >= 0) saved.positionMs else 0L,
+        )
+    }
+
+    /**
+     * Puts the saved queue back into the player, prepared but paused.
+     *
+     * prepare() buffers the head of the current track, which costs a little
+     * data on launch and is the whole point: pressing play in the car should
+     * not then sit waiting on Drive. The cache usually answers it anyway, since
+     * this is a track that was already playing.
+     */
+    private suspend fun restoreQueue(player: Player) {
+        val saved = playbackState.load() ?: return
+        val start = resolveSaved(saved) ?: return
+
+        withContext(Dispatchers.Main) {
+            // The user got there first -- a tap in the car beat the Room query.
+            // Their choice wins; this is only a starting point.
+            if (player.mediaItemCount > 0) return@withContext
+
+            // Mapped rather than assigned: repeatMode is a constrained int, and
+            // handing lint a value read off disk fails WrongConstant. It also
+            // means a corrupt value degrades to "off" instead of throwing.
+            player.repeatMode = when (saved.repeatMode) {
+                Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ONE
+                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ALL
+                else -> Player.REPEAT_MODE_OFF
+            }
+            player.shuffleModeEnabled = saved.shuffleEnabled
+            player.setMediaItems(start.mediaItems, start.startIndex, start.startPositionMs)
+            player.prepare()
+        }
+    }
+
+    // ---- remembering where we are --------------------------------------------
+
+    /**
+     * Collapses the burst of callbacks one action produces -- a track change
+     * fires onTimelineChanged, onMediaItemTransition and onPositionDiscontinuity
+     * between them -- into a single write.
+     */
+    private val saveRequests = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    private fun startSaveLoop(player: Player) {
+        scope.launch {
+            saveRequests.collect {
+                delay(SAVE_DEBOUNCE_MS)
+                saveNow(player)
+            }
+        }
+        // Position moves on its own and emits nothing, so it has to be polled.
+        // A write a second would be a file rewritten every second; ten seconds
+        // costs at most ten seconds of a track if the process is killed
+        // outright, and pausing saves exactly anyway.
+        scope.launch {
+            while (isActive) {
+                delay(SAVE_INTERVAL_MS)
+                if (withContext(Dispatchers.Main) { player.isPlaying }) saveNow(player)
+            }
+        }
+    }
+
+    private suspend fun saveNow(player: Player) {
+        val state = withContext(Dispatchers.Main) { snapshot(player) } ?: return
+        playbackState.save(state)
+    }
+
+    /** Main thread only -- every call here reads live player state. */
+    private fun snapshot(player: Player): SavedPlayback? {
+        val count = player.mediaItemCount
+        if (count == 0) return null
+
+        val ids = (0 until count).mapNotNull { i ->
+            (MediaId.parse(player.getMediaItemAt(i).mediaId) as? MediaId.Track)?.id
+        }
+        if (ids.isEmpty()) return null
+
+        val current = player.currentMediaItem?.mediaId
+            ?.let { MediaId.parse(it) as? MediaId.Track }
+            ?.id
+        return SavedPlayback(
+            trackIds = ids,
+            currentTrackId = current ?: ids.first(),
+            index = player.currentMediaItemIndex,
+            positionMs = player.currentPosition.coerceAtLeast(0),
+            repeatMode = player.repeatMode,
+            shuffleEnabled = player.shuffleModeEnabled,
+        )
+    }
+
+    /** Discrete changes worth writing at once. Position is polled instead. */
+    private inner class SaveOnChange : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = request()
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) = request()
+        override fun onIsPlayingChanged(isPlaying: Boolean) = request()
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = request()
+        override fun onRepeatModeChanged(repeatMode: Int) = request()
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) = request()
+
+        private fun request() {
+            saveRequests.tryEmit(Unit)
+        }
     }
 
     /** The heart reflects the current track, so it is rebuilt as tracks change. */
@@ -300,5 +475,10 @@ class RoamLibraryService : MediaLibraryService() {
             player.setMediaItems(items, index, position)
             player.prepare()
         }
+    }
+
+    private companion object {
+        const val SAVE_DEBOUNCE_MS = 400L
+        const val SAVE_INTERVAL_MS = 10_000L
     }
 }
