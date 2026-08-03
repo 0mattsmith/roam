@@ -230,16 +230,24 @@ private fun ViewModeButton(state: LibraryUiState, vm: LibraryViewModel, onArtist
         else -> return
     }
 
-    IconButton(
-        onClick = { if (onArtistPage) vm.toggleArtistAlbumViewMode() else vm.toggleArtistViewMode() }
-    ) {
-        // Shows what you would get, not what you have -- the same convention
-        // as every gallery app.
+    var open by remember { mutableStateOf(false) }
+
+    // A menu rather than a cycling button: four states is one too many to
+    // discover by tapping, and the same shape as the sort menu beside it.
+    IconButton(onClick = { open = true }) {
         Icon(
-            if (mode == ViewMode.GRID) Icons.AutoMirrored.Filled.ViewList
-            else Icons.Filled.GridView,
-            contentDescription = if (mode == ViewMode.GRID) "Show as a list" else "Show as a grid",
+            if (mode.isGrid) Icons.Filled.GridView else Icons.AutoMirrored.Filled.ViewList,
+            contentDescription = "Layout",
         )
+    }
+    DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        ViewMode.entries.forEach { option ->
+            SortItem(option.label, mode == option) {
+                if (onArtistPage) vm.setArtistAlbumViewMode(option)
+                else vm.setArtistViewMode(option)
+                open = false
+            }
+        }
     }
 }
 
@@ -455,11 +463,11 @@ private fun ArtistList(
 
     if (artists.itemCount == 0) { EmptyState("No artists yet"); return }
 
-    if (viewMode == ViewMode.GRID) {
-        // Adaptive rather than a fixed column count: the same code gives three
-        // across on a phone and six on a tablet without asking about either.
+    if (viewMode.isGrid) {
+        // Fixed, not adaptive: how many across is the user's choice now, and an
+        // adaptive minimum width would quietly overrule it on a wide screen.
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 120.dp),
+            columns = GridCells.Fixed(viewMode.columns),
             state = gridState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(12.dp),
@@ -470,6 +478,7 @@ private fun ArtistList(
                 artists[index]?.let { artist ->
                     ArtistCell(
                         artist = artist,
+                        dense = viewMode.columns >= 5,
                         onClick = { vm.openArtist(artist.id, artist.name) },
                         onLongClick = { sheetFor = artist },
                     )
@@ -681,6 +690,8 @@ private fun ArtistRow(
 @OptIn(ExperimentalFoundationApi::class)
 private fun ArtistCell(
     artist: ArtistListItem,
+    /** Five across leaves a circle too small to carry a name at body size. */
+    dense: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -720,14 +731,15 @@ private fun ArtistCell(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(if (dense) 4.dp else 8.dp))
         Text(
             artist.name,
-            style = MaterialTheme.typography.bodyMedium,
+            style = if (dense) MaterialTheme.typography.labelSmall
+                    else MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 4.dp),
+            modifier = Modifier.padding(horizontal = 2.dp),
         )
     }
 }

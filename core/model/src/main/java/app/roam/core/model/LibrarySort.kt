@@ -50,18 +50,24 @@ enum class ArtistSort(val label: String, val orderBy: String) {
 }
 
 /**
- * List of rows, or a grid of pictures.
+ * List of rows, or a grid of pictures at a chosen density.
+ *
+ * The column count lives on the constant rather than beside it, so "which
+ * layout" and "how many across" cannot disagree -- and a fixed count is used
+ * instead of an adaptive minimum width precisely because the number is now the
+ * user's choice rather than something derived from the screen.
  *
  * One enum for artists and albums alike. What they draw differs -- circular
- * photos against square covers -- but the choice is the same choice, and two
- * enums would only mean two ways to say the same word.
+ * photos against square covers -- but the choice is the same choice.
  */
-enum class ViewMode(val label: String) {
-    LIST("List"),
-    GRID("Grid"),
+enum class ViewMode(val label: String, val columns: Int) {
+    LIST("List", 0),
+    GRID_3("Grid · 3 across", 3),
+    GRID_4("Grid · 4 across", 4),
+    GRID_5("Grid · 5 across", 5),
     ;
 
-    fun toggled(): ViewMode = if (this == LIST) GRID else LIST
+    val isGrid: Boolean get() = columns > 0
 }
 
 /** Which list the library is showing. */

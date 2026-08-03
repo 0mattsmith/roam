@@ -254,6 +254,7 @@ argued about mid-flight:
 | A collapsed list reveals five albums per scroll | Collapse is only offered inside an artist. Album boundaries are only visible once the rows are paged in, so collapsing the whole library hides everything Paging has not fetched yet |
 | The album header opens the album instead of collapsing | Tap toggles; "Open album" is in the long-press sheet |
 | Grid and list disagree about scroll position | Expected — they hold separate state objects, because a row index does not translate to a cell index |
+| A menu opens miles from the button that owns it | `DropdownMenu` anchors to its PARENT layout node, not to the button beside it. Wrap the button and the menu in a small Box and align THAT — aligning only the button leaves the menu at the big parent's origin |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
 | `Cannot access class X. Check your module classpath` | A public signature in a dependency module exposes a type from one of ITS `implementation` deps — declare an explicit return type, or promote to `api` |

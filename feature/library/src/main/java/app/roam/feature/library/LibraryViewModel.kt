@@ -44,8 +44,8 @@ data class LibraryUiState(
     val trackSort: TrackSort = TrackSort.ARTIST,
     val albumSort: AlbumSort = AlbumSort.ARTIST,
     val artistSort: ArtistSort = ArtistSort.NAME,
-    val artistViewMode: ViewMode = ViewMode.GRID,
-    val artistAlbumViewMode: ViewMode = ViewMode.GRID,
+    val artistViewMode: ViewMode = ViewMode.GRID_3,
+    val artistAlbumViewMode: ViewMode = ViewMode.GRID_3,
     /** Non-null when viewing one artist's or album's tracks, or the loved list. */
     val drillTitle: String? = null,
     val showingLoved: Boolean = false,
@@ -325,16 +325,14 @@ class LibraryViewModel @Inject constructor(
 
     // ---- layout -------------------------------------------------------------
 
-    fun toggleArtistViewMode() {
-        val next = _state.value.artistViewMode.toggled()
-        _state.update { it.copy(artistViewMode = next) }
-        viewModelScope.launch { settings.setArtistViewMode(next) }
+    fun setArtistViewMode(mode: ViewMode) {
+        _state.update { it.copy(artistViewMode = mode) }
+        viewModelScope.launch { settings.setArtistViewMode(mode) }
     }
 
-    fun toggleArtistAlbumViewMode() {
-        val next = _state.value.artistAlbumViewMode.toggled()
-        _state.update { it.copy(artistAlbumViewMode = next) }
-        viewModelScope.launch { settings.setArtistAlbumViewMode(next) }
+    fun setArtistAlbumViewMode(mode: ViewMode) {
+        _state.update { it.copy(artistAlbumViewMode = mode) }
+        viewModelScope.launch { settings.setArtistAlbumViewMode(mode) }
     }
 
     fun toggleAlbumCollapsed(albumId: Long) = _state.update {

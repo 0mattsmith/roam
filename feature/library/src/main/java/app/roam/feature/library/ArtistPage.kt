@@ -108,9 +108,9 @@ fun ArtistPage(
         }
     }
 
-    if (viewMode == ViewMode.GRID) {
+    if (viewMode.isGrid) {
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 150.dp),
+            columns = GridCells.Fixed(viewMode.columns),
             state = gridState,
             modifier = Modifier.fillMaxSize(),
             // No horizontal contentPadding: the banner is a full-span row and
@@ -129,6 +129,7 @@ fun ArtistPage(
                 val album = albums[index]
                 AlbumCell(
                     album = album,
+                    dense = viewMode.columns >= 5,
                     onClick = { onOpenAlbum(album) },
                     onLongClick = { onAlbumLongPress(album) },
                     modifier = Modifier.padding(horizontal = 6.dp),
@@ -289,39 +290,41 @@ private fun ArtistBanner(
             }
         }
 
-        // Top right, over the banner. A filled circle rather than a bare icon
-        // because it sits on an unpredictable photo -- a plain pencil vanishes
-        // on anything pale.
-        FilledTonalIconButton(
-            onClick = { menuOpen = true },
-            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-        ) {
-            Icon(Icons.Filled.Edit, contentDescription = "Change banner")
-        }
+        // The button and its menu share a wrapper, and the wrapper is what gets
+        // aligned. A DropdownMenu anchors to its PARENT layout node, so with
+        // the menu parented to the banner Box it opened at that box's origin --
+        // top left, over the artist's face -- however the button was aligned.
+        Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+            // A filled circle rather than a bare icon: it sits on an
+            // unpredictable photo, and a plain pencil vanishes on anything pale.
+            FilledTonalIconButton(onClick = { menuOpen = true }) {
+                Icon(Icons.Filled.Edit, contentDescription = "Change banner")
+            }
 
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            DropdownMenuItem(
-                text = { Text("Choose from device") },
-                onClick = {
-                    menuOpen = false
-                    picker.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-                leadingIcon = { Icon(Icons.Filled.PhotoLibrary, contentDescription = null) },
-            )
-            DropdownMenuItem(
-                text = { Text("Save to Photos") },
-                enabled = detail.bannerArtworkId != null,
-                onClick = { menuOpen = false; onSave() },
-                leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null) },
-            )
-            DropdownMenuItem(
-                text = { Text("Remove banner") },
-                enabled = detail.bannerArtworkId != null,
-                onClick = { menuOpen = false; onClear() },
-                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-            )
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Choose from device") },
+                    onClick = {
+                        menuOpen = false
+                        picker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Filled.PhotoLibrary, contentDescription = null) },
+                )
+                DropdownMenuItem(
+                    text = { Text("Save to Photos") },
+                    enabled = detail.bannerArtworkId != null,
+                    onClick = { menuOpen = false; onSave() },
+                    leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null) },
+                )
+                DropdownMenuItem(
+                    text = { Text("Remove banner") },
+                    enabled = detail.bannerArtworkId != null,
+                    onClick = { menuOpen = false; onClear() },
+                    leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                )
+            }
         }
     }
 }
@@ -352,6 +355,8 @@ private fun ArtistActions(onPlay: () -> Unit, onShuffle: () -> Unit) {
 @Composable
 private fun AlbumCell(
     album: AlbumListItem,
+    /** Five across leaves a cell too narrow for two lines at body size. */
+    dense: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -393,15 +398,20 @@ private fun AlbumCell(
         Spacer(Modifier.height(6.dp))
         Text(
             albumTitleWithYear(album.title, album.year),
-            style = MaterialTheme.typography.bodyMedium,
+            style = if (dense) MaterialTheme.typography.labelSmall
+                    else MaterialTheme.typography.bodyMedium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            "${album.trackCount} tracks",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // Dropped at five across: the cover is the identifier at that size and
+        // a track count under it is just noise.
+        if (!dense) {
+            Text(
+                "${album.trackCount} tracks",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

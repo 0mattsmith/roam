@@ -54,9 +54,9 @@ data class RoamSettings(
     // How the library is laid out and ordered. These live here rather than in
     // the ViewModel's UI state because they are preferences, not screen state:
     // picking "grid" once should still mean grid tomorrow morning in the car.
-    val artistViewMode: ViewMode = ViewMode.GRID,
+    val artistViewMode: ViewMode = ViewMode.GRID_3,
     /** Albums on an artist's landing page, which is a separate choice. */
-    val artistAlbumViewMode: ViewMode = ViewMode.GRID,
+    val artistAlbumViewMode: ViewMode = ViewMode.GRID_3,
     val trackSort: TrackSort = TrackSort.ARTIST,
     val albumSort: AlbumSort = AlbumSort.ARTIST,
     val artistSort: ArtistSort = ArtistSort.NAME,
@@ -129,8 +129,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             syncOnLaunch = p[K.SYNC_ON_LAUNCH] ?: true,
             saveArtistPhotosToDrive = p[K.SAVE_ARTIST_PHOTOS] ?: true,
             updateAvailable = p[K.UPDATE_AVAILABLE],
-            artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID),
-            artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID),
+            artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID_3),
+            artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID_3),
             trackSort = p[K.TRACK_SORT].toEnum(TrackSort.ARTIST),
             albumSort = p[K.ALBUM_SORT].toEnum(AlbumSort.ARTIST),
             artistSort = p[K.ARTIST_SORT].toEnum(ArtistSort.NAME),
