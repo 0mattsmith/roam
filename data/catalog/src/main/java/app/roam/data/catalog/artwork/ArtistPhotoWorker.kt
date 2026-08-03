@@ -172,6 +172,12 @@ class ArtistPhotoWorker @AssistedInject constructor(
                 }
 
                 if (logoId == null) {
+                    // One request answers for both; the banner rides along.
+                    val banner = runCatching { fetchBanner(row.name) }.getOrNull()
+                    if (banner != null) {
+                        artwork.put(banner, ArtworkSource.AUDIODB)
+                            ?.let { artists.setBanner(row.id, it) }
+                    }
                     val logo = runCatching { fetchLogo(row.name) }.getOrNull()
                     if (logo != null) {
                         // keepAlpha: a logo is a transparent PNG, and the JPEG
@@ -193,11 +199,25 @@ class ArtistPhotoWorker @AssistedInject constructor(
     }
 
     /**
+     * The artist's wide header image. Same endpoint and same matching rule as
+     * the logo -- kept separate only because a banner is an ordinary photo and
+     * must NOT take the transparent-PNG path.
+     */
+    private suspend fun fetchBanner(name: String): ByteArray? =
+        fetchAudioDbImage(name, listOf("strArtistBanner", "strArtistFanart1"))
+
+    /**
      * TheAudioDB's shared test key. It is public and capped at 30 requests a
      * minute across everyone using it, which is why the gap below is generous
      * -- and why a failure here is shrugged off rather than retried.
      */
-    private suspend fun fetchLogo(name: String): ByteArray? = withContext(Dispatchers.IO) {
+    private suspend fun fetchLogo(name: String): ByteArray? =
+        fetchAudioDbImage(name, listOf("strArtistLogo", "strArtistClearart"))
+
+    private suspend fun fetchAudioDbImage(
+        name: String,
+        fields: List<String>,
+    ): ByteArray? = withContext(Dispatchers.IO) {
         val query = URLEncoder.encode(name, "UTF-8")
         val url = "https://www.theaudiodb.com/api/v1/json/$AUDIODB_KEY/search.php?s=$query"
 
@@ -214,11 +234,12 @@ class ArtistPhotoWorker @AssistedInject constructor(
             val entry = results.optJSONObject(i) ?: continue
             if (Ids.normalise(entry.optString("strArtist")) != wanted) continue
 
-            val logo = entry.optString("strArtistLogo").takeIf { it.isNotBlank() && it != "null" }
-                ?: entry.optString("strArtistClearart").takeIf { it.isNotBlank() && it != "null" }
-                ?: continue
+            // "null" as a literal string is TheAudioDB's way of saying absent.
+            val url = fields.firstNotNullOfOrNull { field ->
+                entry.optString(field).takeIf { it.isNotBlank() && it != "null" }
+            } ?: continue
 
-            return@withContext client.newCall(Request.Builder().url(logo).build()).execute().use {
+            return@withContext client.newCall(Request.Builder().url(url).build()).execute().use {
                 if (!it.isSuccessful) null else it.body?.bytes()
             }
         }

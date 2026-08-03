@@ -18,6 +18,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -60,6 +62,8 @@ fun TrackActionSheet(
     track: TrackListItem,
     edited: Boolean,
     onDismiss: () -> Unit,
+    onGoToAlbum: () -> Unit,
+    onGoToArtist: () -> Unit,
     onEdit: () -> Unit,
     onRevert: () -> Unit,
     onArtworkPicked: (Uri) -> Unit,
@@ -85,6 +89,20 @@ fun TrackActionSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+            )
+
+            ListItem(
+                modifier = Modifier.clickable(onClick = onGoToAlbum),
+                headlineContent = { Text("Go to album") },
+                supportingContent = { Text(track.albumTitle) },
+                leadingContent = { Icon(Icons.Filled.Album, contentDescription = null) },
+            )
+
+            ListItem(
+                modifier = Modifier.clickable(onClick = onGoToArtist),
+                headlineContent = { Text("Go to artist") },
+                supportingContent = { Text(track.artistName) },
+                leadingContent = { Icon(Icons.Filled.Person, contentDescription = null) },
             )
 
             ListItem(

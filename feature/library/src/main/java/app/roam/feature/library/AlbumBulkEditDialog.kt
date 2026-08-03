@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,6 +55,7 @@ import app.roam.data.catalog.AlbumBulkEdits
 fun AlbumHeaderSheet(
     track: TrackListItem,
     onDismiss: () -> Unit,
+    onGoToArtist: () -> Unit,
     onBulkEdit: () -> Unit,
     onArtworkPicked: (Uri) -> Unit,
 ) {
@@ -79,6 +81,18 @@ fun AlbumHeaderSheet(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
             )
+
+            // Hidden on a compilation: "Various Artists" is a bucket, not an
+            // artist, and offering to visit it promises a page that is not
+            // really about anyone.
+            if (!track.compilation) {
+                ListItem(
+                    modifier = Modifier.clickable(onClick = onGoToArtist),
+                    headlineContent = { Text("Go to artist") },
+                    supportingContent = { Text(track.albumArtistName) },
+                    leadingContent = { Icon(Icons.Filled.Person, contentDescription = null) },
+                )
+            }
 
             ListItem(
                 modifier = Modifier.clickable {

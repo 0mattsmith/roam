@@ -184,7 +184,7 @@ object LibraryQueries {
                ar.albumCount AS albumCount, ar.trackCount AS trackCount,
                ar.artworkId AS artworkId, ar.logoArtworkId AS logoArtworkId,
                ar.preferLogo AS preferLogo, ar.sortAs AS sortAs,
-               ar.groupArtistId AS groupArtistId
+               ar.groupArtistId AS groupArtistId, ar.bannerArtworkId AS bannerArtworkId
         FROM artists ar
     """
 

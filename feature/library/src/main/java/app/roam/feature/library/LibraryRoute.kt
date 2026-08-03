@@ -128,7 +128,26 @@ fun LibraryRoute(
                 }
             }
 
+            val artistPage by vm.artistPage.collectAsStateWithLifecycle()
+
             when {
+                // The artist's own page, shown until one of their albums is
+                // opened -- at which point the drill takes over and Back
+                // returns here rather than all the way out.
+                artistPage != null && state.drillTitle == artistPage?.first?.name ->
+                    key(artistPage?.first?.id) {
+                        val (detail, artistAlbums) = artistPage!!
+                        ArtistPage(
+                            detail = detail,
+                            albums = artistAlbums,
+                            listState = rememberLazyListState(),
+                            onPlay = { vm.playArtist(shuffled = false) },
+                            onShuffle = { vm.playArtist(shuffled = true) },
+                            onOpenAlbum = { vm.openAlbum(it.id, it.title) },
+                            onAlbumLongPress = { vm.openAlbum(it.id, it.title) },
+                        )
+                    }
+
                 // Keyed on the drill target so each one starts at its own top:
                 // opening an album should show its first track, not wherever
                 // the previously opened album happened to be scrolled to.
@@ -269,6 +288,8 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             track = track,
             edited = sheetEdited,
             onDismiss = { sheetFor = null },
+            onGoToAlbum = { sheetFor = null; vm.openAlbum(track.albumId, track.albumTitle) },
+            onGoToArtist = { sheetFor = null; vm.openArtistByName(track.artistName) },
             onEdit = { sheetFor = null; vm.openTrackEditor(track) },
             onRevert = { sheetFor = null; vm.revertTrackEdits(track.id) },
             onArtworkPicked = { uri -> sheetFor = null; vm.setTrackArtwork(track, uri) },
@@ -310,6 +331,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         AlbumHeaderSheet(
             track = track,
             onDismiss = { headerSheetFor = null },
+            onGoToArtist = { headerSheetFor = null; vm.openArtistByName(track.albumArtistName) },
             onBulkEdit = { headerSheetFor = null; vm.openAlbumBulkEditor(track) },
             onArtworkPicked = { uri -> headerSheetFor = null; vm.setAlbumArtwork(track, uri) },
         )

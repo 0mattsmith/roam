@@ -48,6 +48,12 @@ data class ArtistEntity(
     val artworkAttemptedAt: Long? = null,
     /** Band logo or wordmark. A different thing from a photo of the artist. */
     val logoArtworkId: String? = null,
+    /**
+     * Wide header image for the artist page. Comes from the same TheAudioDB
+     * response as the logo, so it is free -- no second request, and no separate
+     * attempted stamp is needed because one call answers for both.
+     */
+    val bannerArtworkId: String? = null,
     val logoAttemptedAt: Long? = null,
     /** Which of the two this artist should be drawn with. */
     val preferLogo: Boolean = false,

@@ -330,6 +330,7 @@ data class ArtistListItem(
     val sortAs: String?,
     /** The artist this one is folded into, if any. */
     val groupArtistId: Long?,
+    val bannerArtworkId: String?,
 )
 
 data class AlbumListItem(
@@ -454,6 +455,9 @@ interface ArtistDao {
 
     @Query("UPDATE artists SET logoArtworkId = :logoArtworkId, logoAttemptedAt = :at WHERE id = :id")
     suspend fun setLogo(id: Long, logoArtworkId: String?, at: Long)
+
+    @Query("UPDATE artists SET bannerArtworkId = :bannerArtworkId WHERE id = :id")
+    suspend fun setBanner(id: Long, bannerArtworkId: String?)
 
     /** Which image this artist is drawn with. Purely the user's choice. */
     @Query("UPDATE artists SET preferLogo = :preferLogo WHERE id = :id")

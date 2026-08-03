@@ -12,6 +12,7 @@ import app.roam.core.database.TrackListItem
 import app.roam.core.model.AlbumSort
 import app.roam.core.model.ArtistSort
 import app.roam.core.model.LibraryTab
+import app.roam.core.model.Ids
 import app.roam.core.model.TrackSort
 import android.net.Uri
 import app.roam.core.database.ArtistListItem
@@ -107,11 +108,38 @@ class LibraryViewModel @Inject constructor(
     // ---- navigation ---------------------------------------------------------
 
     fun selectTab(tab: LibraryTab) {
+        _artistPage.value = null
         drill.value = null
         _state.update { it.copy(tab = tab, drillTitle = null, showingLoved = false) }
     }
 
+    /**
+     * The artist landing page: who they are, plus their records.
+     *
+     * Null when not on an artist. Loaded rather than paged -- an artist has
+     * tens of albums, and a Pager for that is machinery without a payoff.
+     */
+    private val _artistPage = MutableStateFlow<Pair<ArtistDetail, List<AlbumListItem>>?>(null)
+    val artistPage: StateFlow<Pair<ArtistDetail, List<AlbumListItem>>?> = _artistPage.asStateFlow()
+
+    private fun loadArtistPage(id: Long) = viewModelScope.launch {
+        val row = artists.byId(id) ?: return@launch
+        // Captured locally: Kotlin will not smart-cast a property declared in
+        // another module.
+        val logo = row.logoArtworkId
+        val photo = row.artworkId
+        _artistPage.value = ArtistDetail(
+            id = row.id,
+            name = row.name,
+            avatarArtworkId = if (row.preferLogo) logo ?: photo else photo ?: logo,
+            bannerArtworkId = row.bannerArtworkId,
+            albumCount = row.albumCount,
+            trackCount = row.trackCount,
+        ) to albums.listItemsRaw(LibraryQueries.albumsForArtist(id))
+    }
+
     fun openArtist(id: Long, name: String) {
+        loadArtistPage(id)
         drill.value = Drill.Artist(id, name)
         // Album order, so the drill-down groups by album the way a discography
         // reads rather than as one flat alphabetical run of songs.
@@ -121,8 +149,33 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun openAlbum(id: Long, title: String) {
+        // Leaves the artist page loaded: opening one of their albums and
+        // pressing Back should land you where you were, not at the top level.
         drill.value = Drill.Album(id, title)
         _state.update { it.copy(drillTitle = title, showingLoved = false) }
+    }
+
+    /** Everything by the artist whose page is open. */
+    fun playArtist(shuffled: Boolean) = viewModelScope.launch {
+        val id = _artistPage.value?.first?.id ?: return@launch
+        val queue = tracks.listItemsRaw(
+            LibraryQueries.tracksForArtistLimited(id, TrackSort.ALBUM, QUEUE_LIMIT)
+        )
+        player.play(if (shuffled) queue.shuffled() else queue, 0)
+    }
+
+    /**
+     * Opens an artist by name, which is what a track row actually carries.
+     *
+     * Follows the grouping: a track credited to Makaveli opens 2Pac's page if
+     * that is where Makaveli has been folded, rather than a page the Artists
+     * list does not even show.
+     */
+    fun openArtistByName(name: String) = viewModelScope.launch {
+        val id = Ids.artist(name)
+        val row = artists.byId(id) ?: return@launch
+        val target = row.groupArtistId?.let { artists.byId(it) } ?: row
+        openArtist(target.id, target.name)
     }
 
     fun openLoved() {
@@ -130,9 +183,25 @@ class LibraryViewModel @Inject constructor(
         _state.update { it.copy(drillTitle = "Loved", showingLoved = true) }
     }
 
-    /** True when it consumed a back press, so the screen knows not to exit. */
+    /**
+     * True when it consumed a back press, so the screen knows not to exit.
+     *
+     * Two levels: an album opened from an artist page goes back to that page,
+     * and only then does a further press leave for the list.
+     */
     fun closeDrill(): Boolean {
-        if (drill.value == null) return false
+        val current = drill.value
+        if (current is Drill.Album && _artistPage.value != null) {
+            drill.value = null
+            _state.update { it.copy(drillTitle = _artistPage.value?.first?.name) }
+            return true
+        }
+        if (current == null && _artistPage.value != null) {
+            _artistPage.value = null
+            _state.update { it.copy(drillTitle = null, showingLoved = false) }
+            return true
+        }
+        if (current == null) return false
         drill.value = null
         _state.update { it.copy(drillTitle = null, showingLoved = false) }
         return true
