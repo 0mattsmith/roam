@@ -280,6 +280,85 @@ class LibraryViewModel @Inject constructor(
         ).fold({ it }, { "Could not update: ${it.message}" })
     }
 
+    // ---- stepping between editor targets ------------------------------------
+    //
+    // Scoped to the album for tracks, and to the whole album list for albums.
+    // Following whatever list happens to be on screen would mean loading an
+    // arbitrarily long ordered set just to find one neighbour; an album is a
+    // few dozen rows and is where sequential tag-fixing actually happens.
+
+    /**
+     * Saves, then opens the neighbour. Discarding what was just typed is the
+     * one behaviour nobody wants from an arrow key.
+     */
+    fun stepTrackEditor(current: TrackListItem, edits: TrackEdits, delta: Int) =
+        viewModelScope.launch {
+            trackEditor.apply(current.id, edits)
+                .onFailure { _photoMessage.value = "Could not save: ${it.message}" }
+
+            val siblings = tracks.listItemsRaw(LibraryQueries.tracksForAlbum(current.albumId))
+            // Re-found by id: saving may have renamed or re-parented this track,
+            // so the position it held before the write is not to be trusted.
+            val index = siblings.indexOfFirst { it.id == current.id }
+            val next = siblings.getOrNull(index + delta)
+            if (next == null) {
+                _editing.value = null
+                return@launch
+            }
+            _editing.value = trackEditor.current(next.id)?.let { next to it }
+        }
+
+    /** Whether an arrow should be live, so a dead button is never offered. */
+    suspend fun hasSiblingTrack(current: TrackListItem, delta: Int): Boolean {
+        val siblings = tracks.listItemsRaw(LibraryQueries.tracksForAlbum(current.albumId))
+        val index = siblings.indexOfFirst { it.id == current.id }
+        return index >= 0 && siblings.getOrNull(index + delta) != null
+    }
+
+    fun stepAlbumEditor(current: TrackListItem, edits: AlbumBulkEdits, delta: Int) =
+        viewModelScope.launch {
+            if (!edits.isEmpty) {
+                trackEditor.applyToAlbum(current.albumId, edits)
+                    .onFailure { _photoMessage.value = "Could not save: ${it.message}" }
+            }
+
+            val all = albums.listItemsRaw(LibraryQueries.albums(_state.value.albumSort))
+            val index = all.indexOfFirst { it.id == current.albumId }
+            val next = all.getOrNull(index + delta)
+            if (next == null) {
+                _bulkEditing.value = null
+                return@launch
+            }
+            // The dialog is driven by a track row, so borrow the neighbouring
+            // album's first track as the carrier.
+            _bulkEditing.value =
+                tracks.listItemsRaw(LibraryQueries.tracksForAlbum(next.id)).firstOrNull()
+        }
+
+    suspend fun hasSiblingAlbum(current: TrackListItem, delta: Int): Boolean {
+        val all = albums.listItemsRaw(LibraryQueries.albums(_state.value.albumSort))
+        val index = all.indexOfFirst { it.id == current.albumId }
+        return index >= 0 && all.getOrNull(index + delta) != null
+    }
+
+    // ---- cover art from inside the editors -----------------------------------
+
+    fun saveAlbumCoverFor(track: TrackListItem) = viewModelScope.launch {
+        val artworkId = track.albumArtworkId ?: return@launch
+        _photoMessage.value = photos
+            .saveToGallery(artworkId, "${track.albumArtistName} - ${track.albumTitle}")
+            .fold({ it }, { "Could not save: ${it.message}" })
+    }
+
+    fun removeAlbumCover(track: TrackListItem) = viewModelScope.launch {
+        _photoMessage.value = photos.clearAlbumArtwork(track.albumId)
+            .fold({ it }, { "Could not remove: ${it.message}" })
+    }
+
+    fun reportEditorMessage(message: String) {
+        _photoMessage.value = message
+    }
+
     /** How many tracks a bulk edit would touch, for the dialog's title. */
     suspend fun albumTrackCount(albumId: Long): Int =
         tracks.listItemsRaw(LibraryQueries.tracksForAlbum(albumId)).size

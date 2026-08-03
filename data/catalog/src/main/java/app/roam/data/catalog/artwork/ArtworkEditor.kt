@@ -158,6 +158,21 @@ class ArtworkEditor @Inject constructor(
             false
         }
 
+    /**
+     * Clears the album's cover and every track's copy of it.
+     *
+     * Local only, deliberately: cover.jpg stays on Drive. Removing a picture
+     * from a list is a different act from deleting the user's file, and only
+     * one of those is undoable.
+     */
+    suspend fun clearAlbumArtwork(albumId: Long): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            albums.clearArtwork(albumId)
+            tracks.clearArtworkForAlbum(albumId)
+            "Cover removed (cover.jpg left on Drive)"
+        }
+    }
+
     /** Which image an artist is drawn with. Purely a display preference. */
     suspend fun setPreferLogo(artistId: Long, preferLogo: Boolean): Result<String> =
         withContext(Dispatchers.IO) {

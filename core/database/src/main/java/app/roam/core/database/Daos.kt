@@ -104,6 +104,9 @@ interface TrackDao {
     @Query("UPDATE tracks SET artworkId = :artworkId WHERE albumId = :albumId")
     suspend fun setArtworkForAlbum(albumId: Long, artworkId: String)
 
+    @Query("UPDATE tracks SET artworkId = NULL WHERE albumId = :albumId")
+    suspend fun clearArtworkForAlbum(albumId: Long)
+
     @Query("SELECT * FROM tracks WHERE artistId = :artistId ORDER BY albumId, discNo, trackNo")
     suspend fun byArtist(artistId: Long): List<TrackEntity>
 
@@ -363,6 +366,14 @@ interface AlbumDao {
 
     @Query("UPDATE albums SET compilation = :compilation WHERE id = :albumId")
     suspend fun setCompilation(albumId: Long, compilation: Boolean)
+
+    /**
+     * Forgets Roam's cover. Does NOT delete cover.jpg from the source -- that
+     * is the user's file, and a tap in a dialog should not remove something
+     * from their Drive.
+     */
+    @Query("UPDATE albums SET artworkId = NULL WHERE id = :albumId")
+    suspend fun clearArtwork(albumId: Long)
 
     @Query("""
         UPDATE albums SET

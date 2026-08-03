@@ -259,10 +259,27 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     }
 
     editing?.let { (track, initial) ->
+        // Asked once per target rather than per recomposition; an arrow that
+        // does nothing is worse than one that is visibly disabled.
+        var canPrev by remember(track.id) { mutableStateOf(false) }
+        var canNext by remember(track.id) { mutableStateOf(false) }
+        LaunchedEffect(track.id) {
+            canPrev = vm.hasSiblingTrack(track, -1)
+            canNext = vm.hasSiblingTrack(track, 1)
+        }
+
         TrackEditDialog(
             initial = initial,
+            artworkId = track.albumArtworkId,
+            canGoPrevious = canPrev,
+            canGoNext = canNext,
             onDismiss = vm::closeTrackEditor,
             onSave = { edits -> vm.saveTrackEdits(track.id, edits) },
+            onStep = { edits, delta -> vm.stepTrackEditor(track, edits, delta) },
+            onCoverSave = { vm.saveAlbumCoverFor(track) },
+            onCoverRemove = { vm.removeAlbumCover(track) },
+            onCoverPicked = { uri -> vm.setAlbumCover(track, uri) },
+            onCoverMessage = vm::reportEditorMessage,
         )
     }
 
@@ -282,12 +299,27 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     }
 
     bulkEditing?.let { track ->
+        var canPrev by remember(track.albumId) { mutableStateOf(false) }
+        var canNext by remember(track.albumId) { mutableStateOf(false) }
+        LaunchedEffect(track.albumId) {
+            canPrev = vm.hasSiblingAlbum(track, -1)
+            canNext = vm.hasSiblingAlbum(track, 1)
+        }
+
         AlbumBulkEditDialog(
             albumTitle = track.albumTitle,
             trackCount = bulkCount,
-            initialArtist = track.artistName,
+            initialArtist = track.albumArtistName,
+            artworkId = track.albumArtworkId,
+            canGoPrevious = canPrev,
+            canGoNext = canNext,
             onDismiss = vm::closeAlbumBulkEditor,
             onSave = { edits -> vm.applyAlbumEdits(track.albumId, edits) },
+            onStep = { edits, delta -> vm.stepAlbumEditor(track, edits, delta) },
+            onCoverSave = { vm.saveAlbumCoverFor(track) },
+            onCoverRemove = { vm.removeAlbumCover(track) },
+            onCoverPicked = { uri -> vm.setAlbumCover(track, uri) },
+            onCoverMessage = vm::reportEditorMessage,
         )
     }
 }

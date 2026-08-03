@@ -20,10 +20,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -116,8 +119,16 @@ fun AlbumBulkEditDialog(
     albumTitle: String,
     trackCount: Int,
     initialArtist: String,
+    artworkId: String?,
+    canGoPrevious: Boolean,
+    canGoNext: Boolean,
     onDismiss: () -> Unit,
     onSave: (AlbumBulkEdits) -> Unit,
+    onStep: (AlbumBulkEdits, Int) -> Unit,
+    onCoverSave: () -> Unit,
+    onCoverRemove: () -> Unit,
+    onCoverPicked: (Uri) -> Unit,
+    onCoverMessage: (String) -> Unit,
 ) {
     var artistOn by remember { mutableStateOf(false) }
     var albumOn by remember { mutableStateOf(false) }
@@ -137,6 +148,16 @@ fun AlbumBulkEditDialog(
 
     val anyChecked = artistOn || albumOn || albumArtistOn || yearOn ||
         genreOn || discOn || compilationOn
+
+    fun collect() = AlbumBulkEdits(
+        artist = artist.takeIf { artistOn },
+        album = album.takeIf { albumOn },
+        albumArtist = albumArtist.takeIf { albumArtistOn },
+        year = if (yearOn) year.toIntOrNull() else null,
+        genre = genre.takeIf { genreOn },
+        discNo = if (discOn) disc.toIntOrNull() else null,
+        compilation = compilation.takeIf { compilationOn },
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -182,25 +203,34 @@ fun AlbumBulkEditDialog(
                 CheckedField(discOn, { discOn = it }, disc, "Disc number", numeric = true) {
                     disc = it
                 }
+
+                AlbumArtBlock(
+                    artworkId = artworkId,
+                    onSave = onCoverSave,
+                    onRemove = onCoverRemove,
+                    onPicked = onCoverPicked,
+                    onPasteFailed = onCoverMessage,
+                )
+
+                // Nothing ticked means nothing to write, so an arrow here just
+                // moves on rather than saving an empty edit.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    IconButton(onClick = { onStep(collect(), -1) }, enabled = canGoPrevious) {
+                        Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Save and previous album")
+                    }
+                    IconButton(onClick = { onStep(collect(), 1) }, enabled = canGoNext) {
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Save and next album")
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(
-                enabled = anyChecked,
-                onClick = {
-                    onSave(
-                        AlbumBulkEdits(
-                            artist = artist.takeIf { artistOn },
-                            album = album.takeIf { albumOn },
-                            albumArtist = albumArtist.takeIf { albumArtistOn },
-                            year = if (yearOn) year.toIntOrNull() else null,
-                            genre = genre.takeIf { genreOn },
-                            discNo = if (discOn) disc.toIntOrNull() else null,
-                            compilation = compilation.takeIf { compilationOn },
-                        )
-                    )
-                },
-            ) { Text("Apply to all") }
+            TextButton(enabled = anyChecked, onClick = { onSave(collect()) }) {
+                Text("Apply to all")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

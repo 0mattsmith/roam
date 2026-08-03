@@ -19,11 +19,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -125,8 +128,16 @@ fun TrackActionSheet(
 @Composable
 fun TrackEditDialog(
     initial: TrackEdits,
+    artworkId: String?,
+    canGoPrevious: Boolean,
+    canGoNext: Boolean,
     onDismiss: () -> Unit,
     onSave: (TrackEdits) -> Unit,
+    onStep: (TrackEdits, Int) -> Unit,
+    onCoverSave: () -> Unit,
+    onCoverRemove: () -> Unit,
+    onCoverPicked: (Uri) -> Unit,
+    onCoverMessage: (String) -> Unit,
 ) {
     var title by remember { mutableStateOf(initial.title) }
     var artist by remember { mutableStateOf(initial.artist) }
@@ -137,6 +148,18 @@ fun TrackEditDialog(
     var year by remember { mutableStateOf(initial.year?.toString().orEmpty()) }
     var genre by remember { mutableStateOf(initial.genre.orEmpty()) }
     var compilation by remember { mutableStateOf(initial.compilation) }
+
+    fun collect() = TrackEdits(
+        title = title,
+        artist = artist,
+        album = album,
+        albumArtist = albumArtist.ifBlank { null },
+        trackNo = trackNo.toIntOrNull(),
+        discNo = discNo.toIntOrNull(),
+        year = year.toIntOrNull(),
+        genre = genre.ifBlank { null },
+        compilation = compilation,
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -174,24 +197,38 @@ fun TrackEditDialog(
                     NumberField(year, "Year", Modifier.weight(1.2f)) { year = it }
                 }
                 Field(genre, "Genre") { genre = it }
+
+                AlbumArtBlock(
+                    artworkId = artworkId,
+                    onSave = onCoverSave,
+                    onRemove = onCoverRemove,
+                    onPicked = onCoverPicked,
+                    onPasteFailed = onCoverMessage,
+                )
+
+                // Stepping saves first, so working down an album never silently
+                // drops the edit you just made.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    IconButton(
+                        onClick = { onStep(collect(), -1) },
+                        enabled = canGoPrevious,
+                    ) {
+                        Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Save and previous track")
+                    }
+                    IconButton(
+                        onClick = { onStep(collect(), 1) },
+                        enabled = canGoNext,
+                    ) {
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Save and next track")
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                onSave(
-                    TrackEdits(
-                        title = title,
-                        artist = artist,
-                        album = album,
-                        albumArtist = albumArtist.ifBlank { null },
-                        trackNo = trackNo.toIntOrNull(),
-                        discNo = discNo.toIntOrNull(),
-                        year = year.toIntOrNull(),
-                        genre = genre.ifBlank { null },
-                        compilation = compilation,
-                    )
-                )
-            }) { Text("Save") }
+            TextButton(onClick = { onSave(collect()) }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
