@@ -228,6 +228,8 @@ resumable Drive upload with cached folder IDs.
 | An edited track reverts to the filename after a sync | `userEdited` not honoured — sync's `refreshFromPath` and `TagWorker.pendingTags` both filter on it |
 | A whole compilation vanishes after an edit | `artists.pruneOrphans` deleted the album artist. Nothing carries "Various Artists" as a *track* artist, so the prune must also spare artists referenced by `albums.artistId` — the `aar` join is inner |
 | An artist page is empty despite having albums | `tracksForArtist` filtered on `t.artistId` alone. It must also match `al.artistId`, or an album-artist-only credit shows nothing |
+| A grouped alias still shows as its own entry | The Artists list must filter `groupArtistId IS NULL`; grouping only hides the row, the tracks are found through the parent's query |
+| Grouping an artist made their albums vanish | `tracksForArtist` and `albumsForArtist` must also match artists whose `groupArtistId` is the one being opened, or the records belong to nobody |
 | An alias will not sort with the main artist | `sortAs` is the stored override but `sortName` is what every ORDER BY reads — `setSortAs` must write both |
 | A compilation scatters across every guest artist | Album-major sorting keyed on the *track* artist. `TRACK_COLUMNS` joins `artists aar` on the album's own artistId, and `TrackSort.ARTIST` orders by `aar.sortName` |
 | Marking a compilation splits it up | The album artist must not fall back to the track artist when `compilation` is set — it defaults to "Various Artists", and that name is half the album's content-derived id |

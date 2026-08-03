@@ -160,6 +160,7 @@ fun TrackEditDialog(
     var genre by remember(trackId) { mutableStateOf(initial.genre.orEmpty()) }
     var compilation by remember(trackId) { mutableStateOf(initial.compilation) }
     var sortArtist by remember(trackId) { mutableStateOf(initial.sortArtist.orEmpty()) }
+    var groupArtist by remember(trackId) { mutableStateOf(initial.groupArtist.orEmpty()) }
 
     fun collect() = TrackEdits(
         title = title,
@@ -172,6 +173,7 @@ fun TrackEditDialog(
         genre = genre.ifBlank { null },
         compilation = compilation,
         sortArtist = sortArtist.ifBlank { null },
+        groupArtist = groupArtist.ifBlank { null },
     )
 
     AlertDialog(
@@ -209,6 +211,11 @@ fun TrackEditDialog(
                     "Sorting artist",
                     help = "File under another name, e.g. Makaveli under 2Pac",
                 ) { sortArtist = it }
+                Field(
+                    groupArtist,
+                    "Group artist",
+                    help = "Show this artist's albums under another, e.g. Makaveli inside 2Pac",
+                ) { groupArtist = it }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     NumberField(trackNo, "Track", Modifier.weight(1f)) { trackNo = it }
                     NumberField(discNo, "Disc", Modifier.weight(1f)) { discNo = it }

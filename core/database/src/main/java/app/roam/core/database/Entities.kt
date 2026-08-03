@@ -31,6 +31,15 @@ data class ArtistEntity(
      * tracks keep their real credit, they just sort together.
      */
     val sortAs: String? = null,
+    /**
+     * Folds this artist INTO another one. Makaveli grouped into 2Pac stops
+     * being his own entry in the Artists list, and his albums show up under
+     * 2Pac instead -- which is where they belonged all along.
+     *
+     * Distinct from [sortAs], which only files an artist next to another while
+     * leaving them a separate entry.
+     */
+    val groupArtistId: Long? = null,
     val artworkId: String? = null,
     /**
      * When a photo lookup was last attempted, successful or not. Without it an

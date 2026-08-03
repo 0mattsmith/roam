@@ -30,11 +30,12 @@ data class AlbumBulkEdits(
     val discNo: Int? = null,
     val compilation: Boolean? = null,
     val sortArtist: String? = null,
+    val groupArtist: String? = null,
 ) {
     val isEmpty: Boolean
         get() = artist == null && album == null && albumArtist == null &&
             year == null && genre == null && discNo == null && compilation == null &&
-            sortArtist == null
+            sortArtist == null && groupArtist == null
 }
 
 /** The fields the edit form exposes. Everything else is file-derived. */
@@ -50,6 +51,8 @@ data class TrackEdits(
     val compilation: Boolean,
     /** Files this artist under another name for sorting. Blank means no override. */
     val sortArtist: String?,
+    /** Folds this artist into another one entirely. Blank means standalone. */
+    val groupArtist: String?,
 )
 
 /**
@@ -87,6 +90,8 @@ class TrackEditor @Inject constructor(
             genre = track.genre,
             compilation = albums.byId(track.albumId)?.compilation == true,
             sortArtist = artists.byId(track.artistId)?.sortAs,
+            groupArtist = artists.byId(track.artistId)?.groupArtistId
+                ?.let { artists.byId(it)?.name },
         )
     }
 
@@ -143,6 +148,7 @@ class TrackEditor @Inject constructor(
             )
             albums.setCompilation(albumId, edits.compilation)
             applySortArtist(artistId, artistName, edits.sortArtist)
+            applyGroupArtist(artistId, edits.groupArtist)
 
             // The old artist or album may now hold nothing. Prune before the
             // rollups, or the counts are recomputed for rows about to vanish.
@@ -236,6 +242,15 @@ class TrackEditor @Inject constructor(
                         )
                     }
 
+                    edits.groupArtist?.let { groupInto ->
+                        for (row in rows) {
+                            val name = edits.artist
+                                ?: artists.byId(row.artistId)?.name
+                                ?: UNKNOWN_ARTIST
+                            applyGroupArtist(Ids.artist(name), groupInto)
+                        }
+                    }
+
                     edits.sortArtist?.let { sortAs ->
                         for (row in rows) {
                             val name = edits.artist
@@ -279,6 +294,38 @@ class TrackEditor @Inject constructor(
             sortAs = override,
             sortName = Ids.normalise(override ?: artistName),
         )
+    }
+
+    /**
+     * Folds an artist into another, creating the target if it does not exist.
+     *
+     * Two guards, both cheap and both necessary:
+     *
+     * Self-grouping is refused outright -- it would hide the artist from the
+     * list while putting their records nowhere.
+     *
+     * Chains are flattened. Grouping A into B when B already sits inside C
+     * files A under C directly, so no query ever has to walk a path, and a
+     * loop cannot form: every target is, by construction, already top level.
+     */
+    private suspend fun applyGroupArtist(artistId: Long, groupArtist: String?) {
+        val target = groupArtist?.trim()?.ifBlank { null }
+        if (target == null) {
+            artists.setGroupArtist(artistId, null)
+            return
+        }
+
+        val targetId = Ids.artist(target)
+        if (targetId == artistId) {
+            artists.setGroupArtist(artistId, null)
+            return
+        }
+
+        artists.insertIgnore(
+            listOf(ArtistEntity(targetId, target, Ids.normalise(target)))
+        )
+        val resolved = artists.groupTargetOf(targetId)?.takeIf { it != artistId } ?: targetId
+        artists.setGroupArtist(artistId, resolved)
     }
 
     private companion object {

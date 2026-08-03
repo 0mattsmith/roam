@@ -180,7 +180,12 @@ interface TrackDao {
     @Query("SELECT id, loved, skipCount, lastPlayedAt FROM tracks")
     suspend fun shuffleCandidates(): List<ShuffleRow>
 
-    @Query("SELECT id, loved, skipCount, lastPlayedAt FROM tracks WHERE artistId = :artistId")
+    /** Includes grouped aliases, so "shuffle 2Pac" covers the Makaveli records. */
+    @Query("""
+        SELECT id, loved, skipCount, lastPlayedAt FROM tracks
+        WHERE artistId = :artistId
+           OR artistId IN (SELECT id FROM artists WHERE groupArtistId = :artistId)
+    """)
     suspend fun shuffleCandidatesForArtist(artistId: Long): List<ShuffleRow>
 
     @Query("SELECT id, loved, skipCount, lastPlayedAt FROM tracks WHERE loved = 1")
@@ -309,6 +314,8 @@ data class ArtistListItem(
     val preferLogo: Boolean,
     /** Non-null when this artist is filed under someone else's name. */
     val sortAs: String?,
+    /** The artist this one is folded into, if any. */
+    val groupArtistId: Long?,
 )
 
 data class AlbumListItem(
@@ -449,6 +456,19 @@ interface ArtistDao {
     @Query("UPDATE artists SET sortAs = :sortAs, sortName = :sortName WHERE id = :id")
     suspend fun setSortAs(id: Long, sortAs: String?, sortName: String)
 
+    @Query("UPDATE artists SET groupArtistId = :groupArtistId WHERE id = :id")
+    suspend fun setGroupArtist(id: Long, groupArtistId: Long?)
+
+    /**
+     * Where [id] itself is grouped, if anywhere.
+     *
+     * Used to flatten chains at write time: grouping A into B when B is already
+     * inside C should put A in C, not build a two-hop path every query would
+     * then have to walk.
+     */
+    @Query("SELECT groupArtistId FROM artists WHERE id = :id")
+    suspend fun groupTargetOf(id: Long): Long?
+
     /** Marks a lookup as done even when nothing was found, so it is not repeated. */
     @Query("UPDATE artists SET artworkAttemptedAt = :at WHERE id IN (:ids)")
     suspend fun markPhotoAttempted(ids: List<Long>, at: Long)
@@ -466,13 +486,26 @@ interface ArtistDao {
         DELETE FROM artists
         WHERE id NOT IN (SELECT DISTINCT artistId FROM tracks)
           AND id NOT IN (SELECT DISTINCT artistId FROM albums)
+          AND id NOT IN (SELECT groupArtistId FROM artists WHERE groupArtistId IS NOT NULL)
     """)
     suspend fun pruneOrphans()
 
+    /**
+     * Counts include anything grouped into this artist, so the number under a
+     * name matches what opening it actually shows.
+     */
     @Query("""
         UPDATE artists SET
-          trackCount = (SELECT COUNT(*) FROM tracks WHERE tracks.artistId = artists.id),
-          albumCount = (SELECT COUNT(*) FROM albums WHERE albums.artistId = artists.id)
+          trackCount = (
+            SELECT COUNT(*) FROM tracks t
+            WHERE t.artistId = artists.id
+               OR t.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id)
+          ),
+          albumCount = (
+            SELECT COUNT(*) FROM albums al
+            WHERE al.artistId = artists.id
+               OR al.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id)
+          )
     """)
     suspend fun recomputeRollups()
 }

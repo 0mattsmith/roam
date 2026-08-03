@@ -46,8 +46,8 @@ object LibraryQueries {
      */
     fun tracksForArtist(artistId: Long, sort: TrackSort): SupportSQLiteQuery =
         SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE (t.artistId = ? OR al.artistId = ?) ORDER BY ${sort.orderBy}",
-            arrayOf(artistId, artistId),
+            "$TRACK_COLUMNS WHERE $BY_ARTIST_OR_GROUPED ORDER BY ${sort.orderBy}",
+            arrayOf(artistId, artistId, artistId, artistId),
         )
 
     fun tracksForAlbum(albumId: Long): SupportSQLiteQuery =
@@ -63,10 +63,16 @@ object LibraryQueries {
     fun lovedTracksLimited(sort: TrackSort, limit: Int): SupportSQLiteQuery =
         SimpleSQLiteQuery("$TRACK_COLUMNS WHERE t.loved = 1 ORDER BY ${sort.orderBy} LIMIT $limit")
 
+    /**
+     * Top-level artists only. A grouped alias is deliberately absent -- its
+     * records show up inside whoever it was folded into, and listing it twice
+     * would defeat the point of grouping it.
+     */
     fun artists(sort: ArtistSort): SupportSQLiteQuery =
         SimpleSQLiteQuery(
             """
             $ARTIST_COLUMNS
+            WHERE ar.groupArtistId IS NULL
             ORDER BY ${sort.orderBy}
             """
         )
@@ -90,6 +96,7 @@ object LibraryQueries {
         SimpleSQLiteQuery(
             """
             $ARTIST_COLUMNS
+            WHERE ar.groupArtistId IS NULL
             ORDER BY ${sort.orderBy}
             LIMIT $limit OFFSET $offset
             """
@@ -104,11 +111,16 @@ object LibraryQueries {
             """
         )
 
-    /** An artist's own albums, newest first -- how a discography is usually read. */
+    /**
+     * The artist's own albums plus those of anyone grouped into them, newest
+     * first -- how a discography is usually read.
+     */
     fun albumsForArtist(artistId: Long): SupportSQLiteQuery =
         SimpleSQLiteQuery(
-            "$ALBUM_COLUMNS WHERE al.artistId = ? ORDER BY al.year DESC, al.sortTitle",
-            arrayOf(artistId),
+            "$ALBUM_COLUMNS WHERE (al.artistId = ? " +
+                "OR al.artistId IN (SELECT id FROM artists WHERE groupArtistId = ?)) " +
+                "ORDER BY al.year DESC, al.sortTitle",
+            arrayOf(artistId, artistId),
         )
 
     fun recentAlbums(limit: Int): SupportSQLiteQuery =
@@ -130,9 +142,9 @@ object LibraryQueries {
 
     fun tracksForArtistLimited(artistId: Long, sort: TrackSort, limit: Int): SupportSQLiteQuery =
         SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE (t.artistId = ? OR al.artistId = ?) " +
+            "$TRACK_COLUMNS WHERE $BY_ARTIST_OR_GROUPED " +
                 "ORDER BY ${sort.orderBy} LIMIT $limit",
-            arrayOf(artistId, artistId),
+            arrayOf(artistId, artistId, artistId, artistId),
         )
 
     /**
@@ -155,11 +167,24 @@ object LibraryQueries {
     fun albumsForId(albumId: Long): SupportSQLiteQuery =
         SimpleSQLiteQuery("$ALBUM_COLUMNS WHERE al.id = ?", arrayOf(albumId))
 
+    /**
+     * Tracks by an artist, on albums credited to them, or belonging to anyone
+     * grouped into them. Four binds, all the same artist id.
+     *
+     * Kept on one line: it is interpolated into ordinary quoted strings, and a
+     * multi-line fragment would break them.
+     */
+    private const val BY_ARTIST_OR_GROUPED =
+        "(t.artistId = ? OR al.artistId = ? " +
+            "OR t.artistId IN (SELECT id FROM artists WHERE groupArtistId = ?) " +
+            "OR al.artistId IN (SELECT id FROM artists WHERE groupArtistId = ?))"
+
     private const val ARTIST_COLUMNS = """
         SELECT ar.id AS id, ar.name AS name,
                ar.albumCount AS albumCount, ar.trackCount AS trackCount,
                ar.artworkId AS artworkId, ar.logoArtworkId AS logoArtworkId,
-               ar.preferLogo AS preferLogo, ar.sortAs AS sortAs
+               ar.preferLogo AS preferLogo, ar.sortAs AS sortAs,
+               ar.groupArtistId AS groupArtistId
         FROM artists ar
     """
 
