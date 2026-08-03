@@ -214,7 +214,9 @@ class BrowseTree @Inject constructor(
             .setMediaId(MediaId.Album(id).raw)
             .setMediaMetadata(
                 MediaMetadata.Builder()
-                    .setTitle(title)
+                    // Year in the title, same as the phone. The car gives a
+                    // browse row one line, so a separate field would be dropped.
+                    .setTitle(year?.takeIf { it > 0 }?.let { "$title ($it)" } ?: title)
                     .setSubtitle(artistName)
                     .setArtist(artistName)
                     .setArtworkUri(artworkId?.let { ArtworkProvider.uri(ctx, it, size = 320) })

@@ -95,7 +95,7 @@ fun AlbumHeader(
 
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        track.albumTitle,
+                        albumTitleWithYear(track.albumTitle, track.albumYear),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         maxLines = 2,
@@ -110,13 +110,6 @@ fun AlbumHeader(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    track.albumYear?.takeIf { it > 0 }?.let { year ->
-                        Text(
-                            year.toString(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                        )
-                    }
                 }
 
                 FilledTonalIconButton(onClick = onPlay) {
@@ -146,3 +139,12 @@ fun DiscHeader(discNo: Int) {
             .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
     )
 }
+
+/**
+ * "Rumours (1977)", or just "Rumours" when there is no year.
+ *
+ * Zero counts as absent: an untagged year reads as 0 through the Int column,
+ * and "(0)" is worse than nothing.
+ */
+fun albumTitleWithYear(title: String, year: Int?): String =
+    year?.takeIf { it > 0 }?.let { "$title ($it)" } ?: title

@@ -1,6 +1,10 @@
 package app.roam.feature.nowplaying
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -20,9 +24,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
@@ -33,7 +40,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import androidx.compose.foundation.layout.offset
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * The full-screen player.
@@ -70,12 +80,39 @@ fun NowPlayingRoute(
     }
     val animatedProgress by animateFloatAsState(progress, label = "progress")
 
+    // Drag-to-dismiss. The whole panel moves, so the library behind it is
+    // revealed as you pull -- which is why Now Playing is an overlay on the
+    // library rather than a nav destination of its own.
+    val scope = rememberCoroutineScope()
+    val dragOffset = remember { Animatable(0f) }
+    var panelHeight by remember { mutableFloatStateOf(1f) }
+
+    fun settle(velocity: Float) {
+        scope.launch {
+            // An upward flick always keeps it open, whatever the offset: the
+            // gesture ended in "no, stay" even if it started as a pull.
+            val flungUp = velocity < -FLING_UP
+            val flungDown = velocity > FLING_DOWN
+            val pastHalfway = dragOffset.value > panelHeight / 2f
+
+            if (!flungUp && (flungDown || pastHalfway)) {
+                dragOffset.animateTo(panelHeight)
+                onCollapse()
+            } else {
+                dragOffset.animateTo(0f)
+            }
+        }
+    }
+
     // Surface, not a bare Column: a background() modifier paints pixels but
     // does not provide LocalContentColor, so every unstyled Text and IconButton
     // below fell back to black on a dark theme. Shuffle and Repeat looked fine
     // only because they happened to set an explicit tint.
     Surface(
-        Modifier.fillMaxSize(),
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged { panelHeight = it.height.toFloat() }
+            .offset { IntOffset(0, dragOffset.value.roundToInt()) },
         color = MaterialTheme.colorScheme.surface,
     ) {
         Column(
@@ -105,7 +142,19 @@ fun NowPlayingRoute(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(MaterialTheme.shapes.large),
+                    .clip(MaterialTheme.shapes.large)
+                    // Downward only: coerceAtLeast(0) stops the panel being
+                    // dragged up off the top of the screen, which has nowhere
+                    // to go and just looks broken.
+                    .draggable(
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { delta ->
+                            scope.launch {
+                                dragOffset.snapTo((dragOffset.value + delta).coerceAtLeast(0f))
+                            }
+                        },
+                        onDragStopped = { velocity -> settle(velocity) },
+                    ),
             )
 
             Spacer(Modifier.height(32.dp))
@@ -241,3 +290,11 @@ private fun formatTime(ms: Long): String {
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }
+
+/**
+ * Velocity thresholds in px/s. Asymmetric on purpose: a deliberate flick down
+ * should dismiss from anywhere, while it takes only a small upward movement to
+ * say "no, keep it".
+ */
+private const val FLING_DOWN = 1500f
+private const val FLING_UP = 300f

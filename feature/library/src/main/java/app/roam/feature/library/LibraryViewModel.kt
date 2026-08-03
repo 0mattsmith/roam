@@ -263,13 +263,24 @@ class LibraryViewModel @Inject constructor(
         _bulkEditing.value = null
     }
 
-    fun applyAlbumEdits(albumId: Long, edits: AlbumBulkEdits) = viewModelScope.launch {
-        _bulkEditing.value = null
-        _photoMessage.value = trackEditor.applyToAlbum(albumId, edits)
+    /**
+     * Applies and stays put. Bulk editing is iterative -- set the year, look at
+     * it, then set the genre -- so closing the form after each pass would mean
+     * reopening it to do the next thing.
+     */
+    fun applyAlbumEdits(track: TrackListItem, edits: AlbumBulkEdits) = viewModelScope.launch {
+        _photoMessage.value = trackEditor.applyToAlbum(track.albumId, edits)
             .fold(
                 { count -> if (count == 0) "Nothing to change" else "Updated $count tracks" },
                 { "Could not save: ${it.message}" },
             )
+
+        // Re-resolve the row the dialog is driven by. Renaming the album moved
+        // every track to a new content-derived id, so the carrier is now stale
+        // and the arrows and cover buttons would target an album that no longer
+        // exists. Track ids are stable, so this finds it wherever it landed.
+        tracks.listItemsRaw(LibraryQueries.tracksForTrack(track.id)).firstOrNull()
+            ?.let { _bulkEditing.value = it }
     }
 
     fun setAlbumArtwork(track: TrackListItem, picked: Uri) = viewModelScope.launch {

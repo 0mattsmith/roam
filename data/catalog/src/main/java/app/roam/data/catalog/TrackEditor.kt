@@ -29,10 +29,12 @@ data class AlbumBulkEdits(
     val genre: String? = null,
     val discNo: Int? = null,
     val compilation: Boolean? = null,
+    val sortArtist: String? = null,
 ) {
     val isEmpty: Boolean
         get() = artist == null && album == null && albumArtist == null &&
-            year == null && genre == null && discNo == null && compilation == null
+            year == null && genre == null && discNo == null && compilation == null &&
+            sortArtist == null
 }
 
 /** The fields the edit form exposes. Everything else is file-derived. */
@@ -46,6 +48,8 @@ data class TrackEdits(
     val year: Int?,
     val genre: String?,
     val compilation: Boolean,
+    /** Files this artist under another name for sorting. Blank means no override. */
+    val sortArtist: String?,
 )
 
 /**
@@ -82,6 +86,7 @@ class TrackEditor @Inject constructor(
             year = track.year,
             genre = track.genre,
             compilation = albums.byId(track.albumId)?.compilation == true,
+            sortArtist = artists.byId(track.artistId)?.sortAs,
         )
     }
 
@@ -137,6 +142,7 @@ class TrackEditor @Inject constructor(
                 genre = edits.genre?.trim()?.ifBlank { null },
             )
             albums.setCompilation(albumId, edits.compilation)
+            applySortArtist(artistId, artistName, edits.sortArtist)
 
             // The old artist or album may now hold nothing. Prune before the
             // rollups, or the counts are recomputed for rows about to vanish.
@@ -230,6 +236,15 @@ class TrackEditor @Inject constructor(
                         )
                     }
 
+                    edits.sortArtist?.let { sortAs ->
+                        for (row in rows) {
+                            val name = edits.artist
+                                ?: artists.byId(row.artistId)?.name
+                                ?: UNKNOWN_ARTIST
+                            applySortArtist(Ids.artist(name), name, sortAs)
+                        }
+                    }
+
                     // Applied once, after every track has landed on the new
                     // album id -- setting it per track would target rows that
                     // are about to be pruned.
@@ -250,6 +265,21 @@ class TrackEditor @Inject constructor(
                 rows.size
             }
         }
+
+    /**
+     * Writes the override into sortName, which is what every list already
+     * orders by -- so an alias lands next to the main artist in the Artists
+     * tab, in album-major track sorting and in the car, without a single query
+     * knowing this feature exists. Blank clears it and the real name returns.
+     */
+    private suspend fun applySortArtist(artistId: Long, artistName: String, sortArtist: String?) {
+        val override = sortArtist?.trim()?.ifBlank { null }
+        artists.setSortAs(
+            id = artistId,
+            sortAs = override,
+            sortName = Ids.normalise(override ?: artistName),
+        )
+    }
 
     private companion object {
         const val UNKNOWN_ARTIST = "Unknown artist"

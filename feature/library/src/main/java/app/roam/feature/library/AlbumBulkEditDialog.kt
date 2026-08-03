@@ -148,6 +148,7 @@ fun AlbumBulkEditDialog(
     var genreOn by remember(albumId) { mutableStateOf(false) }
     var discOn by remember(albumId) { mutableStateOf(false) }
     var compilationOn by remember(albumId) { mutableStateOf(false) }
+    var sortArtistOn by remember(albumId) { mutableStateOf(false) }
 
     var artist by remember(albumId) { mutableStateOf(initialArtist) }
     var album by remember(albumId) { mutableStateOf(albumTitle) }
@@ -156,9 +157,10 @@ fun AlbumBulkEditDialog(
     var genre by remember(albumId) { mutableStateOf("") }
     var disc by remember(albumId) { mutableStateOf("") }
     var compilation by remember(albumId) { mutableStateOf(true) }
+    var sortArtist by remember(albumId) { mutableStateOf("") }
 
     val anyChecked = artistOn || albumOn || albumArtistOn || yearOn ||
-        genreOn || discOn || compilationOn
+        genreOn || discOn || compilationOn || sortArtistOn
 
     fun collect() = AlbumBulkEdits(
         artist = artist.takeIf { artistOn },
@@ -168,6 +170,7 @@ fun AlbumBulkEditDialog(
         genre = genre.takeIf { genreOn },
         discNo = if (discOn) disc.toIntOrNull() else null,
         compilation = compilation.takeIf { compilationOn },
+        sortArtist = sortArtist.takeIf { sortArtistOn },
     )
 
     AlertDialog(
@@ -208,6 +211,9 @@ fun AlbumBulkEditDialog(
                 }
                 CheckedField(albumArtistOn, { albumArtistOn = it }, albumArtist, "Album artist") {
                     albumArtist = it
+                }
+                CheckedField(sortArtistOn, { sortArtistOn = it }, sortArtist, "Sorting artist") {
+                    sortArtist = it
                 }
                 CheckedField(genreOn, { genreOn = it }, genre, "Genre") { genre = it }
                 CheckedField(yearOn, { yearOn = it }, year, "Year", numeric = true) { year = it }

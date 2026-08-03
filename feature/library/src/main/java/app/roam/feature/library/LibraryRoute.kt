@@ -323,7 +323,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             canGoPrevious = canPrev,
             canGoNext = canNext,
             onDismiss = vm::closeAlbumBulkEditor,
-            onSave = { edits -> vm.applyAlbumEdits(track.albumId, edits) },
+            onSave = { edits -> vm.applyAlbumEdits(track, edits) },
             onStep = { edits, delta -> vm.stepAlbumEditor(track, edits, delta) },
             onCoverSave = { vm.saveAlbumCoverFor(track) },
             onCoverRemove = { vm.removeAlbumCover(track) },
@@ -549,10 +549,15 @@ private fun AlbumRow(
 ) {
     ListItem(
         modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        headlineContent = { Text(album.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        headlineContent = {
+            Text(
+                albumTitleWithYear(album.title, album.year),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
         supportingContent = {
-            val year = album.year?.let { " · $it" }.orEmpty()
-            Text("${album.artistName}$year · ${album.trackCount} tracks",
+            Text("${album.artistName} · ${album.trackCount} tracks",
                  maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         leadingContent = { Artwork(album.artworkId) },

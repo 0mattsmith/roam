@@ -24,7 +24,13 @@ data class SourceEntity(
 data class ArtistEntity(
     @PrimaryKey val id: Long,
     val name: String,
+    /** What the lists actually order by. Normally the name; the override when set. */
     val sortName: String,
+    /**
+     * "File this artist under X". Makaveli under 2Pac, D12 under Eminem -- the
+     * tracks keep their real credit, they just sort together.
+     */
+    val sortAs: String? = null,
     val artworkId: String? = null,
     /**
      * When a photo lookup was last attempted, successful or not. Without it an

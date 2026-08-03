@@ -37,8 +37,18 @@ object LibraryQueries {
     fun lovedTracks(sort: TrackSort): SupportSQLiteQuery =
         SimpleSQLiteQuery("$TRACK_COLUMNS WHERE t.loved = 1 ORDER BY ${sort.orderBy}")
 
+    /**
+     * Tracks BY this artist, plus tracks on albums CREDITED to them.
+     *
+     * The second clause is what makes "Various Artists" show its compilations:
+     * no track on one carries that as its own artist, so filtering on t.artistId
+     * alone would open an artist page with nothing in it.
+     */
     fun tracksForArtist(artistId: Long, sort: TrackSort): SupportSQLiteQuery =
-        SimpleSQLiteQuery("$TRACK_COLUMNS WHERE t.artistId = ? ORDER BY ${sort.orderBy}", arrayOf(artistId))
+        SimpleSQLiteQuery(
+            "$TRACK_COLUMNS WHERE (t.artistId = ? OR al.artistId = ?) ORDER BY ${sort.orderBy}",
+            arrayOf(artistId, artistId),
+        )
 
     fun tracksForAlbum(albumId: Long): SupportSQLiteQuery =
         SimpleSQLiteQuery(
@@ -120,8 +130,9 @@ object LibraryQueries {
 
     fun tracksForArtistLimited(artistId: Long, sort: TrackSort, limit: Int): SupportSQLiteQuery =
         SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE t.artistId = ? ORDER BY ${sort.orderBy} LIMIT $limit",
-            arrayOf(artistId),
+            "$TRACK_COLUMNS WHERE (t.artistId = ? OR al.artistId = ?) " +
+                "ORDER BY ${sort.orderBy} LIMIT $limit",
+            arrayOf(artistId, artistId),
         )
 
     /**
@@ -148,7 +159,7 @@ object LibraryQueries {
         SELECT ar.id AS id, ar.name AS name,
                ar.albumCount AS albumCount, ar.trackCount AS trackCount,
                ar.artworkId AS artworkId, ar.logoArtworkId AS logoArtworkId,
-               ar.preferLogo AS preferLogo
+               ar.preferLogo AS preferLogo, ar.sortAs AS sortAs
         FROM artists ar
     """
 

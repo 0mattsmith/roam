@@ -307,6 +307,8 @@ data class ArtistListItem(
     val artworkId: String?,
     val logoArtworkId: String?,
     val preferLogo: Boolean,
+    /** Non-null when this artist is filed under someone else's name. */
+    val sortAs: String?,
 )
 
 data class AlbumListItem(
@@ -436,11 +438,35 @@ interface ArtistDao {
     @Query("UPDATE artists SET preferLogo = :preferLogo WHERE id = :id")
     suspend fun setPreferLogo(id: Long, preferLogo: Boolean)
 
+    /**
+     * Files an artist under a different name without renaming them.
+     *
+     * sortName is what every ORDER BY in the app already uses, so writing the
+     * override into it makes aliases and side projects group with the main
+     * artist everywhere at once -- Artists list, album-major track sorting and
+     * the car -- with no query changes.
+     */
+    @Query("UPDATE artists SET sortAs = :sortAs, sortName = :sortName WHERE id = :id")
+    suspend fun setSortAs(id: Long, sortAs: String?, sortName: String)
+
     /** Marks a lookup as done even when nothing was found, so it is not repeated. */
     @Query("UPDATE artists SET artworkAttemptedAt = :at WHERE id IN (:ids)")
     suspend fun markPhotoAttempted(ids: List<Long>, at: Long)
 
-    @Query("DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artistId FROM tracks)")
+    /**
+     * An artist is orphaned only when nothing references it AT ALL -- neither a
+     * track nor an album.
+     *
+     * The album clause is not optional: on a compilation no track carries
+     * "Various Artists" as its own artist, so tracks alone would prune the row,
+     * and the album-artist join in TRACK_COLUMNS is inner -- the entire
+     * compilation would silently disappear from every list.
+     */
+    @Query("""
+        DELETE FROM artists
+        WHERE id NOT IN (SELECT DISTINCT artistId FROM tracks)
+          AND id NOT IN (SELECT DISTINCT artistId FROM albums)
+    """)
     suspend fun pruneOrphans()
 
     @Query("""
