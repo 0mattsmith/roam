@@ -199,8 +199,9 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     val pastCovers by vm.pastCovers.collectAsStateWithLifecycle()
 
     // Album-major orderings get one big cover per album instead of the same
-    // thumbnail repeated down every row.
-    val grouped = state.trackSort == TrackSort.ALBUM || state.drillTitle != null
+    // thumbnail repeated down every row. The sort says whether it is one, so a
+    // new album-major order needs no change here.
+    val grouped = state.trackSort.groupByAlbum || state.drillTitle != null
 
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->

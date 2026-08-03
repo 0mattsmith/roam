@@ -7,12 +7,33 @@ package app.roam.core.model
  * these are fixed constants spliced into a raw query, so there is nothing an
  * outside value could influence.
  */
-enum class TrackSort(val label: String, val orderBy: String) {
+/**
+ * [groupByAlbum] decides whether the list draws album headers. Carrying it on
+ * the sort rather than testing for one specific constant in the UI means adding
+ * another album-major order does not need the screen to know about it.
+ */
+enum class TrackSort(
+    val label: String,
+    val orderBy: String,
+    val groupByAlbum: Boolean = false,
+) {
     TITLE("Title", "t.title COLLATE NOCASE"),
     // aar, not ar: the ALBUM's artist. Grouping a compilation by each track's
     // own artist scatters it across the library one guest at a time.
     ARTIST("Artist", "aar.sortName, al.sortTitle, t.discNo, t.trackNo"),
-    ALBUM("Album", "al.sortTitle, t.discNo, t.trackNo"),
+    ALBUM("Album", "al.sortTitle, t.discNo, t.trackNo", groupByAlbum = true),
+
+    /**
+     * Albums again, but walked artist by artist and oldest first within each --
+     * a discography rather than an alphabetical shelf. The year is what makes
+     * this genuinely different from ARTIST rather than the same order with
+     * headers bolted on.
+     */
+    ALBUM_BY_ARTIST(
+        "Album by artist",
+        "aar.sortName, al.year, al.sortTitle, t.discNo, t.trackNo",
+        groupByAlbum = true,
+    ),
     RECENT("Recently added", "t.addedAt DESC"),
 }
 
