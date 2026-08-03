@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,11 +22,18 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,18 +53,25 @@ import coil.compose.AsyncImage
 @Composable
 fun AlbumArtBlock(
     artworkId: String?,
+    past: List<LibraryViewModel.PastCover> = emptyList(),
+    onLoadPast: () -> Unit = {},
+    onSavePast: (LibraryViewModel.PastCover) -> Unit = {},
+    onRestorePast: (LibraryViewModel.PastCover) -> Unit = {},
     onSave: () -> Unit,
     onRemove: () -> Unit,
     onPicked: (Uri) -> Unit,
     onPasteFailed: (String) -> Unit,
 ) {
     val ctx = LocalContext.current
+    var showPast by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) onPicked(uri) }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // The cover, its actions and the history strip stack vertically.
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
         if (artworkId != null) {
             AsyncImage(
                 model = ArtworkProvider.uri(ctx, artworkId, size = 320),
@@ -116,6 +132,84 @@ fun AlbumArtBlock(
                 IconButton(onClick = onRemove, enabled = artworkId != null) {
                     Icon(Icons.Filled.Delete, contentDescription = "Remove cover")
                 }
+            }
+        }
+    }
+
+    // Nothing loads until asked: these live on Drive, and fetching every past
+    // cover to draw a strip nobody opened would be rude on mobile data.
+    TextButton(
+        onClick = {
+            showPast = !showPast
+            if (showPast) onLoadPast()
+        }
+    ) {
+        Text(if (showPast) "Hide previous covers" else "Previous covers")
+    }
+
+    if (showPast) {
+        if (past.isEmpty()) {
+            Text(
+                "No earlier covers for this album",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                past.forEach { cover -> PastCoverCell(cover, onSavePast, onRestorePast) }
+            }
+        }
+    }
+    }
+}
+
+/** One retired cover: the picture, its filename, and the two things to do with it. */
+@Composable
+private fun PastCoverCell(
+    cover: LibraryViewModel.PastCover,
+    onSave: (LibraryViewModel.PastCover) -> Unit,
+    onRestore: (LibraryViewModel.PastCover) -> Unit,
+) {
+    val ctx = LocalContext.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Null while the download is still in flight; the cell appears straight
+        // away and fills in rather than the whole strip waiting on the set.
+        val id = cover.artworkId
+        if (id != null) {
+            AsyncImage(
+                model = ArtworkProvider.uri(ctx, id, size = 320),
+                contentDescription = cover.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(MaterialTheme.shapes.small),
+            )
+        } else {
+            Box(
+                Modifier
+                    .size(72.dp)
+                    .clip(MaterialTheme.shapes.small),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+        }
+        Text(
+            cover.name,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row {
+            IconButton(onClick = { onSave(cover) }, enabled = cover.artworkId != null) {
+                Icon(Icons.Filled.Download, contentDescription = "Save ${cover.name}")
+            }
+            IconButton(onClick = { onRestore(cover) }, enabled = cover.artworkId != null) {
+                Icon(Icons.Filled.Restore, contentDescription = "Use ${cover.name} again")
             }
         }
     }

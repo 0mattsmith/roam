@@ -196,6 +196,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     var bulkCount by remember { mutableIntStateOf(0) }
     val editing by vm.editing.collectAsStateWithLifecycle()
     val bulkEditing by vm.bulkEditing.collectAsStateWithLifecycle()
+    val pastCovers by vm.pastCovers.collectAsStateWithLifecycle()
 
     // Album-major orderings get one big cover per album instead of the same
     // thumbnail repeated down every row.
@@ -266,6 +267,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         LaunchedEffect(track.id) {
             canPrev = vm.hasSiblingTrack(track, -1)
             canNext = vm.hasSiblingTrack(track, 1)
+            vm.clearPastCovers()
         }
 
         TrackEditDialog(
@@ -278,8 +280,12 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             onStep = { edits, delta -> vm.stepTrackEditor(track, edits, delta) },
             onCoverSave = { vm.saveAlbumCoverFor(track) },
             onCoverRemove = { vm.removeAlbumCover(track) },
-            onCoverPicked = { uri -> vm.setAlbumCover(track, uri) },
+            onCoverPicked = { uri -> vm.setAlbumArtwork(track, uri) },
             onCoverMessage = vm::reportEditorMessage,
+            pastCovers = pastCovers,
+            onLoadPastCovers = { vm.loadPastCovers(track) },
+            onSavePastCover = vm::savePastCover,
+            onRestorePastCover = { cover -> vm.restorePastCover(track, cover) },
         )
     }
 
@@ -304,6 +310,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         LaunchedEffect(track.albumId) {
             canPrev = vm.hasSiblingAlbum(track, -1)
             canNext = vm.hasSiblingAlbum(track, 1)
+            vm.clearPastCovers()
         }
 
         AlbumBulkEditDialog(
@@ -318,8 +325,12 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             onStep = { edits, delta -> vm.stepAlbumEditor(track, edits, delta) },
             onCoverSave = { vm.saveAlbumCoverFor(track) },
             onCoverRemove = { vm.removeAlbumCover(track) },
-            onCoverPicked = { uri -> vm.setAlbumCover(track, uri) },
+            onCoverPicked = { uri -> vm.setAlbumArtwork(track, uri) },
             onCoverMessage = vm::reportEditorMessage,
+            pastCovers = pastCovers,
+            onLoadPastCovers = { vm.loadPastCovers(track) },
+            onSavePastCover = vm::savePastCover,
+            onRestorePastCover = { cover -> vm.restorePastCover(track, cover) },
         )
     }
 }

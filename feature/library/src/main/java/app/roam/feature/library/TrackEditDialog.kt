@@ -138,6 +138,10 @@ fun TrackEditDialog(
     onCoverRemove: () -> Unit,
     onCoverPicked: (Uri) -> Unit,
     onCoverMessage: (String) -> Unit,
+    pastCovers: List<LibraryViewModel.PastCover>,
+    onLoadPastCovers: () -> Unit,
+    onSavePastCover: (LibraryViewModel.PastCover) -> Unit,
+    onRestorePastCover: (LibraryViewModel.PastCover) -> Unit,
 ) {
     var title by remember { mutableStateOf(initial.title) }
     var artist by remember { mutableStateOf(initial.artist) }
@@ -200,6 +204,10 @@ fun TrackEditDialog(
 
                 AlbumArtBlock(
                     artworkId = artworkId,
+                    past = pastCovers,
+                    onLoadPast = onLoadPastCovers,
+                    onSavePast = onSavePastCover,
+                    onRestorePast = onRestorePastCover,
                     onSave = onCoverSave,
                     onRemove = onCoverRemove,
                     onPicked = onCoverPicked,

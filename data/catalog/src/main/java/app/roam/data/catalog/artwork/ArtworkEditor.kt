@@ -199,6 +199,94 @@ class ArtworkEditor @Inject constructor(
         }
     }
 
+    /** One retired image, as the history list needs it. */
+    data class PastImage(val remoteId: String, val name: String)
+
+    /**
+     * Numbered images the folder has held before, oldest first.
+     *
+     * Empty unless something has actually been replaced, so the UI can hide
+     * the whole section rather than showing an empty shelf.
+     */
+    suspend fun previousImages(
+        pathSegments: List<String>,
+        currentName: String,
+    ): List<PastImage> = withContext(Dispatchers.IO) {
+        val folder = folderFor(pathSegments) ?: return@withContext emptyList()
+        val provider = providers[SourceType.DRIVE]?.get() ?: return@withContext emptyList()
+        val images = runCatching { provider.listImages(folder) }.getOrDefault(emptyList())
+        val names = images.map { it.name }
+        ArtworkFiles.archivedVersions(currentName, names).mapNotNull { name ->
+            images.firstOrNull { it.name == name }?.let { PastImage(it.remoteId, it.name) }
+        }
+    }
+
+    /**
+     * Pulls a retired image into the local store so it can be shown.
+     *
+     * Only called when the history is actually opened -- these live on Drive,
+     * and downloading every past cover just to draw a section nobody expanded
+     * would be rude on mobile data. Ids are content hashes, so a second look
+     * costs nothing.
+     */
+    suspend fun cachePastImage(remoteId: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val provider = providers[SourceType.DRIVE]?.get() ?: return@runCatching null
+            artwork.put(provider.read(remoteId), ArtworkSource.USER)
+        }.getOrNull()
+    }
+
+    /** Copies a retired image into Pictures/Roam without disturbing the source. */
+    suspend fun savePastImage(remoteId: String, displayName: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val provider = providers[SourceType.DRIVE]?.get() ?: error("Drive not connected")
+                val bytes = provider.read(remoteId)
+                val artworkId = artwork.put(bytes, ArtworkSource.USER)
+                    ?: error("That file is not an image Roam can read")
+                saveToGallery(artworkId, displayName).getOrThrow()
+            }
+        }
+
+    /**
+     * Makes a retired image current again.
+     *
+     * Goes through the normal replace path rather than renaming the archived
+     * file back, so the live name stays cover.jpg and the numbering never has
+     * gaps. That does leave two copies of the same picture in the folder --
+     * the acceptable cost of never destroying anything.
+     */
+    suspend fun restoreAlbumCover(
+        albumId: Long,
+        albumArtist: String,
+        albumTitle: String,
+        remoteId: String,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val provider = providers[SourceType.DRIVE]?.get() ?: error("Drive not connected")
+            val bytes = provider.read(remoteId)
+            val artworkId = artwork.put(bytes, ArtworkSource.USER)
+                ?: error("That file is not an image Roam can read")
+
+            albums.setArtwork(albumId, artworkId)
+            tracks.setArtworkForAlbum(albumId, artworkId)
+            pushToSource(
+                pathSegments = listOf(albumArtist, albumTitle),
+                fileName = ArtworkFiles.ALBUM_UPLOAD_NAME,
+                candidates = ArtworkFiles.ALBUM_NAMES,
+                bytes = bytes,
+            )
+            "Cover restored"
+        }
+    }
+
+    private suspend fun folderFor(pathSegments: List<String>): String? {
+        val saved = settings.settings.first()
+        val root = saved.driveFolderId ?: return null
+        val provider = providers[SourceType.DRIVE]?.get() ?: return null
+        return runCatching { provider.resolveFolder(root, pathSegments, create = false) }.getOrNull()
+    }
+
     /** Returns true only when the bytes actually reached the source. */
     private suspend fun pushToSource(
         pathSegments: List<String>,
@@ -221,15 +309,20 @@ class ArtworkEditor @Inject constructor(
         val tmp = File.createTempFile("artwork", ".jpg", ctx.cacheDir)
         return try {
             tmp.writeBytes(bytes)
-            val existing = provider.findInFolder(folderId, candidates)
-            // Replace in place rather than uploading a second file. Drive
-            // permits duplicate names in a folder, so adding one would leave
-            // two covers and make which one wins a matter of luck.
+            val images = provider.listImages(folderId)
+            val existing = images.firstOrNull { it.name.lowercase() in candidates.map { c -> c.lowercase() } }
+
+            // Number the outgoing file rather than overwriting it: cover.jpg
+            // becomes cover1.jpg, then cover2.jpg, and the live image is always
+            // plain cover.jpg. Nothing that points at it ever has to change,
+            // and every version the folder has held is still sitting there.
             if (existing != null) {
-                provider.overwrite(existing.remoteId, tmp)
-            } else {
-                provider.write(root, pathSegments, fileName, tmp)
+                provider.rename(
+                    existing.remoteId,
+                    ArtworkFiles.nextArchiveName(existing.name, images.map { it.name }),
+                )
             }
+            provider.write(root, pathSegments, fileName, tmp)
             true
         } finally {
             tmp.delete()

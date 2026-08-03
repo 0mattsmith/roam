@@ -96,9 +96,21 @@ interface DriveApi {
         @Query("fields") fields: String = "id,name,mimeType",
     ): DriveFile
 
+    /** Metadata only -- renames a file without touching a byte of its content. */
+    @PATCH("drive/v3/files/{fileId}")
+    suspend fun updateMetadata(
+        @Path("fileId") fileId: String,
+        @Body body: NewFile,
+        @Query("fields") fields: String = "id,name,mimeType",
+    ): DriveFile
+
     /**
      * Replace an existing file's bytes, keeping its id. Media-only, so the body
      * is the raw file rather than a multipart envelope.
+     *
+     * Not used by the artwork paths -- those rename the old image aside and
+     * write a new file, so nothing is ever destroyed. This is here for the
+     * phase 4 tag writer, where rewriting the audio file IS the point.
      */
     @PATCH("upload/drive/v3/files/{fileId}")
     suspend fun updateMedia(

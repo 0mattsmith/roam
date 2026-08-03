@@ -68,6 +68,12 @@ interface SourceProvider {
     /** First non-folder child of [folderId] matching any of [names]. */
     suspend fun findInFolder(folderId: String, names: List<String>): RemoteFile?
 
+    /**
+     * Every image in [folderId]. Used to work out the next archive number and
+     * to list the covers a folder has held before.
+     */
+    suspend fun listImages(folderId: String): List<RemoteFile>
+
     /** Create folders as needed and upload. Returns the new remote id. */
     suspend fun write(root: String, pathSegments: List<String>, fileName: String, file: File): String
 
@@ -79,4 +85,13 @@ interface SourceProvider {
      * of them and which one wins would be luck.
      */
     suspend fun overwrite(remoteId: String, file: File)
+
+    /**
+     * Rename in place, keeping the file and its contents.
+     *
+     * How artwork is replaced without destroying anything: the old image is
+     * renamed out of the way rather than overwritten, so every cover, photo and
+     * logo Roam has ever put on the source stays there.
+     */
+    suspend fun rename(remoteId: String, newName: String)
 }

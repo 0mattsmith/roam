@@ -168,15 +168,16 @@ class DriveSourceProvider @Inject constructor(
      */
     override suspend fun findInFolder(folderId: String, names: List<String>): RemoteFile? {
         val wanted = names.map { it.lowercase() }.toSet()
-        return api.list(
+        return listImages(folderId).firstOrNull { it.name.lowercase() in wanted }
+    }
+
+    override suspend fun listImages(folderId: String): List<RemoteFile> =
+        api.list(
             q = "'$folderId' in parents and mimeType contains 'image/' and trashed = false",
             fields = FIELD_MASK,
-            pageSize = 50,
+            pageSize = 200,
             pageToken = null,
-        ).files
-            .firstOrNull { it.name.lowercase() in wanted }
-            ?.toRemoteFile(emptyList())
-    }
+        ).files.map { it.toRemoteFile(emptyList()) }
 
     override suspend fun write(
         root: String,
@@ -200,6 +201,10 @@ class DriveSourceProvider @Inject constructor(
             .build()
 
         return api.upload(body).id
+    }
+
+    override suspend fun rename(remoteId: String, newName: String) {
+        api.updateMetadata(remoteId, NewFile(newName))
     }
 
     override suspend fun overwrite(remoteId: String, file: File) {

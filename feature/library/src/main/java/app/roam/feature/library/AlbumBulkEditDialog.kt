@@ -129,6 +129,10 @@ fun AlbumBulkEditDialog(
     onCoverRemove: () -> Unit,
     onCoverPicked: (Uri) -> Unit,
     onCoverMessage: (String) -> Unit,
+    pastCovers: List<LibraryViewModel.PastCover>,
+    onLoadPastCovers: () -> Unit,
+    onSavePastCover: (LibraryViewModel.PastCover) -> Unit,
+    onRestorePastCover: (LibraryViewModel.PastCover) -> Unit,
 ) {
     var artistOn by remember { mutableStateOf(false) }
     var albumOn by remember { mutableStateOf(false) }
@@ -206,6 +210,10 @@ fun AlbumBulkEditDialog(
 
                 AlbumArtBlock(
                     artworkId = artworkId,
+                    past = pastCovers,
+                    onLoadPast = onLoadPastCovers,
+                    onSavePast = onSavePastCover,
+                    onRestorePast = onRestorePastCover,
                     onSave = onCoverSave,
                     onRemove = onCoverRemove,
                     onPicked = onCoverPicked,

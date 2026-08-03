@@ -125,6 +125,17 @@ other — route between them through `:app`.
    `APIC` frame in every track, because a folder cover is the convention and
    rewriting would mean a full download and re-upload of the whole album.
 
+6d. **Roam never destroys anything on the source.** No delete, ever, and no
+   overwrite of an image. Replacing a cover, photo or logo *numbers the outgoing
+   file* -- `cover.jpg` becomes `cover1.jpg`, then `cover2.jpg` -- and writes the
+   new one as plain `cover.jpg`. The live image therefore always has the same
+   name, so nothing pointing at it ever has to change, and every version the
+   folder has held is still there. Numbered names deliberately fall outside
+   `ArtworkFiles`' candidate lists, so exactly one file answers to `cover.jpg` /
+   `artist.jpg` / `logo.png`. "Remove cover" clears Roam's row only.
+   `SourceProvider.overwrite` exists for the phase 4 tag writer and must not be
+   reintroduced into an artwork path.
+
 7. **IDs are content-derived** (`Ids.album`, `Ids.track` in `:core:model`), not
    autoincrement. A file that moves in Drive keeps its identity and its loved
    flag. Re-sync must be idempotent.
@@ -209,6 +220,9 @@ resumable Drive upload with cached folder IDs.
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
 | `Cannot access class X. Check your module classpath` | A public signature in a dependency module exposes a type from one of ITS `implementation` deps — declare an explicit return type, or promote to `api` |
 | Artist photo saves to Photos do nothing | MediaStore `RELATIVE_PATH`/`IS_PENDING` are API 29+; the version check must *wrap* the call, not early-throw, or lint's NewApi fails `lintVitalRelease` |
+| A replaced cover wiped the previous image on Drive | Something called `overwrite` instead of `rename`-then-`write` — see invariant 6d |
+| Two cover.jpg files in one folder | A numbered name matched a candidate list. `cover1.jpg` must not appear in `ArtworkFiles.ALBUM_NAMES` |
+| Archive numbering restarts at 1 and collides | `nextArchiveName` must scan the folder for the highest existing number, not count how many replacements this session made |
 | A replaced album cover reverts after a re-tag | `TagWorker` must only ever call `setArtworkIfMissing`; the unconditional `setArtwork` is for user picks alone |
 | An edited track reverts to the filename after a sync | `userEdited` not honoured — sync's `refreshFromPath` and `TagWorker.pendingTags` both filter on it |
 | A compilation scatters across every guest artist | Album-major sorting keyed on the *track* artist. `TRACK_COLUMNS` joins `artists aar` on the album's own artistId, and `TrackSort.ARTIST` orders by `aar.sortName` |

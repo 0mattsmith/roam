@@ -21,6 +21,7 @@ import app.roam.data.catalog.TrackEditor
 import app.roam.data.catalog.TrackEdits
 import app.roam.core.database.AlbumListItem
 import app.roam.data.catalog.artwork.ArtworkEditor
+import app.roam.data.catalog.artwork.ArtworkFiles
 import app.roam.feature.player.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -353,6 +354,45 @@ class LibraryViewModel @Inject constructor(
     fun removeAlbumCover(track: TrackListItem) = viewModelScope.launch {
         _photoMessage.value = photos.clearAlbumArtwork(track.albumId)
             .fold({ it }, { "Could not remove: ${it.message}" })
+    }
+
+    /** A retired cover, resolved far enough to draw. */
+    data class PastCover(val remoteId: String, val name: String, val artworkId: String?)
+
+    private val _pastCovers = MutableStateFlow<List<PastCover>>(emptyList())
+    val pastCovers: StateFlow<List<PastCover>> = _pastCovers.asStateFlow()
+
+    /** Loaded on demand: opening the history is what pays for the downloads. */
+    fun loadPastCovers(track: TrackListItem) = viewModelScope.launch {
+        val past = photos.previousImages(
+            listOf(track.albumArtistName, track.albumTitle),
+            ArtworkFiles.ALBUM_UPLOAD_NAME,
+        )
+        _pastCovers.value = past.map { PastCover(it.remoteId, it.name, null) }
+        // Then fill in the thumbnails one at a time, so the row appears
+        // immediately and populates rather than blocking on the whole set.
+        _pastCovers.value = past.map {
+            PastCover(it.remoteId, it.name, photos.cachePastImage(it.remoteId))
+        }
+    }
+
+    fun clearPastCovers() {
+        _pastCovers.value = emptyList()
+    }
+
+    fun savePastCover(cover: PastCover) = viewModelScope.launch {
+        _photoMessage.value = photos.savePastImage(cover.remoteId, cover.name.substringBeforeLast('.'))
+            .fold({ it }, { "Could not save: ${it.message}" })
+    }
+
+    fun restorePastCover(track: TrackListItem, cover: PastCover) = viewModelScope.launch {
+        _photoMessage.value = photos.restoreAlbumCover(
+            albumId = track.albumId,
+            albumArtist = track.albumArtistName,
+            albumTitle = track.albumTitle,
+            remoteId = cover.remoteId,
+        ).fold({ it }, { "Could not restore: ${it.message}" })
+        loadPastCovers(track)
     }
 
     fun reportEditorMessage(message: String) {
