@@ -49,6 +49,21 @@ enum class ArtistSort(val label: String, val orderBy: String) {
     TRACKS("Most tracks", "ar.trackCount DESC, ar.sortName"),
 }
 
+/**
+ * List of rows, or a grid of pictures.
+ *
+ * One enum for artists and albums alike. What they draw differs -- circular
+ * photos against square covers -- but the choice is the same choice, and two
+ * enums would only mean two ways to say the same word.
+ */
+enum class ViewMode(val label: String) {
+    LIST("List"),
+    GRID("Grid"),
+    ;
+
+    fun toggled(): ViewMode = if (this == LIST) GRID else LIST
+}
+
 /** Which list the library is showing. */
 enum class LibraryTab(val label: String) {
     TRACKS("Tracks"),

@@ -125,6 +125,7 @@ class ArtistPhotoWorker @AssistedInject constructor(
         }
 
         runLogoPass(root, provider, mayUpload)
+        runBannerPass(root, provider, mayUpload)
         return Result.success(progress(fromSource, fromDeezer, attempted))
     }
 
@@ -172,12 +173,6 @@ class ArtistPhotoWorker @AssistedInject constructor(
                 }
 
                 if (logoId == null) {
-                    // One request answers for both; the banner rides along.
-                    val banner = runCatching { fetchBanner(row.name) }.getOrNull()
-                    if (banner != null) {
-                        artwork.put(banner, ArtworkSource.AUDIODB)
-                            ?.let { artists.setBanner(row.id, it) }
-                    }
                     val logo = runCatching { fetchLogo(row.name) }.getOrNull()
                     if (logo != null) {
                         // keepAlpha: a logo is a transparent PNG, and the JPEG
@@ -199,9 +194,75 @@ class ArtistPhotoWorker @AssistedInject constructor(
     }
 
     /**
-     * The artist's wide header image. Same endpoint and same matching rule as
-     * the logo -- kept separate only because a banner is an ordinary photo and
-     * must NOT take the transparent-PNG path.
+     * The wide header image behind the artist page.
+     *
+     * Its own pass, not a passenger on the logo lookup. Sharing that lookup
+     * meant a banner was only ever asked for during an artist's one and only
+     * logo attempt -- so every artist stamped before banners existed was
+     * excluded forever, and an artist with a logo.png already in their folder
+     * skipped the request entirely.
+     */
+    private suspend fun runBannerPass(
+        root: String?,
+        provider: SourceProvider?,
+        mayUpload: Boolean,
+    ) {
+        while (true) {
+            val batch = artists.artistsNeedingBanners(BATCH)
+            if (batch.isEmpty()) break
+
+            for (row in batch) {
+                val now = System.currentTimeMillis()
+                if (isPlaceholder(row.name)) {
+                    artists.setBanner(row.id, null, now)
+                    continue
+                }
+
+                val folderId =
+                    if (root != null && provider != null) {
+                        runCatching { provider.resolveFolder(root, listOf(row.name), create = false) }
+                            .getOrNull()
+                    } else null
+
+                // Same precedence as photos and logos: what is already in the
+                // folder beats the API, and is never overwritten.
+                var bannerId: String? = null
+                if (folderId != null && provider != null) {
+                    bannerId = runCatching {
+                        provider.findInFolder(folderId, ArtworkFiles.BANNER_NAMES)?.let { found ->
+                            artwork.put(provider.read(found.remoteId), ArtworkSource.FOLDER_JPG)
+                        }
+                    }.getOrNull()
+                }
+
+                if (bannerId == null) {
+                    val banner = runCatching { fetchBanner(row.name) }.getOrNull()
+                    if (banner != null) {
+                        // No keepAlpha: a banner is an ordinary photo, and the
+                        // PNG path would bloat it for nothing.
+                        bannerId = artwork.put(banner, ArtworkSource.AUDIODB)
+
+                        if (mayUpload && folderId != null && provider != null && root != null) {
+                            runCatching {
+                                uploadBytes(
+                                    provider, root, row.name, banner,
+                                    ArtworkFiles.BANNER_UPLOAD_NAME,
+                                )
+                            }
+                        }
+                    }
+                    delay(AUDIODB_GAP_MS)
+                }
+
+                artists.setBanner(row.id, bannerId, now)
+            }
+        }
+    }
+
+    /**
+     * Same endpoint and same exact-name matching as the logo. strArtistFanart1
+     * is the fallback because TheAudioDB has fanart for far more acts than it
+     * has purpose-made banners.
      */
     private suspend fun fetchBanner(name: String): ByteArray? =
         fetchAudioDbImage(name, listOf("strArtistBanner", "strArtistFanart1"))

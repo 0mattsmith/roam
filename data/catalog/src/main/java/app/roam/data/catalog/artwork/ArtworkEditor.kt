@@ -99,6 +99,35 @@ class ArtworkEditor @Inject constructor(
         }
 
     /**
+     * The wide header image on the artist page.
+     *
+     * Stamped as attempted at the same time, so the automatic pass leaves a
+     * hand-picked banner alone rather than racing it on the next run.
+     */
+    suspend fun setArtistBanner(artistId: Long, artistName: String, picked: Uri): Result<String> =
+        adopt(picked) { artworkId, bytes ->
+            artists.setBanner(artistId, artworkId, System.currentTimeMillis())
+            pushToSource(
+                pathSegments = listOf(artistName),
+                fileName = ArtworkFiles.BANNER_UPLOAD_NAME,
+                candidates = ArtworkFiles.BANNER_NAMES,
+                bytes = bytes,
+            )
+        }
+
+    /**
+     * Clears the banner locally. banner.jpg stays on Drive, same reasoning as
+     * clearAlbumArtwork -- removing a picture from a page is not deleting a
+     * file, and only one of those can be undone.
+     */
+    suspend fun clearArtistBanner(artistId: Long): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            artists.setBanner(artistId, null, System.currentTimeMillis())
+            "Banner removed (banner.jpg left on Drive)"
+        }
+    }
+
+    /**
      * Album art normally comes from the tags embedded in each track. Replacing
      * it writes cover.jpg beside the music rather than rewriting the APIC frame
      * in every file -- a folder cover is the standard convention, and rewriting

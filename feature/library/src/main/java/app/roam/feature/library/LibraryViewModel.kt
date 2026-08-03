@@ -14,6 +14,9 @@ import app.roam.core.model.ArtistSort
 import app.roam.core.model.LibraryTab
 import app.roam.core.model.Ids
 import app.roam.core.model.TrackSort
+import app.roam.core.model.ViewMode
+import app.roam.core.datastore.SettingsRepository
+import kotlinx.coroutines.flow.first
 import android.net.Uri
 import app.roam.core.database.ArtistListItem
 import app.roam.data.catalog.LibraryQueries
@@ -41,10 +44,27 @@ data class LibraryUiState(
     val trackSort: TrackSort = TrackSort.ARTIST,
     val albumSort: AlbumSort = AlbumSort.ARTIST,
     val artistSort: ArtistSort = ArtistSort.NAME,
+    val artistViewMode: ViewMode = ViewMode.GRID,
+    val artistAlbumViewMode: ViewMode = ViewMode.GRID,
     /** Non-null when viewing one artist's or album's tracks, or the loved list. */
     val drillTitle: String? = null,
     val showingLoved: Boolean = false,
-)
+    /**
+     * Whether a discography this long reads better as an index of albums.
+     *
+     * Only ever true inside an artist, never on the full track list. Collapsed
+     * rows still have to be paged in to know where the album boundaries ARE, so
+     * a collapsed view of the whole library would reveal five albums per page
+     * load -- fine for one artist, useless for ten thousand tracks.
+     */
+    val collapseAlbumsByDefault: Boolean = false,
+    /** Albums the user has flipped away from whatever the default is. */
+    val toggledAlbums: Set<Long> = emptySet(),
+) {
+    /** Default XOR flipped: one set, and changing the default costs nothing. */
+    fun albumCollapsed(albumId: Long): Boolean =
+        collapseAlbumsByDefault != (albumId in toggledAlbums)
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -55,6 +75,7 @@ class LibraryViewModel @Inject constructor(
     private val player: PlayerController,
     private val photos: ArtworkEditor,
     private val trackEditor: TrackEditor,
+    private val settings: SettingsRepository,
 ) : ViewModel() {
 
     private sealed interface Drill {
@@ -100,6 +121,22 @@ class LibraryViewModel @Inject constructor(
 
     init {
         player.connect()
+
+        // Read once, not collected. A live collection would fight openArtist,
+        // which deliberately forces TrackSort.ALBUM for the drill-down and
+        // would have it reset from under itself on the next emission.
+        viewModelScope.launch {
+            val saved = settings.settings.first()
+            _state.update {
+                it.copy(
+                    trackSort = saved.trackSort,
+                    albumSort = saved.albumSort,
+                    artistSort = saved.artistSort,
+                    artistViewMode = saved.artistViewMode,
+                    artistAlbumViewMode = saved.artistAlbumViewMode,
+                )
+            }
+        }
     }
 
     private fun pagingConfig() =
@@ -110,7 +147,15 @@ class LibraryViewModel @Inject constructor(
     fun selectTab(tab: LibraryTab) {
         _artistPage.value = null
         drill.value = null
-        _state.update { it.copy(tab = tab, drillTitle = null, showingLoved = false) }
+        _state.update {
+            it.copy(
+                tab = tab,
+                drillTitle = null,
+                showingLoved = false,
+                collapseAlbumsByDefault = false,
+                toggledAlbums = emptySet(),
+            )
+        }
     }
 
     /**
@@ -136,6 +181,11 @@ class LibraryViewModel @Inject constructor(
             albumCount = row.albumCount,
             trackCount = row.trackCount,
         ) to albums.listItemsRaw(LibraryQueries.albumsForArtist(id))
+
+        // Three albums is a screen and a half and you still know where you are.
+        // At four the tracks stop being a list you read and start being one you
+        // scroll past, so the headers become the index instead.
+        _state.update { it.copy(collapseAlbumsByDefault = row.albumCount >= COLLAPSE_FROM) }
     }
 
     fun openArtist(id: Long, name: String) {
@@ -144,7 +194,12 @@ class LibraryViewModel @Inject constructor(
         // Album order, so the drill-down groups by album the way a discography
         // reads rather than as one flat alphabetical run of songs.
         _state.update {
-            it.copy(drillTitle = name, showingLoved = false, trackSort = TrackSort.ALBUM)
+            it.copy(
+                drillTitle = name,
+                showingLoved = false,
+                trackSort = TrackSort.ALBUM,
+                toggledAlbums = emptySet(),
+            )
         }
     }
 
@@ -152,7 +207,15 @@ class LibraryViewModel @Inject constructor(
         // Leaves the artist page loaded: opening one of their albums and
         // pressing Back should land you where you were, not at the top level.
         drill.value = Drill.Album(id, title)
-        _state.update { it.copy(drillTitle = title, showingLoved = false) }
+        // One album is never an index of itself.
+        _state.update {
+            it.copy(
+                drillTitle = title,
+                showingLoved = false,
+                collapseAlbumsByDefault = false,
+                toggledAlbums = emptySet(),
+            )
+        }
     }
 
     /** Everything by the artist whose page is open. */
@@ -180,7 +243,41 @@ class LibraryViewModel @Inject constructor(
 
     fun openLoved() {
         drill.value = Drill.Loved
-        _state.update { it.copy(drillTitle = "Loved", showingLoved = true) }
+        _state.update {
+            it.copy(
+                drillTitle = "Loved",
+                showingLoved = true,
+                collapseAlbumsByDefault = false,
+                toggledAlbums = emptySet(),
+            )
+        }
+    }
+
+    // ---- the artist's banner ------------------------------------------------
+    //
+    // Reloaded by hand after each change. The artist page is a one-shot read
+    // rather than a Flow, so unlike the paged lists it does not notice the row
+    // moving underneath it.
+
+    fun setArtistBanner(picked: Uri) = viewModelScope.launch {
+        val detail = _artistPage.value?.first ?: return@launch
+        _photoMessage.value = photos.setArtistBanner(detail.id, detail.name, picked)
+            .fold({ it }, { "Could not update: ${it.message}" })
+        loadArtistPage(detail.id)
+    }
+
+    fun saveBannerToDevice() = viewModelScope.launch {
+        val detail = _artistPage.value?.first ?: return@launch
+        val artworkId = detail.bannerArtworkId ?: return@launch
+        _photoMessage.value = photos.saveToGallery(artworkId, "${detail.name} banner")
+            .fold({ it }, { "Could not save: ${it.message}" })
+    }
+
+    fun clearArtistBanner() = viewModelScope.launch {
+        val detail = _artistPage.value?.first ?: return@launch
+        _photoMessage.value = photos.clearArtistBanner(detail.id)
+            .fold({ it }, { "Could not remove: ${it.message}" })
+        loadArtistPage(detail.id)
     }
 
     /**
@@ -209,9 +306,44 @@ class LibraryViewModel @Inject constructor(
 
     // ---- sorting ------------------------------------------------------------
 
-    fun setTrackSort(sort: TrackSort) = _state.update { it.copy(trackSort = sort) }
-    fun setAlbumSort(sort: AlbumSort) = _state.update { it.copy(albumSort = sort) }
-    fun setArtistSort(sort: ArtistSort) = _state.update { it.copy(artistSort = sort) }
+    // Applied at once and written through, so the list reorders on the tap
+    // rather than after a round trip to disk.
+    fun setTrackSort(sort: TrackSort) {
+        _state.update { it.copy(trackSort = sort) }
+        viewModelScope.launch { settings.setTrackSort(sort) }
+    }
+
+    fun setAlbumSort(sort: AlbumSort) {
+        _state.update { it.copy(albumSort = sort) }
+        viewModelScope.launch { settings.setAlbumSort(sort) }
+    }
+
+    fun setArtistSort(sort: ArtistSort) {
+        _state.update { it.copy(artistSort = sort) }
+        viewModelScope.launch { settings.setArtistSort(sort) }
+    }
+
+    // ---- layout -------------------------------------------------------------
+
+    fun toggleArtistViewMode() {
+        val next = _state.value.artistViewMode.toggled()
+        _state.update { it.copy(artistViewMode = next) }
+        viewModelScope.launch { settings.setArtistViewMode(next) }
+    }
+
+    fun toggleArtistAlbumViewMode() {
+        val next = _state.value.artistAlbumViewMode.toggled()
+        _state.update { it.copy(artistAlbumViewMode = next) }
+        viewModelScope.launch { settings.setArtistAlbumViewMode(next) }
+    }
+
+    fun toggleAlbumCollapsed(albumId: Long) = _state.update {
+        it.copy(
+            toggledAlbums =
+                if (albumId in it.toggledAlbums) it.toggledAlbums - albumId
+                else it.toggledAlbums + albumId,
+        )
+    }
 
     // ---- playback -----------------------------------------------------------
 
@@ -513,5 +645,8 @@ class LibraryViewModel @Inject constructor(
          * blow the 1 MB limit. Phase 3 windows this properly.
          */
         const val QUEUE_LIMIT = 500
+
+        /** Albums in a discography before its headers become the index. */
+        const val COLLAPSE_FROM = 4
     }
 }

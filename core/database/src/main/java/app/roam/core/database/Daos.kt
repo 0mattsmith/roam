@@ -456,8 +456,28 @@ interface ArtistDao {
     @Query("UPDATE artists SET logoArtworkId = :logoArtworkId, logoAttemptedAt = :at WHERE id = :id")
     suspend fun setLogo(id: Long, logoArtworkId: String?, at: Long)
 
-    @Query("UPDATE artists SET bannerArtworkId = :bannerArtworkId WHERE id = :id")
-    suspend fun setBanner(id: Long, bannerArtworkId: String?)
+    /**
+     * Artists with no banner that have not been looked up yet.
+     *
+     * Deliberately separate from [artistsNeedingLogos]. Riding on that query
+     * meant an artist was only ever asked about a banner during their one and
+     * only logo lookup -- so anyone stamped before banners existed, or anyone
+     * with a logo.png already in their folder, never got one.
+     */
+    @Query("""
+        SELECT id, name FROM artists
+        WHERE bannerArtworkId IS NULL AND bannerAttemptedAt IS NULL
+        ORDER BY trackCount DESC
+        LIMIT :limit
+    """)
+    suspend fun artistsNeedingBanners(limit: Int): List<ArtistPhotoRow>
+
+    /**
+     * The stamp is written on failure too, or an artist TheAudioDB has never
+     * heard of is re-searched on every single run.
+     */
+    @Query("UPDATE artists SET bannerArtworkId = :bannerArtworkId, bannerAttemptedAt = :at WHERE id = :id")
+    suspend fun setBanner(id: Long, bannerArtworkId: String?, at: Long)
 
     /** Which image this artist is drawn with. Purely the user's choice. */
     @Query("UPDATE artists SET preferLogo = :preferLogo WHERE id = :id")

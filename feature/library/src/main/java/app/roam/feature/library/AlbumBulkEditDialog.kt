@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -55,6 +56,7 @@ import app.roam.data.catalog.AlbumBulkEdits
 fun AlbumHeaderSheet(
     track: TrackListItem,
     onDismiss: () -> Unit,
+    onOpenAlbum: () -> Unit,
     onGoToArtist: () -> Unit,
     onBulkEdit: () -> Unit,
     onArtworkPicked: (Uri) -> Unit,
@@ -80,6 +82,16 @@ fun AlbumHeaderSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+            )
+
+            // Lives here because tapping the header collapses it now. Opening
+            // the album on its own is the rarer of the two, so it takes the
+            // longer press.
+            ListItem(
+                modifier = Modifier.clickable(onClick = onOpenAlbum),
+                headlineContent = { Text("Open album") },
+                supportingContent = { Text("Just this album's tracks") },
+                leadingContent = { Icon(Icons.Filled.Album, contentDescription = null) },
             )
 
             // Hidden on a compilation: "Various Artists" is a bucket, not an

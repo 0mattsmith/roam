@@ -19,7 +19,7 @@ import javax.inject.Singleton
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
         TrackEntity::class, ArtworkEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -79,13 +79,25 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+// Starts null for every existing row, which is the point: it makes artists
+// whose logo was already looked up eligible for a banner search for the first
+// time. Before this they were excluded forever.
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE artists ADD COLUMN bannerAttemptedAt INTEGER")
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
     @Provides @Singleton
     fun db(@ApplicationContext ctx: Context): RoamDatabase =
         Room.databaseBuilder(ctx, RoamDatabase::class.java, "roam.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+            .addMigrations(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+            )
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
 

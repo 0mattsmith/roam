@@ -8,11 +8,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
@@ -45,6 +53,10 @@ import app.roam.core.model.AlbumSort
 import app.roam.core.model.ArtistSort
 import app.roam.core.model.LibraryTab
 import app.roam.core.model.TrackSort
+import app.roam.core.model.ViewMode
+import androidx.compose.foundation.background
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import app.roam.data.catalog.artwork.ArtworkProvider
 import coil.compose.AsyncImage
 
@@ -59,6 +71,9 @@ fun LibraryRoute(
     val state by vm.state.collectAsStateWithLifecycle()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
     val photoMessage by vm.photoMessage.collectAsStateWithLifecycle()
+    // Collected up here rather than beside its usage: the top bar needs to know
+    // whether an artist page is open to decide which layout its button flips.
+    val artistPage by vm.artistPage.collectAsStateWithLifecycle()
 
     // Back closes a drill-down before it leaves the screen. enabled = false when
     // there is nothing to close, so the system handles it normally.
@@ -71,6 +86,9 @@ fun LibraryRoute(
     val artistsState = rememberLazyListState()
     val albumsState = rememberLazyListState()
     val tracksState = rememberLazyListState()
+    // The grid needs its own type of state, so switching layout keeps two
+    // positions rather than trying to translate a row index into a cell index.
+    val artistsGridState = rememberLazyGridState()
 
     val snackbars = remember { SnackbarHostState() }
     LaunchedEffect(photoMessage) {
@@ -93,6 +111,12 @@ fun LibraryRoute(
                     }
                 },
                 actions = {
+                    ViewModeButton(
+                        state = state,
+                        vm = vm,
+                        onArtistPage = artistPage != null &&
+                            state.drillTitle == artistPage?.first?.name,
+                    )
                     SortMenu(state, vm)
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
@@ -128,8 +152,6 @@ fun LibraryRoute(
                 }
             }
 
-            val artistPage by vm.artistPage.collectAsStateWithLifecycle()
-
             when {
                 // The artist's own page, shown until one of their albums is
                 // opened -- at which point the drill takes over and Back
@@ -140,11 +162,16 @@ fun LibraryRoute(
                         ArtistPage(
                             detail = detail,
                             albums = artistAlbums,
+                            viewMode = state.artistAlbumViewMode,
                             listState = rememberLazyListState(),
+                            gridState = rememberLazyGridState(),
                             onPlay = { vm.playArtist(shuffled = false) },
                             onShuffle = { vm.playArtist(shuffled = true) },
                             onOpenAlbum = { vm.openAlbum(it.id, it.title) },
                             onAlbumLongPress = { vm.openAlbum(it.id, it.title) },
+                            onBannerPicked = { vm.setArtistBanner(it) },
+                            onBannerSave = { vm.saveBannerToDevice() },
+                            onBannerClear = { vm.clearArtistBanner() },
                         )
                     }
 
@@ -154,7 +181,8 @@ fun LibraryRoute(
                 state.drillTitle != null ->
                     key(state.drillTitle) { TrackList(vm, rememberLazyListState()) }
                 state.tab == LibraryTab.TRACKS -> TrackList(vm, tracksState)
-                state.tab == LibraryTab.ARTISTS -> ArtistList(vm, artistsState)
+                state.tab == LibraryTab.ARTISTS ->
+                    ArtistList(vm, artistsState, artistsGridState, state.artistViewMode)
                 state.tab == LibraryTab.ALBUMS -> AlbumList(vm, albumsState)
                 else -> PlaylistList(vm)
             }
@@ -185,6 +213,33 @@ private fun SortMenu(state: LibraryUiState, vm: LibraryViewModel) {
                 SortItem(sort.label, state.albumSort == sort) { vm.setAlbumSort(sort); open = false }
             }
         }
+    }
+}
+
+/**
+ * Flips list and grid for whichever list is in front.
+ *
+ * Absent everywhere else rather than disabled: a button that does nothing is
+ * worse than no button, and tracks have no grid worth drawing.
+ */
+@Composable
+private fun ViewModeButton(state: LibraryUiState, vm: LibraryViewModel, onArtistPage: Boolean) {
+    val mode = when {
+        onArtistPage -> state.artistAlbumViewMode
+        state.drillTitle == null && state.tab == LibraryTab.ARTISTS -> state.artistViewMode
+        else -> return
+    }
+
+    IconButton(
+        onClick = { if (onArtistPage) vm.toggleArtistAlbumViewMode() else vm.toggleArtistViewMode() }
+    ) {
+        // Shows what you would get, not what you have -- the same convention
+        // as every gallery app.
+        Icon(
+            if (mode == ViewMode.GRID) Icons.AutoMirrored.Filled.ViewList
+            else Icons.Filled.GridView,
+            contentDescription = if (mode == ViewMode.GRID) "Show as a list" else "Show as a grid",
+        )
     }
 }
 
@@ -231,6 +286,11 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
             tracks[index]?.let { track ->
+                // Collapsed albums still have to be paged in -- the boundaries
+                // are only visible once the rows are loaded -- so this hides
+                // the tracks rather than skipping the query.
+                val collapsed = grouped && state.albumCollapsed(track.albumId)
+
                 if (grouped) {
                     // peek, not get: reading the previous row with the indexed
                     // accessor would tell Paging that row is in view and drag
@@ -244,8 +304,9 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                         AlbumHeader(
                             track = track,
                             loved = albumLoved[track.albumId],
+                            collapsed = collapsed,
                             onPlay = { vm.playFrom(track) },
-                            onOpen = { vm.openAlbum(track.albumId, track.albumTitle) },
+                            onToggleCollapsed = { vm.toggleAlbumCollapsed(track.albumId) },
                             onLongPress = { headerSheetFor = track },
                             onToggleLoved = {
                                 val next = albumLoved[track.albumId] != true
@@ -258,21 +319,23 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                     // actually changes -- a single-disc album labelled "Disc 1"
                     // is noise. The list is already ordered by disc, so a
                     // boundary here is a real one.
-                    if (track.albumDiscTotal > 1) {
+                    if (!collapsed && track.albumDiscTotal > 1) {
                         val disc = track.discNo ?: 1
                         if (newAlbum || previous?.discNo != track.discNo) {
                             DiscHeader(disc)
                         }
                     }
                 }
-                TrackRow(
-                    track = track,
-                    isCurrent = track.title == nowPlaying.title,
-                    showArtwork = !grouped,
-                    onClick = { vm.playFrom(track) },
-                    onLongClick = { sheetFor = track },
-                    onToggleLoved = { vm.toggleLoved(track) },
-                )
+                if (!collapsed) {
+                    TrackRow(
+                        track = track,
+                        isCurrent = track.title == nowPlaying.title,
+                        showArtwork = !grouped,
+                        onClick = { vm.playFrom(track) },
+                        onLongClick = { sheetFor = track },
+                        onToggleLoved = { vm.toggleLoved(track) },
+                    )
+                }
             }
         }
     }
@@ -331,6 +394,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         AlbumHeaderSheet(
             track = track,
             onDismiss = { headerSheetFor = null },
+            onOpenAlbum = { headerSheetFor = null; vm.openAlbum(track.albumId, track.albumTitle) },
             onGoToArtist = { headerSheetFor = null; vm.openArtistByName(track.albumArtistName) },
             onBulkEdit = { headerSheetFor = null; vm.openAlbumBulkEditor(track) },
             onArtworkPicked = { uri -> headerSheetFor = null; vm.setAlbumArtwork(track, uri) },
@@ -376,7 +440,12 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
 }
 
 @Composable
-private fun ArtistList(vm: LibraryViewModel, listState: LazyListState) {
+private fun ArtistList(
+    vm: LibraryViewModel,
+    listState: LazyListState,
+    gridState: LazyGridState,
+    viewMode: ViewMode,
+) {
     val artists = vm.pagedArtists.collectAsLazyPagingItems()
 
     // Long-press target. Held here rather than in the ViewModel because it is
@@ -386,14 +455,37 @@ private fun ArtistList(vm: LibraryViewModel, listState: LazyListState) {
 
     if (artists.itemCount == 0) { EmptyState("No artists yet"); return }
 
-    LazyColumn(Modifier.fillMaxSize(), state = listState) {
-        items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
-            artists[index]?.let { artist ->
-                ArtistRow(
-                    artist = artist,
-                    onClick = { vm.openArtist(artist.id, artist.name) },
-                    onLongClick = { sheetFor = artist },
-                )
+    if (viewMode == ViewMode.GRID) {
+        // Adaptive rather than a fixed column count: the same code gives three
+        // across on a phone and six on a tablet without asking about either.
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 120.dp),
+            state = gridState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
+                artists[index]?.let { artist ->
+                    ArtistCell(
+                        artist = artist,
+                        onClick = { vm.openArtist(artist.id, artist.name) },
+                        onLongClick = { sheetFor = artist },
+                    )
+                }
+            }
+        }
+    } else {
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
+            items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
+                artists[index]?.let { artist ->
+                    ArtistRow(
+                        artist = artist,
+                        onClick = { vm.openArtist(artist.id, artist.name) },
+                        onLongClick = { sheetFor = artist },
+                    )
+                }
             }
         }
     }
@@ -576,6 +668,68 @@ private fun ArtistRow(
         },
         leadingContent = { Artwork(artist.displayArtworkId(), circular = true) },
     )
+}
+
+/**
+ * One artist as a round picture with their name underneath.
+ *
+ * The circle is the whole point of the grid -- a square would just be a
+ * smaller list row. Falls back to a tinted disc with an icon so a shelf of
+ * artists stays an even grid rather than a ragged one.
+ */
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun ArtistCell(
+    artist: ArtistListItem,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    Column(
+        Modifier
+            .clip(MaterialTheme.shapes.medium)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val artworkId = artist.displayArtworkId()
+        if (artworkId != null) {
+            AsyncImage(
+                model = ArtworkProvider.uri(ctx, artworkId, size = 320),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(CircleShape),
+            )
+        } else {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            artist.name,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+    }
 }
 
 @Composable

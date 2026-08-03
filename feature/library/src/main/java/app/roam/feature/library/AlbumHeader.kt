@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
@@ -53,8 +55,9 @@ fun AlbumHeader(
     track: TrackListItem,
     /** Null while the answer is still being fetched, so the icon does not flicker. */
     loved: Boolean?,
+    collapsed: Boolean,
     onPlay: () -> Unit,
-    onOpen: () -> Unit,
+    onToggleCollapsed: () -> Unit,
     onLongPress: () -> Unit,
     onToggleLoved: () -> Unit,
 ) {
@@ -68,7 +71,11 @@ fun AlbumHeader(
         Column {
             Row(
                 Modifier
-                    .combinedClickable(onClick = onOpen, onLongClick = onLongPress)
+                    // Tap collapses rather than opening the album: in a grouped
+                    // list the album's tracks are already right there, so the
+                    // useful thing to do to a header is fold it away. Opening
+                    // it on its own lives in the long-press sheet.
+                    .combinedClickable(onClick = onToggleCollapsed, onLongClick = onLongPress)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -117,6 +124,14 @@ fun AlbumHeader(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+
+                // Not a button: the whole row already toggles, and a third tap
+                // target beside the heart and play would crowd a phone header.
+                Icon(
+                    if (collapsed) Icons.Filled.ExpandMore else Icons.Filled.ExpandLess,
+                    contentDescription = if (collapsed) "Show tracks" else "Hide tracks",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
                 IconButton(onClick = onToggleLoved, enabled = loved != null) {
                     Icon(

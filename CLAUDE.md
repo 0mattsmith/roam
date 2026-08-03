@@ -250,6 +250,10 @@ argued about mid-flight:
 | A band logo renders as a black rectangle | Something sent it down the JPEG path. Logos are transparent PNGs — `ArtworkStore.put(keepAlpha = true)`, and `ArtworkProvider.getType` must report `image/png` for them |
 | Logos never appear | TheAudioDB's shared test key is public and capped at 30 req/min for everyone using it. A failure is shrugged off, not retried; `logoAttemptedAt` stops it being re-asked forever |
 | An artist is re-searched every launch | `artworkAttemptedAt` not stamped — it must be written on failure too, not just success |
+| Artist banners always blank | The banner lookup was made a passenger on the logo pass, which runs once per artist ever. It needs its own `bannerAttemptedAt` and its own query, or every artist stamped before the column existed is excluded forever |
+| A collapsed list reveals five albums per scroll | Collapse is only offered inside an artist. Album boundaries are only visible once the rows are paged in, so collapsing the whole library hides everything Paging has not fetched yet |
+| The album header opens the album instead of collapsing | Tap toggles; "Open album" is in the long-press sheet |
+| Grid and list disagree about scroll position | Expected — they hold separate state objects, because a row index does not translate to a cell index |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
 | `Cannot access class X. Check your module classpath` | A public signature in a dependency module exposes a type from one of ITS `implementation` deps — declare an explicit return type, or promote to `api` |

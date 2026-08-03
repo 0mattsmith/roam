@@ -3,7 +3,11 @@ package app.roam.core.datastore
 import android.content.Context
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import app.roam.core.model.AlbumSort
+import app.roam.core.model.ArtistSort
 import app.roam.core.model.CachePolicy
+import app.roam.core.model.TrackSort
+import app.roam.core.model.ViewMode
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -46,7 +50,25 @@ data class RoamSettings(
     val saveArtistPhotosToDrive: Boolean = true,
     /** Version found by the last launch-time check, if any. */
     val updateAvailable: String? = null,
+
+    // How the library is laid out and ordered. These live here rather than in
+    // the ViewModel's UI state because they are preferences, not screen state:
+    // picking "grid" once should still mean grid tomorrow morning in the car.
+    val artistViewMode: ViewMode = ViewMode.GRID,
+    /** Albums on an artist's landing page, which is a separate choice. */
+    val artistAlbumViewMode: ViewMode = ViewMode.GRID,
+    val trackSort: TrackSort = TrackSort.ARTIST,
+    val albumSort: AlbumSort = AlbumSort.ARTIST,
+    val artistSort: ArtistSort = ArtistSort.NAME,
 )
+
+/**
+ * Enums are stored by name, not ordinal. An ordinal silently means something
+ * else the moment a constant is inserted in the middle -- and TrackSort has
+ * already had one added mid-list once.
+ */
+private inline fun <reified T : Enum<T>> String?.toEnum(fallback: T): T =
+    this?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: fallback
 
 /**
  * Every public function here declares an explicit return type. DataStore's
@@ -77,6 +99,12 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val SYNC_ON_LAUNCH = booleanPreferencesKey("sync_on_launch")
         val SAVE_ARTIST_PHOTOS = booleanPreferencesKey("save_artist_photos_to_drive")
         val UPDATE_AVAILABLE = stringPreferencesKey("update_available")
+
+        val ARTIST_VIEW = stringPreferencesKey("artist_view_mode")
+        val ARTIST_ALBUM_VIEW = stringPreferencesKey("artist_album_view_mode")
+        val TRACK_SORT = stringPreferencesKey("track_sort")
+        val ALBUM_SORT = stringPreferencesKey("album_sort")
+        val ARTIST_SORT = stringPreferencesKey("artist_sort")
     }
 
     val settings: Flow<RoamSettings> = ctx.dataStore.data.map { p ->
@@ -101,6 +129,11 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             syncOnLaunch = p[K.SYNC_ON_LAUNCH] ?: true,
             saveArtistPhotosToDrive = p[K.SAVE_ARTIST_PHOTOS] ?: true,
             updateAvailable = p[K.UPDATE_AVAILABLE],
+            artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID),
+            artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID),
+            trackSort = p[K.TRACK_SORT].toEnum(TrackSort.ARTIST),
+            albumSort = p[K.ALBUM_SORT].toEnum(AlbumSort.ARTIST),
+            artistSort = p[K.ARTIST_SORT].toEnum(ArtistSort.NAME),
         )
     }
 
@@ -159,6 +192,26 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
 
     suspend fun setSaveArtistPhotosToDrive(v: Boolean) {
         ctx.dataStore.edit { it[K.SAVE_ARTIST_PHOTOS] = v }
+    }
+
+    suspend fun setArtistViewMode(v: ViewMode) {
+        ctx.dataStore.edit { it[K.ARTIST_VIEW] = v.name }
+    }
+
+    suspend fun setArtistAlbumViewMode(v: ViewMode) {
+        ctx.dataStore.edit { it[K.ARTIST_ALBUM_VIEW] = v.name }
+    }
+
+    suspend fun setTrackSort(v: TrackSort) {
+        ctx.dataStore.edit { it[K.TRACK_SORT] = v.name }
+    }
+
+    suspend fun setAlbumSort(v: AlbumSort) {
+        ctx.dataStore.edit { it[K.ALBUM_SORT] = v.name }
+    }
+
+    suspend fun setArtistSort(v: ArtistSort) {
+        ctx.dataStore.edit { it[K.ARTIST_SORT] = v.name }
     }
 }
 
