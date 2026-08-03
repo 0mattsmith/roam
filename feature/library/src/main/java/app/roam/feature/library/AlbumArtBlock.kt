@@ -52,6 +52,8 @@ import coil.compose.AsyncImage
  */
 @Composable
 fun AlbumArtBlock(
+    /** Keys the expanded/collapsed state, so it does not follow you to the next album. */
+    targetKey: Any,
     artworkId: String?,
     past: List<LibraryViewModel.PastCover> = emptyList(),
     onLoadPast: () -> Unit = {},
@@ -63,7 +65,7 @@ fun AlbumArtBlock(
     onPasteFailed: (String) -> Unit,
 ) {
     val ctx = LocalContext.current
-    var showPast by remember { mutableStateOf(false) }
+    var showPast by remember(targetKey) { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()

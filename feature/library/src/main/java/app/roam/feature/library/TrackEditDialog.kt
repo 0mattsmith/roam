@@ -127,6 +127,13 @@ fun TrackActionSheet(
  */
 @Composable
 fun TrackEditDialog(
+    /**
+     * Identifies what is being edited. Every remember below is keyed on it --
+     * without that, stepping to the next track leaves the form showing the
+     * previous one's values, because remember survives recomposition and the
+     * new `initial` is simply ignored.
+     */
+    trackId: Long,
     initial: TrackEdits,
     artworkId: String?,
     canGoPrevious: Boolean,
@@ -143,15 +150,15 @@ fun TrackEditDialog(
     onSavePastCover: (LibraryViewModel.PastCover) -> Unit,
     onRestorePastCover: (LibraryViewModel.PastCover) -> Unit,
 ) {
-    var title by remember { mutableStateOf(initial.title) }
-    var artist by remember { mutableStateOf(initial.artist) }
-    var album by remember { mutableStateOf(initial.album) }
-    var albumArtist by remember { mutableStateOf(initial.albumArtist.orEmpty()) }
-    var trackNo by remember { mutableStateOf(initial.trackNo?.toString().orEmpty()) }
-    var discNo by remember { mutableStateOf(initial.discNo?.toString().orEmpty()) }
-    var year by remember { mutableStateOf(initial.year?.toString().orEmpty()) }
-    var genre by remember { mutableStateOf(initial.genre.orEmpty()) }
-    var compilation by remember { mutableStateOf(initial.compilation) }
+    var title by remember(trackId) { mutableStateOf(initial.title) }
+    var artist by remember(trackId) { mutableStateOf(initial.artist) }
+    var album by remember(trackId) { mutableStateOf(initial.album) }
+    var albumArtist by remember(trackId) { mutableStateOf(initial.albumArtist.orEmpty()) }
+    var trackNo by remember(trackId) { mutableStateOf(initial.trackNo?.toString().orEmpty()) }
+    var discNo by remember(trackId) { mutableStateOf(initial.discNo?.toString().orEmpty()) }
+    var year by remember(trackId) { mutableStateOf(initial.year?.toString().orEmpty()) }
+    var genre by remember(trackId) { mutableStateOf(initial.genre.orEmpty()) }
+    var compilation by remember(trackId) { mutableStateOf(initial.compilation) }
 
     fun collect() = TrackEdits(
         title = title,
@@ -203,6 +210,7 @@ fun TrackEditDialog(
                 Field(genre, "Genre") { genre = it }
 
                 AlbumArtBlock(
+                    targetKey = trackId,
                     artworkId = artworkId,
                     past = pastCovers,
                     onLoadPast = onLoadPastCovers,

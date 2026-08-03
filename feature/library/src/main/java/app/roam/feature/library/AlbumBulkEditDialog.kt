@@ -116,6 +116,13 @@ fun AlbumHeaderSheet(
  */
 @Composable
 fun AlbumBulkEditDialog(
+    /**
+     * Identifies the album being edited. Every remember below is keyed on it,
+     * so stepping to the next album resets both the values AND the ticks --
+     * inheriting the previous album's checkboxes would be worse than showing
+     * its text, since it would silently write to the wrong record.
+     */
+    albumId: Long,
     albumTitle: String,
     trackCount: Int,
     initialArtist: String,
@@ -134,21 +141,21 @@ fun AlbumBulkEditDialog(
     onSavePastCover: (LibraryViewModel.PastCover) -> Unit,
     onRestorePastCover: (LibraryViewModel.PastCover) -> Unit,
 ) {
-    var artistOn by remember { mutableStateOf(false) }
-    var albumOn by remember { mutableStateOf(false) }
-    var albumArtistOn by remember { mutableStateOf(false) }
-    var yearOn by remember { mutableStateOf(false) }
-    var genreOn by remember { mutableStateOf(false) }
-    var discOn by remember { mutableStateOf(false) }
-    var compilationOn by remember { mutableStateOf(false) }
+    var artistOn by remember(albumId) { mutableStateOf(false) }
+    var albumOn by remember(albumId) { mutableStateOf(false) }
+    var albumArtistOn by remember(albumId) { mutableStateOf(false) }
+    var yearOn by remember(albumId) { mutableStateOf(false) }
+    var genreOn by remember(albumId) { mutableStateOf(false) }
+    var discOn by remember(albumId) { mutableStateOf(false) }
+    var compilationOn by remember(albumId) { mutableStateOf(false) }
 
-    var artist by remember { mutableStateOf(initialArtist) }
-    var album by remember { mutableStateOf(albumTitle) }
-    var albumArtist by remember { mutableStateOf(initialArtist) }
-    var year by remember { mutableStateOf("") }
-    var genre by remember { mutableStateOf("") }
-    var disc by remember { mutableStateOf("") }
-    var compilation by remember { mutableStateOf(true) }
+    var artist by remember(albumId) { mutableStateOf(initialArtist) }
+    var album by remember(albumId) { mutableStateOf(albumTitle) }
+    var albumArtist by remember(albumId) { mutableStateOf(initialArtist) }
+    var year by remember(albumId) { mutableStateOf("") }
+    var genre by remember(albumId) { mutableStateOf("") }
+    var disc by remember(albumId) { mutableStateOf("") }
+    var compilation by remember(albumId) { mutableStateOf(true) }
 
     val anyChecked = artistOn || albumOn || albumArtistOn || yearOn ||
         genreOn || discOn || compilationOn
@@ -209,6 +216,7 @@ fun AlbumBulkEditDialog(
                 }
 
                 AlbumArtBlock(
+                    targetKey = albumId,
                     artworkId = artworkId,
                     past = pastCovers,
                     onLoadPast = onLoadPastCovers,

@@ -271,6 +271,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         }
 
         TrackEditDialog(
+            trackId = track.id,
             initial = initial,
             artworkId = track.albumArtworkId,
             canGoPrevious = canPrev,
@@ -314,6 +315,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         }
 
         AlbumBulkEditDialog(
+            albumId = track.albumId,
             albumTitle = track.albumTitle,
             trackCount = bulkCount,
             initialArtist = track.albumArtistName,

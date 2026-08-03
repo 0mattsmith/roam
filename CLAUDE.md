@@ -224,6 +224,7 @@ resumable Drive upload with cached folder IDs.
 | Two cover.jpg files in one folder | A numbered name matched a candidate list. `cover1.jpg` must not appear in `ArtworkFiles.ALBUM_NAMES` |
 | Archive numbering restarts at 1 and collides | `nextArchiveName` must scan the folder for the highest existing number, not count how many replacements this session made |
 | A replaced album cover reverts after a re-tag | `TagWorker` must only ever call `setArtworkIfMissing`; the unconditional `setArtwork` is for user picks alone |
+| The edit form shows the previous track after tapping next | `remember { mutableStateOf(initial.x) }` with no key. remember survives recomposition, so a new `initial` is ignored — key every form field on the id of what is being edited |
 | An edited track reverts to the filename after a sync | `userEdited` not honoured — sync's `refreshFromPath` and `TagWorker.pendingTags` both filter on it |
 | A compilation scatters across every guest artist | Album-major sorting keyed on the *track* artist. `TRACK_COLUMNS` joins `artists aar` on the album's own artistId, and `TrackSort.ARTIST` orders by `aar.sortName` |
 | Marking a compilation splits it up | The album artist must not fall back to the track artist when `compilation` is set — it defaults to "Various Artists", and that name is half the album's content-derived id |
