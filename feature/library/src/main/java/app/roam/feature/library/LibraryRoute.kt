@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -193,6 +194,11 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     var sheetFor by remember { mutableStateOf<TrackListItem?>(null) }
     var sheetEdited by remember { mutableStateOf(false) }
     var headerSheetFor by remember { mutableStateOf<TrackListItem?>(null) }
+
+    // Asked per album as its header scrolls into view, not per row. Only a
+    // couple of headers are on screen at once, so this is a handful of indexed
+    // counts rather than a column on every track.
+    val albumLoved = remember { mutableStateMapOf<Long, Boolean>() }
     var bulkCount by remember { mutableIntStateOf(0) }
     val editing by vm.editing.collectAsStateWithLifecycle()
     val bulkEditing by vm.bulkEditing.collectAsStateWithLifecycle()
@@ -213,11 +219,20 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                     val previous = if (index == 0) null else tracks.peek(index - 1)
                     val newAlbum = previous?.albumId != track.albumId
                     if (newAlbum) {
+                        LaunchedEffect(track.albumId, track.loved) {
+                            albumLoved[track.albumId] = vm.isAlbumLoved(track.albumId)
+                        }
                         AlbumHeader(
                             track = track,
+                            loved = albumLoved[track.albumId],
                             onPlay = { vm.playFrom(track) },
                             onOpen = { vm.openAlbum(track.albumId, track.albumTitle) },
                             onLongPress = { headerSheetFor = track },
+                            onToggleLoved = {
+                                val next = albumLoved[track.albumId] != true
+                                albumLoved[track.albumId] = next
+                                vm.toggleAlbumLoved(track.albumId, next)
+                            },
                         )
                     }
                     // Only for genuine multi-disc sets, and only where the disc

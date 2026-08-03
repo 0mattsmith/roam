@@ -173,6 +173,23 @@ class LibraryViewModel @Inject constructor(
         )
     }
 
+    /** True only when every track on the album is loved. */
+    suspend fun isAlbumLoved(albumId: Long): Boolean =
+        tracks.unlovedCountForAlbum(albumId) == 0
+
+    /**
+     * All-or-nothing, which is what the single heart on a header can honestly
+     * represent: a half-loved album shows as unloved, and tapping loves the
+     * rest rather than toggling to some third state nobody asked for.
+     */
+    fun toggleAlbumLoved(albumId: Long, nowLoved: Boolean) = viewModelScope.launch {
+        tracks.setLovedForAlbum(
+            albumId = albumId,
+            loved = nowLoved,
+            at = if (nowLoved) System.currentTimeMillis() else null,
+        )
+    }
+
     // ---- artist photos ------------------------------------------------------
 
     /**

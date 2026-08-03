@@ -13,11 +13,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -48,9 +51,12 @@ import coil.compose.AsyncImage
 @Composable
 fun AlbumHeader(
     track: TrackListItem,
+    /** Null while the answer is still being fetched, so the icon does not flicker. */
+    loved: Boolean?,
     onPlay: () -> Unit,
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
+    onToggleLoved: () -> Unit,
 ) {
     val ctx = LocalContext.current
 
@@ -109,6 +115,16 @@ fun AlbumHeader(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                IconButton(onClick = onToggleLoved, enabled = loved != null) {
+                    Icon(
+                        if (loved == true) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription =
+                            if (loved == true) "Remove album from Loved" else "Add album to Loved",
+                        tint = if (loved == true) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 

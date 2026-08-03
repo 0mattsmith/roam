@@ -195,6 +195,20 @@ interface TrackDao {
     @Query("UPDATE tracks SET loved = :loved, lovedAt = :at WHERE id = :id")
     suspend fun setLoved(id: Long, loved: Boolean, at: Long?)
 
+    /**
+     * Loves or unloves a whole album in one statement.
+     *
+     * lovedAt is stamped identically across the album, so the Loved list keeps
+     * them together rather than interleaving them with whatever else was
+     * hearted around the same moment.
+     */
+    @Query("UPDATE tracks SET loved = :loved, lovedAt = :at WHERE albumId = :albumId")
+    suspend fun setLovedForAlbum(albumId: Long, loved: Boolean, at: Long?)
+
+    /** Zero means every track on the album is loved. */
+    @Query("SELECT COUNT(*) FROM tracks WHERE albumId = :albumId AND loved = 0")
+    suspend fun unlovedCountForAlbum(albumId: Long): Int
+
     @Query("UPDATE tracks SET playCount = playCount + 1, lastPlayedAt = :at WHERE id = :id")
     suspend fun markPlayed(id: Long, at: Long)
 
