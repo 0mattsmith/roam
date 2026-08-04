@@ -67,10 +67,22 @@ class MusicBrainz @Inject constructor() : ReleaseSource {
      * remaster, a deluxe edition and three regional pressings with different
      * tracklists, and only the person looking at them knows which they own.
      */
-    override suspend fun searchReleases(query: String, limit: Int): Result<List<ReleaseMatch>> =
+    override suspend fun searchReleases(
+        query: String,
+        limit: Int,
+        compilationsOnly: Boolean,
+    ): Result<List<ReleaseMatch>> =
         runCatching {
             if (query.isBlank()) return@runCatching emptyList()
-            val url = "$BASE/release/?query=${query.encoded()}&fmt=json&limit=$limit"
+            // Lucene syntax, which is what the search endpoint speaks. The
+            // secondary type is what distinguishes a various-artists
+            // collection from a studio album of the same name.
+            val lucene = if (compilationsOnly) {
+                "${query.trim()} AND secondarytype:compilation"
+            } else {
+                query.trim()
+            }
+            val url = "$BASE/release/?query=${lucene.encoded()}&fmt=json&limit=$limit"
             val json = get(url) ?: return@runCatching emptyList()
             val releases = json.optJSONArray("releases") ?: return@runCatching emptyList()
 
@@ -91,6 +103,56 @@ class MusicBrainz @Inject constructor() : ReleaseSource {
                     coverUrl = coverUrl(id),
                 )
             }
+        }
+
+    override suspend fun searchArtists(query: String, limit: Int): Result<List<ArtistMatch>> =
+        runCatching {
+            if (query.isBlank()) return@runCatching emptyList()
+            val url = "$BASE/artist/?query=${query.trim().encoded()}&fmt=json&limit=$limit"
+            val artists = get(url)?.optJSONArray("artists") ?: return@runCatching emptyList()
+
+            (0 until artists.length()).mapNotNull { i ->
+                val artist = artists.optJSONObject(i) ?: return@mapNotNull null
+                ArtistMatch(
+                    id = artist.optString("id").ifBlank { return@mapNotNull null },
+                    source = MetadataSource.MUSICBRAINZ,
+                    name = artist.optString("name").ifBlank { "Unknown" },
+                    // The disambiguation is the whole point of showing a list:
+                    // three bands called Nirvana, and only one is the one.
+                    detail = listOfNotNull(
+                        artist.optString("disambiguation").ifBlank { null },
+                        artist.optString("country").ifBlank { null },
+                    ).joinToString(" · ").ifBlank { null },
+                    // MusicBrainz holds no images of its own.
+                    imageUrl = null,
+                )
+            }
+        }
+
+    override suspend fun releasesForArtist(artistId: String, limit: Int): Result<List<ReleaseMatch>> =
+        runCatching {
+            // The BROWSE endpoint, not search: it takes an artist id directly
+            // and returns everything credited to them rather than guessing
+            // from a name that half a dozen acts share.
+            val url = "$BASE/release?artist=$artistId&fmt=json&limit=$limit"
+            val releases = get(url)?.optJSONArray("releases") ?: return@runCatching emptyList()
+
+            (0 until releases.length()).mapNotNull { i ->
+                val release = releases.optJSONObject(i) ?: return@mapNotNull null
+                val id = release.optString("id").ifBlank { return@mapNotNull null }
+                ReleaseMatch(
+                    id = id,
+                    source = MetadataSource.MUSICBRAINZ,
+                    title = release.optString("title").ifBlank { "Unknown" },
+                    artist = release.creditedArtist(),
+                    year = release.optString("date").take(4).toIntOrNull(),
+                    trackCount = release.optJSONArray("media")
+                        ?.optJSONObject(0)?.optInt("track-count") ?: 0,
+                    format = release.optJSONArray("media")
+                        ?.optJSONObject(0)?.optString("format")?.ifBlank { null },
+                    coverUrl = coverUrl(id),
+                )
+            }.sortedByDescending { it.year ?: 0 }
         }
 
     /** The tracklist, flattened across discs but keeping the disc number. */

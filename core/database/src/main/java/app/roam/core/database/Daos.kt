@@ -251,6 +251,9 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks WHERE hidden = 1")
     fun hiddenCount(): Flow<Int>
 
+    @Query("UPDATE tracks SET hidden = 0 WHERE hidden = 1")
+    suspend fun restoreAllHidden()
+
     // ---- tag pass ----
 
     /** Tracks still carrying path-derived metadata, oldest first. */

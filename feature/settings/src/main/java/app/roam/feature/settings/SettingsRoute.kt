@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun SettingsRoute(
     onBack: () -> Unit,
+    onOpenRemoved: () -> Unit,
     vm: SettingsViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -171,37 +175,29 @@ fun SettingsRoute(
                 modifier = Modifier.padding(top = 4.dp),
             )
 
-            // Only when there is something in it. An empty "Removed" section
-            // is a permanent reminder of a feature nobody used.
-            val hidden by vm.hiddenTracks.collectAsStateWithLifecycle()
-            if (hidden.isNotEmpty()) {
-                Spacer(Modifier.height(24.dp))
-                SectionHeader("Removed from library")
-                Text(
-                    "Still on Drive, just hidden. ${hidden.size} " +
-                        if (hidden.size == 1) "track." else "tracks.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Spacer(Modifier.height(24.dp))
+            SectionHeader("Library")
 
-                hidden.forEach { track ->
-                    ListItem(
-                        headlineContent = {
-                            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        supportingContent = {
-                            Text(
-                                "${track.artistName} · ${track.albumTitle}",
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                        trailingContent = {
-                            TextButton(onClick = { vm.restoreTrack(track.id) }) { Text("Restore") }
-                        },
+            val hiddenCount by vm.hiddenCount.collectAsStateWithLifecycle()
+            ListItem(
+                modifier = Modifier.clickable(onClick = onOpenRemoved),
+                headlineContent = { Text("Removed from library") },
+                supportingContent = {
+                    Text(
+                        if (hiddenCount == 0) "Nothing removed"
+                        else "$hiddenCount hidden, still on Drive"
                     )
-                }
-            }
+                },
+                leadingContent = {
+                    Icon(Icons.Filled.VisibilityOff, contentDescription = null)
+                },
+                trailingContent = {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                    )
+                },
+            )
 
             Spacer(Modifier.height(24.dp))
             SectionHeader("Updates")

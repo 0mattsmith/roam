@@ -17,12 +17,14 @@ import androidx.navigation.compose.rememberNavController
 import app.roam.feature.library.LibraryRoute
 import app.roam.feature.nowplaying.NowPlayingRoute
 import app.roam.feature.downloader.DownloaderRoute
+import app.roam.feature.settings.RemovedTracksRoute
 import app.roam.feature.settings.SettingsRoute
 
 object Routes {
     const val LIBRARY = "library"
     const val DOWNLOADER = "downloader"
     const val SETTINGS = "settings"
+    const val REMOVED = "settings/removed"
 }
 
 /**
@@ -84,7 +86,10 @@ fun RoamNavHost() {
                 }
             }
             composable(Routes.DOWNLOADER)  { DownloaderRoute(onBack = back) }
-            composable(Routes.SETTINGS)    { SettingsRoute(onBack = back) }
+            composable(Routes.SETTINGS) {
+                SettingsRoute(onBack = back, onOpenRemoved = { go(Routes.REMOVED) })
+            }
+            composable(Routes.REMOVED)     { RemovedTracksRoute(onBack = back) }
         }
 
         UpdateBannerHost()

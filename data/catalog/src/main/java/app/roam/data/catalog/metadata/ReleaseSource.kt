@@ -65,10 +65,34 @@ interface ReleaseSource {
     /** False when the source cannot be used yet -- Discogs without a token. */
     suspend fun available(): Boolean
 
-    suspend fun searchReleases(query: String, limit: Int = 10): Result<List<ReleaseMatch>>
+    /**
+     * @param compilationsOnly narrows to various-artists collections. Searching
+     * "greatest hits" otherwise buries the compilation you meant under every
+     * studio album that shares a word with it.
+     */
+    suspend fun searchReleases(
+        query: String,
+        limit: Int = 10,
+        compilationsOnly: Boolean = false,
+    ): Result<List<ReleaseMatch>>
 
     suspend fun release(id: String): Result<ReleaseDetail?>
+
+    suspend fun searchArtists(query: String, limit: Int = 20): Result<List<ArtistMatch>>
+
+    /** A discography, newest first. */
+    suspend fun releasesForArtist(artistId: String, limit: Int = 50): Result<List<ReleaseMatch>>
 }
+
+/** One artist from a search, enough to list and to drill into. */
+data class ArtistMatch(
+    val id: String,
+    val source: MetadataSource,
+    val name: String,
+    /** "British rock band", or a disambiguation like "US punk band". */
+    val detail: String?,
+    val imageUrl: String?,
+)
 
 /**
  * "A1", "B2", "1", "1-04" all have to become a track number.

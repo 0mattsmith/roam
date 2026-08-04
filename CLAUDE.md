@@ -88,8 +88,9 @@ other — route between them through `:app`.
    put it straight back, taking the loved flag and play count with it. The
    filter lives in `TRACK_COLUMNS` itself, not at each call site, so a new
    query cannot forget it -- which is why every caller appends `AND`, never
-   `WHERE`. Settings lists what is hidden; without that they would be gone for
-   good, which is the one thing this must not mean.
+   `WHERE`. Settings -> Removed from library is the only place they exist;
+   without that page they would be gone for good, which is the one thing this
+   must not mean.
 
 3a. **Sync inserts, it does not upsert.** Room's `@Upsert` writes *every*
    column of the entity you hand it, so a freshly built row's defaults land on

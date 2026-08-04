@@ -8,8 +8,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.roam.data.catalog.sync.SyncWorker
-import app.roam.core.database.AlbumDao
-import app.roam.core.database.ArtistDao
 import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
 import app.roam.data.source.drive.DriveAuth
@@ -63,8 +61,6 @@ class SettingsViewModel @Inject constructor(
     private val updateInstaller: UpdateInstaller,
     private val settings: SettingsRepository,
     private val trackDao: TrackDao,
-    private val albumDao: AlbumDao,
-    private val artistDao: ArtistDao,
 ) : AndroidViewModel(app) {
 
 
@@ -89,16 +85,9 @@ class SettingsViewModel @Inject constructor(
         restore()
     }
 
-    /**
-     * Tracks removed from the library.
-     *
-     * Listed here because this is the only place they exist -- every library
-     * query filters them out by design, so without a way back they would be
-     * gone for good, which is the one thing "remove, do not delete" must not
-     * mean.
-     */
-    val hiddenTracks = trackDao.hiddenTracks()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** Just the number, for the row that leads to the page listing them. */
+    val hiddenCount = trackDao.hiddenCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** Kept as typed. Trimming and emptiness are handled on the way to disk. */
     val discogsToken = settings.settings
@@ -107,14 +96,6 @@ class SettingsViewModel @Inject constructor(
 
     fun setDiscogsToken(token: String) = viewModelScope.launch {
         settings.setDiscogsToken(token)
-    }
-
-    fun restoreTrack(id: Long) = viewModelScope.launch {
-        trackDao.setHidden(id, hidden = false)
-        // Counts are stored on the parent rows, so putting a track back has to
-        // put it back into the totals too.
-        albumDao.recomputeRollups()
-        artistDao.recomputeRollups()
     }
 
     /**

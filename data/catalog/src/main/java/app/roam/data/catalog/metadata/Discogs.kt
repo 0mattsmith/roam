@@ -68,10 +68,18 @@ class Discogs @Inject constructor(
         }
     }
 
-    override suspend fun searchReleases(query: String, limit: Int): Result<List<ReleaseMatch>> =
+    override suspend fun searchReleases(
+        query: String,
+        limit: Int,
+        compilationsOnly: Boolean,
+    ): Result<List<ReleaseMatch>> =
         runCatching {
             if (query.isBlank()) return@runCatching emptyList()
-            val url = "$BASE/database/search?type=release&per_page=$limit&q=${query.encoded()}"
+            // Discogs models "a collection of various artists" as a FORMAT
+            // description rather than a release type, which is why this is a
+            // format filter and MusicBrainz's is a secondary type.
+            val filter = if (compilationsOnly) "&format=Compilation" else ""
+            val url = "$BASE/database/search?type=release&per_page=$limit$filter&q=${query.encoded()}"
             val results = get(url)?.optJSONArray("results") ?: return@runCatching emptyList()
 
             (0 until results.length()).mapNotNull { i ->
@@ -95,6 +103,53 @@ class Discogs @Inject constructor(
             }
         }
 
+    override suspend fun searchArtists(query: String, limit: Int): Result<List<ArtistMatch>> =
+        runCatching {
+            if (query.isBlank()) return@runCatching emptyList()
+            val url = "$BASE/database/search?type=artist&per_page=$limit&q=${query.encoded()}"
+            val results = get(url)?.optJSONArray("results") ?: return@runCatching emptyList()
+
+            (0 until results.length()).mapNotNull { i ->
+                val entry = results.optJSONObject(i) ?: return@mapNotNull null
+                ArtistMatch(
+                    id = entry.optInt("id").takeIf { it > 0 }?.toString()
+                        ?: return@mapNotNull null,
+                    source = MetadataSource.DISCOGS,
+                    // Same disambiguation suffix as everywhere else -- theirs,
+                    // not part of the name.
+                    name = entry.optString("title").replace(SUFFIX, "").ifBlank { "Unknown" },
+                    detail = null,
+                    // Discogs does hold artist images, unlike MusicBrainz.
+                    imageUrl = entry.optString("cover_image").ifBlank { null }
+                        ?: entry.optString("thumb").ifBlank { null },
+                )
+            }
+        }
+
+    override suspend fun releasesForArtist(artistId: String, limit: Int): Result<List<ReleaseMatch>> =
+        runCatching {
+            val url = "$BASE/artists/$artistId/releases?per_page=$limit&sort=year&sort_order=desc"
+            val releases = get(url)?.optJSONArray("releases") ?: return@runCatching emptyList()
+
+            (0 until releases.length()).mapNotNull { i ->
+                val entry = releases.optJSONObject(i) ?: return@mapNotNull null
+                // A "master" groups every pressing of one record; the id we
+                // need for a tracklist is the release's own.
+                if (entry.optString("type") == "master") return@mapNotNull null
+                ReleaseMatch(
+                    id = entry.optInt("id").takeIf { it > 0 }?.toString()
+                        ?: return@mapNotNull null,
+                    source = MetadataSource.DISCOGS,
+                    title = entry.optString("title").ifBlank { "Unknown" },
+                    artist = entry.optString("artist").replace(SUFFIX, ""),
+                    year = entry.optInt("year").takeIf { it > 0 },
+                    trackCount = 0,
+                    format = entry.optString("format").ifBlank { null },
+                    coverUrl = entry.optString("thumb").ifBlank { null },
+                )
+            }
+        }
+
     override suspend fun release(id: String): Result<ReleaseDetail?> = runCatching {
         val json = get("$BASE/releases/$id") ?: return@runCatching null
 
@@ -103,7 +158,7 @@ class Discogs @Inject constructor(
                 val a = artists.optJSONObject(i)
                 // Discogs disambiguates duplicate names with "Nirvana (2)";
                 // the number is theirs, not part of the name.
-                val name = a?.optString("name").orEmpty().replace(Regex("""\s*\(\d+\)$"""), "")
+                val name = a?.optString("name").orEmpty().replace(SUFFIX, "")
                 name + a?.optString("join").orEmpty().let { if (it.isBlank()) "" else " $it " }
             }.trim()
         }.orEmpty()
@@ -124,7 +179,7 @@ class Discogs @Inject constructor(
                         artist = entry.optJSONArray("artists")
                             ?.optJSONObject(0)
                             ?.optString("name")
-                            ?.replace(Regex("""\s*\(\d+\)$"""), "")
+                            ?.replace(SUFFIX, "")
                             ?.ifBlank { null }
                             ?: artist,
                         durationMs = parseDuration(entry.optString("duration")),
@@ -149,6 +204,9 @@ class Discogs @Inject constructor(
 
     private companion object {
         const val BASE = "https://api.discogs.com"
+
+        /** Discogs' duplicate-name marker: "Nirvana (2)". Never part of a name. */
+        val SUFFIX = Regex("""\s*\(\d+\)$""")
         const val USER_AGENT = "Roam/1.0 +https://github.com/0mattsmith/roam"
 
         /** 60/min authenticated. One a second leaves room for a retry. */
