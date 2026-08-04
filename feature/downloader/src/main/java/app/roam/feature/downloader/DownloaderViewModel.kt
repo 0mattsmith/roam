@@ -122,12 +122,18 @@ class DownloaderViewModel @Inject constructor(
      * non-blank line is the part that says what happened; the rest is where.
      */
     private fun Throwable.readable(): String {
-        val detail = (message ?: cause?.message).orEmpty()
-            .lines()
+        // Walks the chain: the useful sentence is usually on a cause, and the
+        // outer wrapper often has no message at all.
+        val detail = generateSequence(this) { it.cause }
+            .mapNotNull { it.message }
+            .flatMap { it.lines() }
             .lastOrNull { it.isNotBlank() }
             ?.trim()
             .orEmpty()
-        return if (detail.isBlank()) this::class.java.simpleName else detail.take(300)
+
+        // Never the class name. Under R8 that is a renamed nothing -- "w5.e"
+        // -- which reads like a real error and tells you less than silence.
+        return detail.take(300).ifBlank { "yt-dlp failed without saying why" }
     }
 
     private companion object {

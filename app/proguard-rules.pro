@@ -1,3 +1,18 @@
+# Shrink, but do not RENAME.
+#
+# Roam is a personal, sideloaded app: obfuscation protects nothing here, and it
+# costs a great deal. yt-dlp, Jackson, Media3 and the Google API client all
+# read classes back by reflection, so renaming breaks them at RUNTIME and never
+# at build time -- the symptom is a meaningless error like "class R4.a is not a
+# concrete class" from a search that works perfectly in a debug build, and each
+# fix is another keep rule guessed at from an obfuscated name.
+#
+# -dontobfuscate keeps the shrinking (which is what actually saves size) and
+# drops only the renaming. If this is ever removed, expect reflective libraries
+# to need exhaustive keep rules, and expect to find that out from a user rather
+# than from CI.
+-dontobfuscate
+
 # Media3 / ExoPlayer
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
