@@ -70,7 +70,11 @@ object TagParser {
         when {
             startsWith(bytes, "ID3") -> parseId3(bytes)
             startsWith(bytes, "fLaC") -> parseFlac(bytes)
-            looksLikeMp4(bytes) -> parseMp4(bytes)
+            // The second condition is what makes the tail read work: that
+            // buffer starts 512 KB before the end of the file, so it has no
+            // ftyp and no atom boundary to walk from -- only a moov somewhere
+            // inside it.
+            looksLikeMp4(bytes) || indexOfAscii(bytes, "moov") >= 0 -> parseMp4(bytes)
             else -> null
         }?.takeUnless { it.isEmpty }
     }.getOrNull()
@@ -131,8 +135,15 @@ object TagParser {
             if (size <= 0) break
 
             val from = pos + idLength + sizeLength + flagLength
-            val to = minOf(from + size, body.size)
-            if (from >= to) break
+            val to = from + size
+
+            // A frame that runs past what we read is ABANDONED, not clamped.
+            // Clamping would hand back half a value, and half an album name is
+            // far worse than none: album and artist ids are content-derived, so
+            // "Cut" and "Cut short" are two different rows, and the album
+            // silently splits in two. Everything after a truncated frame is
+            // unreliable anyway, so this stops rather than skipping on.
+            if (to > body.size || from >= to) break
             val frame = body.copyOfRange(from, to)
 
             out = applyId3Frame(out, id, frame)
@@ -335,7 +346,11 @@ object TagParser {
     // ---- MP4 / M4A -----------------------------------------------------------
 
     private fun parseMp4(b: ByteArray): ParsedTags? {
-        val moov = findAtom(b, 0, b.size, "moov") ?: return null
+        // Walking the tree is preferred -- it cannot be fooled by the letters
+        // "moov" appearing inside audio data -- but it only works from an atom
+        // boundary, and on a head read it gives up at the first huge mdat
+        // anyway. The signature scan is the fallback for both cases.
+        val moov = findAtom(b, 0, b.size, "moov") ?: scanForAtom(b, "moov") ?: return null
         var out = ParsedTags()
 
         findAtom(b, moov.first, moov.second, "mvhd")?.let { (from, to) ->
@@ -436,15 +451,54 @@ object TagParser {
             if (size == 0L) size = (until - pos).toLong()
             if (size < header) return null
 
+            // Same rule as ID3 frames: an atom claiming more bytes than we hold
+            // is truncated, and a clamped range would yield a partial string.
+            if (pos + size > until) return null
+
             val type = String(b, pos + 4, 4, Charsets.ISO_8859_1)
-            val end = minOf(pos + size, until.toLong()).toInt()
-            if (type == name) return (pos + header) to end
+            if (type == name) return (pos + header) to (pos + size).toInt()
 
             pos += size.toInt()
         }
         return null
     }
 
+    /**
+     * Finds an atom by its four-character type wherever it sits.
+     *
+     * The size field precedes the type, so the atom really begins four bytes
+     * earlier. A size that does not fit what we hold is taken as "to the end
+     * of the buffer" -- every field inside is bounds-checked on its own, so a
+     * partial moov yields the tags it does contain rather than nothing.
+     */
+    private fun scanForAtom(b: ByteArray, name: String): Pair<Int, Int>? {
+        val needle = name.toByteArray(Charsets.ISO_8859_1)
+        var i = 4
+        while (i + needle.size <= b.size) {
+            if (needle.indices.all { b[i + it] == needle[it] }) {
+                val start = i - 4
+                val size = be32(b, start)
+                val end = if (size >= 8 && start + size <= b.size) start + size else b.size
+                return (start + 8) to end
+            }
+            i++
+        }
+        return null
+    }
+
+    private fun indexOfAscii(b: ByteArray, needle: String): Int {
+        val n = needle.toByteArray(Charsets.ISO_8859_1)
+        for (i in 0..(b.size - n.size)) {
+            if (n.indices.all { b[i + it] == n[it] }) return i
+        }
+        return -1
+    }
+
+    /**
+     * Walked, not scanned. This decides whether to spend a second HTTP range
+     * request, and the letters "moov" turning up inside compressed audio would
+     * make it skip a tail read the file genuinely needs.
+     */
     private fun containsTopLevelAtom(b: ByteArray, name: String): Boolean =
         findAtom(b, 0, b.size, name) != null
 

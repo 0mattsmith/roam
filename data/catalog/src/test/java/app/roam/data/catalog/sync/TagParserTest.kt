@@ -118,13 +118,21 @@ class TagParserTest {
         assertEquals("Test", TagParser.parse(tag)!!.title)
     }
 
+    /**
+     * A truncated frame must be dropped whole, never clamped.
+     *
+     * Album and artist ids are content-derived, so half a name is not a
+     * slightly worse name -- it is a different album. "Cut" and "Cut short"
+     * would be two rows, and the real one would silently lose half its tracks.
+     */
     @Test
-    fun `survives a frame whose size runs past the end`() {
-        val truncated = id3(3, listOf(textFrame("TIT2", "Kept"), textFrame("TALB", "Cut short")))
-            .copyOf(40)
-        // Either it read the title or it gave up; neither may throw.
-        val out = TagParser.parse(truncated)
-        if (out != null) assertNull(out.album)
+    fun `drops a frame whose size runs past the end`() {
+        val whole = id3(3, listOf(textFrame("TIT2", "Kept"), textFrame("TALB", "Cut short")))
+        // Ends part way through the album frame's text.
+        val out = TagParser.parse(whole.copyOf(whole.size - 5))!!
+
+        assertEquals("Kept", out.title)
+        assertNull(out.album)
     }
 
     // ---- FLAC ----------------------------------------------------------------
@@ -228,6 +236,34 @@ class TagParserTest {
         assertFalse(TagParser.needsTailRead(mp4(metaAtom("©nam", "x".toByteArray()))))
     }
 
+    /**
+     * What the second read actually receives: a slice from 512 KB before the
+     * end of the file. It has no ftyp, and it does not start on an atom
+     * boundary, so moov has to be found by signature rather than by walking.
+     */
+    @Test
+    fun `parses a tail slice that begins mid-file`() {
+        // The last bytes of audio, then moov. No ftyp, and the slice does not
+        // start on an atom boundary -- exactly what the second read returns.
+        val tail = byteArrayOf(0x11, 0x22, 0x33) +
+            moovAtom(metaAtom("©nam", "Tail".toByteArray()))
+
+        assertEquals("Tail", TagParser.parse(tail)!!.title)
+    }
+
+    /**
+     * A real head read stops at a multi-megabyte mdat it does not hold, and
+     * must ask for the tail rather than concluding the file has no tags.
+     */
+    @Test
+    fun `asks for the tail when mdat runs past the read`() {
+        val head = atom("ftyp", "M4A ".toByteArray()) +
+            // Claims 40 MB, of which we hold 64 bytes.
+            byteArrayOf(0x02, 0x68.toByte(), 0, 0) + "mdat".toByteArray() + ByteArray(64)
+
+        assertTrue(TagParser.needsTailRead(head))
+    }
+
     // ---- rejection -----------------------------------------------------------
 
     @Test
@@ -313,8 +349,11 @@ class TagParserTest {
         atom(name, atom("data", byteArrayOf(0, 0, 0, 1, 0, 0, 0, 0) + value))
 
     private fun mp4(ilst: ByteArray): ByteArray =
-        atom("ftyp", "M4A ".toByteArray()) +
-            atom("moov", atom("udta", atom("meta", byteArrayOf(0, 0, 0, 0) + atom("ilst", ilst))))
+        atom("ftyp", "M4A ".toByteArray()) + moovAtom(ilst)
+
+    /** Split out so the tail test can use it without an ftyp in front. */
+    private fun moovAtom(ilst: ByteArray): ByteArray =
+        atom("moov", atom("udta", atom("meta", byteArrayOf(0, 0, 0, 0) + atom("ilst", ilst))))
 
     private fun concat(vararg parts: ByteArray): ByteArray =
         ByteArrayOutputStream().apply { parts.forEach { write(it) } }.toByteArray()
