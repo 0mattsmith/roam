@@ -50,4 +50,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // TagParser is pure Kotlin over byte arrays, so it runs on the JVM with no
+    // device and no Robolectric. It is the only part of Roam that can be
+    // proved before a build reaches a phone -- worth keeping that way.
+    testImplementation(libs.junit)
 }

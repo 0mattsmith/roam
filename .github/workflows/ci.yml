@@ -50,6 +50,23 @@ jobs:
           echo "== assembleDebug $(date -u +%FT%TZ) ==" > build.log
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee -a build.log
 
+      # NOT continue-on-error, unlike lint. These are pure JVM tests over byte
+      # arrays with no device involved, so a failure here is a real defect in
+      # tag parsing rather than an environment quirk -- and it is the only
+      # check in this repo that proves behaviour instead of compilation.
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee -a build.log
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-reports
+          path: '**/build/reports/tests/**'
+          if-no-files-found: ignore
+          retention-days: 14
+
       # Informational while the app is a scaffold -- exported service/provider
       # and unused-resource warnings are expected. Compile errors above still
       # fail the job.

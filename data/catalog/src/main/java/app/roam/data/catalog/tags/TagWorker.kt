@@ -18,6 +18,8 @@ import app.roam.core.model.Ids
 import app.roam.core.model.SourceType
 import app.roam.core.model.TagState
 import app.roam.data.catalog.artwork.ArtworkStore
+import app.roam.data.catalog.sync.ParsedTags
+import app.roam.data.catalog.sync.TagExtractor
 import app.roam.data.source.SourceProvider
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -52,6 +54,7 @@ class TagWorker @AssistedInject constructor(
     private val albums: AlbumDao,
     private val artists: ArtistDao,
     private val artwork: ArtworkStore,
+    private val tagExtractor: TagExtractor,
 ) : CoroutineWorker(ctx, params) {
 
     override suspend fun doWork(): Result {
@@ -69,8 +72,9 @@ class TagWorker @AssistedInject constructor(
             val results = coroutineScope {
                 pending.map { row ->
                     async(Dispatchers.IO) {
-                        gate.withPermit { readTags(provider, row.remoteId, row.name) }
-                            ?.let { row to it }
+                        gate.withPermit {
+                            tagExtractor.readTags(provider, row.remoteId, row.sizeBytes)
+                        }?.let { row to it }
                     }
                 }.awaitAll()
             }
@@ -94,23 +98,7 @@ class TagWorker @AssistedInject constructor(
         return Result.success(workDataOf(KEY_DONE to done, KEY_FAILED to failed))
     }
 
-    private suspend fun readTags(
-        provider: SourceProvider,
-        remoteId: String,
-        name: String,
-    ): AudioTags? = runCatching {
-        val head = provider.readRange(remoteId, 0, HEAD_BYTES)
-        when (name.substringAfterLast('.', "").lowercase()) {
-            "flac" -> FlacParser.parse(head)
-            "mp3" -> Id3Parser.parse(head)
-            // Many m4a/ogg files still carry an ID3 block; try it and fall back
-            // to whatever the path told us. TODO(phase3): MP4 atom parsing,
-            // including the moov-at-end tail read.
-            else -> Id3Parser.parse(head) ?: FlacParser.parse(head)
-        }
-    }.getOrNull()
-
-    private suspend fun applyTags(trackId: Long, oldAlbumId: Long, tags: AudioTags) =
+    private suspend fun applyTags(trackId: Long, oldAlbumId: Long, tags: ParsedTags) =
         withContext(Dispatchers.IO) {
             val artworkId = tags.artwork?.let {
                 runCatching { artwork.put(it, ArtworkSource.EMBEDDED) }.getOrNull()
@@ -140,8 +128,6 @@ class TagWorker @AssistedInject constructor(
         const val KEY_FAILED = "failed"
         const val KEY_ERROR = "error"
 
-        /** Covers ID3v2 plus a typical 200-600 KB embedded cover. */
-        const val HEAD_BYTES = 1L * 1024 * 1024
         const val BATCH = 60
         /** Ranged reads are far heavier than folder listings, so fan out less. */
         const val CONCURRENCY = 4

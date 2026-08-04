@@ -220,7 +220,7 @@ interface TrackDao {
     /** Tracks still carrying path-derived metadata, oldest first. */
     @Query("""
         SELECT t.id AS id, t.remoteId AS remoteId, t.albumId AS albumId,
-               t.title AS name
+               t.title AS name, t.sizeBytes AS sizeBytes
         FROM tracks t
         WHERE t.sourceId = :sourceId AND t.tagState != 'OK' AND t.tagState != 'FAILED'
           AND t.userEdited = 0
@@ -286,8 +286,13 @@ data class PendingTagRow(
     val id: Long,
     val remoteId: String,
     val albumId: Long,
-    /** The file's title, used only to sniff the extension for parser choice. */
     val name: String,
+    /**
+     * Needed to read the END of the file. An M4A that never went through
+     * faststart keeps its moov atom after all the audio, so the tail read
+     * has to know where the tail is.
+     */
+    val sizeBytes: Long,
 )
 
 data class TrackListItem(

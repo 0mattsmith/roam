@@ -20,6 +20,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.kotlinx.coroutines)
     implementation(libs.androidx.lifecycle.compose)
     implementation(projects.core.model)
     implementation(projects.core.designsystem)
@@ -37,10 +38,15 @@ dependencies {
     implementation(libs.hilt.navigation)
     implementation(libs.coil.compose)
     implementation(libs.paging.compose)
-    // Phase 4 -- uncomment with the downloader.
-    // implementation(libs.youtubedl.library)
-    // Phase 4 -- uncomment with the downloader.
-    // implementation(libs.youtubedl.ffmpeg)
+    // yt-dlp itself, plus the FFmpeg build it shells out to. FFmpegKit was
+    // retired in April 2025, so this bundle is the maintained way to get both
+    // binaries onto a device without shipping them yourself.
+    implementation(libs.youtubedl.library)
+    implementation(libs.youtubedl.ffmpeg)
+    implementation(libs.work.runtime)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
+    api(projects.data.sourceApi)
     implementation(libs.okhttp)
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)

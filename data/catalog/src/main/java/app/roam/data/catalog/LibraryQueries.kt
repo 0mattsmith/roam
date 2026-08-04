@@ -160,6 +160,27 @@ object LibraryQueries {
         )
     }
 
+    /**
+     * Free-text search over title, artist and album.
+     *
+     * LIKE rather than FTS, deliberately for now. A personal library is tens of
+     * thousands of rows, not millions, and the three columns are already
+     * indexed for sorting -- an FTS table would mean another migration and a
+     * second copy of every title to keep in step. The car's voice search will
+     * need real FTS (it has to rank, not just filter); this does not.
+     *
+     * The term is BOUND, never interpolated. The wildcards are added around the
+     * bound value so a user typing % searches for a percent sign.
+     */
+    fun search(term: String, sort: TrackSort, limit: Int): SupportSQLiteQuery {
+        val like = "%${term.trim()}%"
+        return SimpleSQLiteQuery(
+            "$TRACK_COLUMNS WHERE t.title LIKE ? OR ar.name LIKE ? OR al.title LIKE ? " +
+                "ORDER BY ${sort.orderBy} LIMIT $limit",
+            arrayOf(like, like, like),
+        )
+    }
+
     /** Single row lookups, for resolving one browse node. */
     fun tracksForTrack(trackId: Long): SupportSQLiteQuery =
         SimpleSQLiteQuery("$TRACK_COLUMNS WHERE t.id = ?", arrayOf(trackId))

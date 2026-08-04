@@ -22,19 +22,66 @@ data class ExtractedTags(
 class TagExtractor @Inject constructor() {
 
     suspend fun extract(source: SourceProvider, file: RemoteFile): ExtractedTags {
-        val head = source.readRange(file.remoteId, 0, HEAD_BYTES)
-
-        // TODO(phase1): feed `head` to Media3 extractors via a ByteArrayDataSource.
-        //   Mp3Extractor / FlacExtractor / Mp4Extractor emit Metadata entries:
-        //     TextInformationFrame  TIT2 TPE1 TALB TPE2 TDRC TRCK TPOS TCON
-        //     ApicFrame.pictureData  <- the embedded cover
-        //
-        // M4A CAVEAT: on a non-faststart file the moov atom is at the END.
-        //   If no moov appears in `head`, re-read the LAST 512 KB instead.
-        //   Skip this and about a third of an AAC library comes back untagged.
-
-        return inferFromPath(file)
+        val fallback = inferFromPath(file)
+        val parsed = readTags(source, file.remoteId, file.sizeBytes)
+        return if (parsed == null) fallback else merge(parsed, fallback)
     }
+
+    /**
+     * The ranged read and the parse, without any path fallback.
+     *
+     * Shared with the tag pass, which has a track id rather than a RemoteFile
+     * and does its own merging -- two copies of the tail-read rule is exactly
+     * how one of them ends up not having it.
+     */
+    suspend fun readTags(
+        source: SourceProvider,
+        remoteId: String,
+        sizeBytes: Long,
+    ): ParsedTags? {
+        val head = runCatching { source.readRange(remoteId, 0, HEAD_BYTES) }
+            .getOrNull() ?: return null
+
+        TagParser.parse(head)?.let { return it }
+
+        // On an M4A that never went through faststart the moov atom is at the
+        // very END of the file, past all the audio. Without this second read
+        // roughly a third of an AAC library comes back untagged.
+        if (!TagParser.needsTailRead(head) || sizeBytes <= TAIL_BYTES) return null
+
+        return runCatching { source.readRange(remoteId, sizeBytes - TAIL_BYTES, TAIL_BYTES) }
+            .getOrNull()
+            ?.let { TagParser.parse(it) }
+    }
+
+    /**
+     * Tags win, the path fills the gaps.
+     *
+     * A file tagged with a title and nothing else should still land in the
+     * right album, because the folder it sits in genuinely does say so. The row
+     * only counts as inferred when the container told us nothing at all --
+     * `inferredFromPath` drives the "Fix metadata" chip, and flagging a
+     * properly tagged file because it happened to lack a genre would point that
+     * chip at thousands of tracks that are already correct.
+     */
+    private fun merge(tags: ParsedTags, path: ExtractedTags) = ExtractedTags(
+        title = tags.title ?: path.title,
+        artist = tags.artist ?: path.artist,
+        album = tags.album ?: path.album,
+        // Falls back to the artist, not to the folder: an album artist that
+        // disagrees with the track artist is meaningful, and inventing one from
+        // a directory name would mark half a library as compilations.
+        albumArtist = tags.albumArtist ?: tags.artist ?: path.albumArtist,
+        trackNo = tags.trackNo ?: path.trackNo,
+        trackTotal = tags.trackTotal,
+        discNo = tags.discNo,
+        discTotal = tags.discTotal,
+        year = tags.year,
+        genre = tags.genre,
+        durationMs = tags.durationMs,
+        artwork = tags.artwork,
+        inferredFromPath = false,
+    )
 
     /**
      * Fallback for untagged files. Matches the Music/Artist/Album/NN title - artist.ext
@@ -62,6 +109,9 @@ class TagExtractor @Inject constructor() {
     companion object {
         const val HEAD_BYTES = 1L * 1024 * 1024
         const val HEAD_BYTES_RETRY = 4L * 1024 * 1024
+
+        /** Enough to hold a moov atom and its cover on a non-faststart M4A. */
+        const val TAIL_BYTES = 512L * 1024
         val FILENAME = Regex("""^(?<track>\d{1,3})[\s._-]+(?<title>.+?)(?:\s+-\s+(?<artist>.+))?$""")
     }
 }

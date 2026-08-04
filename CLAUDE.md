@@ -9,6 +9,7 @@ Store. Full design: `docs/SPEC.md`. Visual reference: `docs/mockups.html`.
 ```
 ./gradlew assembleDebug          # build
 ./gradlew installDebug           # to a connected device
+./gradlew testDebugUnitTest      # TagParser — the only provable part
 ./gradlew lint                   # before committing
 ./commit.ps1 "what changed"      # stage + push + watch CI  <- day to day
 ./commit.ps1 -Amend "fix"        # fold into HEAD, force-push with lease
@@ -242,7 +243,10 @@ argued about mid-flight:
 | Position always resumes up to ten seconds early | By design: position emits no events, so it is polled. Pausing writes exactly |
 | "Shuffle all" is not the first row in a list | The `page == 0` guard was dropped or reordered. It must be first in Library, Artists, Albums and each album, and only on the first page or it repeats down the list |
 | A tab is missing in the car | Expected below a 4-tab limit -- `rootTabs` is taken from the front, so Loved goes first, then Albums |
-| A third of the AAC library untagged | `moov` atom at end of file; needs the tail-range fallback |
+| A third of the AAC library untagged | `moov` atom at end of file; needs the tail-range fallback. `TagParser.needsTailRead` decides, `TagExtractor.readTags` does it — one implementation, shared by sync and the tag pass |
+| Tags read as empty on an M4A | `meta` is a FullBox: four bytes of version and flags before its children. Walk it as a plain container and `ilst` is never found |
+| An embedded cover is rejected as corrupt | The APIC description is terminated in the frame's OWN encoding, so a UTF-16 one ends in TWO zero bytes. Reading one leaves the image starting a byte late |
+| Genre shows as "(17)" | A numeric ID3v1 index reached the UI. `TagParser.id3Genre` maps it; MP4's `gnre` is the same list but one-based |
 | Blank covers on the head unit | PNG `APIC` — re-encode all covers to JPEG |
 | Roam created stray folders in the music library | `resolveFolder(create = true)` where the artist tag name did not match a folder. The photo pass resolves with `create = false` and skips when absent |
 | A hand-placed artist photo keeps getting replaced | Precedence inverted — `artist.jpg` on the source must beat Deezer, and an existing file is never overwritten |

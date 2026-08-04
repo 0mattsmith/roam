@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Sort
@@ -118,6 +119,9 @@ fun LibraryRoute(
                             state.drillTitle == artistPage?.first?.name,
                     )
                     SortMenu(state, vm)
+                    IconButton(onClick = onOpenDownloader) {
+                        Icon(Icons.Filled.Search, contentDescription = "Search")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
