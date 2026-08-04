@@ -6,9 +6,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -137,6 +139,14 @@ fun DownloaderRoute(
                 Tab(tab == 1, onClick = { tab = 1 }, text = { Text("YouTube Music") })
             }
 
+            // Sits OUTSIDE the when below, deliberately. A spinner that lives
+            // in one branch of a when can be hidden by any branch above it
+            // changing, which is exactly how the last two attempts at this
+            // failed. This bar depends on one boolean and nothing else.
+            if (tab == 1 && (state.searchingYoutube || state.loadingMore)) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+
             when {
                 state.query.isBlank() ->
                     Hint("Search your library, or YouTube Music for something new")
@@ -146,10 +156,18 @@ fun DownloaderRoute(
                 // Nothing is drawn until the first batch is fully looked up:
                 // album and year need a real extraction, and rows that appear
                 // bare and then rearrange are worse than a moment's wait.
-                state.searchingYoutube -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
+                state.searchingYoutube -> Column(
+                    Modifier.fillMaxSize().padding(top = 48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Looking up tracks…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 state.youtube.isEmpty() ->
                     Hint("No results. If this keeps happening, update yt-dlp from the menu.")
@@ -187,6 +205,7 @@ fun DownloaderRoute(
             downloads = downloads,
             onDismiss = { showDownloads = false },
             onClearFinished = vm::clearFinishedDownloads,
+            onRetry = vm::retry,
         )
     }
 }
@@ -204,6 +223,7 @@ private fun DownloadsSheet(
     downloads: List<DownloadStatus>,
     onDismiss: () -> Unit,
     onClearFinished: () -> Unit,
+    onRetry: (DownloadStatus) -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.navigationBarsPadding()) {
@@ -232,52 +252,7 @@ private fun DownloadsSheet(
 
             LazyColumn(Modifier.heightIn(max = 420.dp)) {
                 items(downloads.size, key = { downloads[it].id }) { index ->
-                    val download = downloads[index]
-                    ListItem(
-                        headlineContent = {
-                            Text(download.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        },
-                        supportingContent = {
-                            Column {
-                                Text(
-                                    when (download.state) {
-                                        WorkInfo.State.ENQUEUED -> "Waiting"
-                                        WorkInfo.State.RUNNING -> "Downloading"
-                                        WorkInfo.State.SUCCEEDED -> "Saved to Drive"
-                                        WorkInfo.State.FAILED -> "Failed"
-                                        WorkInfo.State.BLOCKED -> "Queued behind another"
-                                        WorkInfo.State.CANCELLED -> "Cancelled"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                // Only while running: a bar at zero next to
-                                // "Waiting" suggests something is stuck.
-                                if (download.running) {
-                                    Spacer(Modifier.height(6.dp))
-                                    if (download.progress > 0f) {
-                                        LinearProgressIndicator(
-                                            progress = { download.progress },
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                    } else {
-                                        // yt-dlp reports nothing until it has
-                                        // started receiving; indeterminate is
-                                        // honest about not knowing yet.
-                                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                                    }
-                                }
-                            }
-                        },
-                        leadingContent = {
-                            when {
-                                download.state == WorkInfo.State.SUCCEEDED ->
-                                    Icon(Icons.Filled.CheckCircle, contentDescription = null)
-                                download.state == WorkInfo.State.FAILED ->
-                                    Icon(Icons.Filled.ErrorOutline, contentDescription = null)
-                                else -> Icon(Icons.Filled.Download, contentDescription = null)
-                            }
-                        },
-                    )
+                    DownloadRow(downloads[index], onRetry = { onRetry(downloads[index]) })
                 }
             }
 
@@ -285,6 +260,99 @@ private fun DownloadsSheet(
         }
     }
 }
+
+/**
+ * One queued, running or finished download.
+ *
+ * Colours are stated outright rather than taken from the scheme: green for
+ * done and red for failed mean the same thing in every theme, and a "success"
+ * that comes out purple because the palette says so communicates nothing.
+ */
+@Composable
+private fun DownloadRow(download: DownloadStatus, onRetry: () -> Unit) {
+    ListItem(
+        headlineContent = {
+            Text(download.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        },
+        supportingContent = {
+            Column {
+                Text(
+                    listOfNotNull(
+                        download.artist.ifBlank { null },
+                        when (download.state) {
+                            WorkInfo.State.ENQUEUED -> "Waiting"
+                            WorkInfo.State.RUNNING -> "Downloading"
+                            WorkInfo.State.SUCCEEDED -> "Saved to Drive"
+                            WorkInfo.State.FAILED -> "Failed"
+                            WorkInfo.State.BLOCKED -> "Queued"
+                            WorkInfo.State.CANCELLED -> "Cancelled"
+                        },
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                // The bar is gone entirely once it is done -- a full bar and a
+                // tick say the same thing twice.
+                if (download.running) {
+                    Spacer(Modifier.height(6.dp))
+                    if (download.progress > 0f) {
+                        LinearProgressIndicator(
+                            progress = { download.progress },
+                            color = PROGRESS_TEAL,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        // yt-dlp reports nothing until bytes start arriving;
+                        // indeterminate is honest about not knowing yet.
+                        LinearProgressIndicator(
+                            color = PROGRESS_TEAL,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                // Frozen where it stopped, in red. How far it got is the
+                // useful part -- a bar that vanishes on failure loses it.
+                if (download.failed) {
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { download.progress },
+                        color = FAILED_RED,
+                        trackColor = FAILED_RED.copy(alpha = 0.2f),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        },
+        leadingContent = { Icon(Icons.Filled.Download, contentDescription = null) },
+        trailingContent = {
+            when {
+                download.succeeded -> Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = "Finished",
+                    tint = DONE_GREEN,
+                )
+                download.failed -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Cancel,
+                        contentDescription = "Failed",
+                        tint = FAILED_RED,
+                    )
+                    IconButton(onClick = onRetry, enabled = download.request != null) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Retry")
+                    }
+                }
+                else -> {}
+            }
+        },
+    )
+}
+
+private val PROGRESS_TEAL = Color(0xFF00897B)
+private val DONE_GREEN = Color(0xFF2E7D32)
+private val FAILED_RED = Color(0xFFC62828)
 
 @Composable
 private fun LibraryResults(tracks: List<TrackListItem>, onPlay: (TrackListItem) -> Unit) {

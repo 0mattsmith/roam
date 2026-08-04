@@ -98,20 +98,42 @@ class DownloadWorker @AssistedInject constructor(
         const val KEY_SAVED_AS = "saved_as"
 
         /**
-         * WorkInfo carries state and progress but not what the work was FOR,
-         * so the label rides along as a tag. Tags survive process death, which
-         * input data on a finished job does not.
+         * The whole request rides along as a tag.
+         *
+         * WorkInfo exposes state, progress, tags and output -- but NOT the
+         * input data it was given. So a failed job cannot be retried from its
+         * WorkInfo alone, and a queued one cannot even say what it is for.
+         * Encoding the request into a tag is what makes both possible without
+         * keeping a parallel copy of the queue in Room.
          */
-        const val TAG_LABEL = "label:"
+        const val TAG_REQUEST = "req:"
+        private const val SEP = "\u001F"
 
-        fun label(info: androidx.work.WorkInfo): String =
-            info.tags.firstOrNull { it.startsWith(TAG_LABEL) }
-                ?.removePrefix(TAG_LABEL)
-                ?: "Download"
+        fun requestOf(info: androidx.work.WorkInfo): DownloadRequest? {
+            val raw = info.tags.firstOrNull { it.startsWith(TAG_REQUEST) }
+                ?.removePrefix(TAG_REQUEST)
+                ?: return null
+            val parts = raw.split(SEP)
+            if (parts.size < 4) return null
+            return DownloadRequest(
+                url = parts[0],
+                title = parts[1],
+                artist = parts[2],
+                album = parts[3],
+                trackNo = parts.getOrNull(4)?.toIntOrNull(),
+            )
+        }
 
         fun enqueue(ctx: Context, request: DownloadRequest) {
+            // A unit separator, because titles legitimately contain every
+            // punctuation mark anyone would reach for as a delimiter.
+            val encoded = listOf(
+                request.url, request.title, request.artist, request.album,
+                request.trackNo?.toString().orEmpty(),
+            ).joinToString(SEP)
+
             val work = OneTimeWorkRequestBuilder<DownloadWorker>()
-                .addTag("$TAG_LABEL${request.title} — ${request.artist}")
+                .addTag("$TAG_REQUEST$encoded")
                 .setInputData(
                     Data.Builder()
                         .putString(KEY_URL, request.url)

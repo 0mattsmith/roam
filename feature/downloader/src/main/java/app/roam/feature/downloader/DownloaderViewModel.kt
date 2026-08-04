@@ -25,12 +25,18 @@ import javax.inject.Inject
 /** One row of the download queue. */
 data class DownloadStatus(
     val id: String,
-    val label: String,
+    val title: String,
+    val artist: String,
+    /** Null only if the tag could not be decoded; without it, retry is impossible. */
+    val request: DownloadRequest?,
     val state: WorkInfo.State,
     val progress: Float,
 ) {
     val finished: Boolean get() = state.isFinished
     val running: Boolean get() = state == WorkInfo.State.RUNNING
+    val failed: Boolean
+        get() = state == WorkInfo.State.FAILED || state == WorkInfo.State.CANCELLED
+    val succeeded: Boolean get() = state == WorkInfo.State.SUCCEEDED
 }
 
 data class SearchUiState(
@@ -74,9 +80,12 @@ class DownloaderViewModel @Inject constructor(
             .getWorkInfosForUniqueWorkFlow(DownloadWorker.NAME)
             .map { infos ->
                 infos.map { info ->
+                    val request = DownloadWorker.requestOf(info)
                     DownloadStatus(
                         id = info.id.toString(),
-                        label = DownloadWorker.label(info),
+                        title = request?.title ?: "Download",
+                        artist = request?.artist.orEmpty(),
+                        request = request,
                         state = info.state,
                         // Absent until the worker reports any, which for a
                         // queued job is never.
@@ -252,6 +261,13 @@ class DownloaderViewModel @Inject constructor(
     /** Clears finished rows only; anything still queued or running stays. */
     fun clearFinishedDownloads() {
         WorkManager.getInstance(app).pruneWork()
+    }
+
+    /** Re-queues a failed download from the request stored on its tag. */
+    fun retry(download: DownloadStatus) {
+        val request = download.request ?: return
+        DownloadWorker.enqueue(app, request)
+        _state.update { it.copy(message = "Retrying ${request.title}") }
     }
 
     /**
