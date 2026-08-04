@@ -6,7 +6,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -29,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.work.WorkInfo
 import app.roam.core.database.TrackListItem
 import coil.compose.AsyncImage
 
@@ -49,8 +52,10 @@ fun DownloaderRoute(
     vm: DownloaderViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val downloads by vm.downloads.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
+    var showDownloads by remember { mutableStateOf(false) }
 
     val snackbars = remember { SnackbarHostState() }
     LaunchedEffect(state.message) {
@@ -97,6 +102,18 @@ fun DownloaderRoute(
                     }
                 },
                 actions = {
+                    // Badged rather than a count in text: the number that
+                    // matters is how many are still going, and it should be
+                    // readable at a glance while something is downloading.
+                    val active = downloads.count { !it.finished }
+                    IconButton(onClick = { showDownloads = true }) {
+                        BadgedBox(
+                            badge = { if (active > 0) Badge { Text("$active") } }
+                        ) {
+                            Icon(Icons.Filled.Download, contentDescription = "Downloads")
+                        }
+                    }
+
                     // Button and menu share a Box so the menu anchors to the
                     // button rather than to the whole app bar.
                     Box {
@@ -162,6 +179,109 @@ fun DownloaderRoute(
                     }
                 }
             }
+        }
+    }
+
+    if (showDownloads) {
+        DownloadsSheet(
+            downloads = downloads,
+            onDismiss = { showDownloads = false },
+            onClearFinished = vm::clearFinishedDownloads,
+        )
+    }
+}
+
+/**
+ * The download queue.
+ *
+ * Read straight from WorkManager, so it is still right after the app has been
+ * killed and reopened -- which for a phone downloading over mobile data is the
+ * normal case rather than an unusual one.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DownloadsSheet(
+    downloads: List<DownloadStatus>,
+    onDismiss: () -> Unit,
+    onClearFinished: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.navigationBarsPadding()) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Downloads",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                if (downloads.any { it.finished }) {
+                    TextButton(onClick = onClearFinished) { Text("Clear finished") }
+                }
+            }
+
+            if (downloads.isEmpty()) {
+                Text(
+                    "Nothing downloading",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(24.dp),
+                )
+            }
+
+            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                items(downloads.size, key = { downloads[it].id }) { index ->
+                    val download = downloads[index]
+                    ListItem(
+                        headlineContent = {
+                            Text(download.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        },
+                        supportingContent = {
+                            Column {
+                                Text(
+                                    when (download.state) {
+                                        WorkInfo.State.ENQUEUED -> "Waiting"
+                                        WorkInfo.State.RUNNING -> "Downloading"
+                                        WorkInfo.State.SUCCEEDED -> "Saved to Drive"
+                                        WorkInfo.State.FAILED -> "Failed"
+                                        WorkInfo.State.BLOCKED -> "Queued behind another"
+                                        WorkInfo.State.CANCELLED -> "Cancelled"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                // Only while running: a bar at zero next to
+                                // "Waiting" suggests something is stuck.
+                                if (download.running) {
+                                    Spacer(Modifier.height(6.dp))
+                                    if (download.progress > 0f) {
+                                        LinearProgressIndicator(
+                                            progress = { download.progress },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    } else {
+                                        // yt-dlp reports nothing until it has
+                                        // started receiving; indeterminate is
+                                        // honest about not knowing yet.
+                                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                                    }
+                                }
+                            }
+                        },
+                        leadingContent = {
+                            when {
+                                download.state == WorkInfo.State.SUCCEEDED ->
+                                    Icon(Icons.Filled.CheckCircle, contentDescription = null)
+                                download.state == WorkInfo.State.FAILED ->
+                                    Icon(Icons.Filled.ErrorOutline, contentDescription = null)
+                                else -> Icon(Icons.Filled.Download, contentDescription = null)
+                            }
+                        },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
         }
     }
 }

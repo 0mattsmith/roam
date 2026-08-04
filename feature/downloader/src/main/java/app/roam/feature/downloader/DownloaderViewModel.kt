@@ -6,16 +6,32 @@ import androidx.lifecycle.viewModelScope
 import app.roam.core.database.TrackDao
 import app.roam.core.database.TrackListItem
 import app.roam.core.model.TrackSort
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import app.roam.data.catalog.LibraryQueries
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** One row of the download queue. */
+data class DownloadStatus(
+    val id: String,
+    val label: String,
+    val state: WorkInfo.State,
+    val progress: Float,
+) {
+    val finished: Boolean get() = state.isFinished
+    val running: Boolean get() = state == WorkInfo.State.RUNNING
+}
 
 data class SearchUiState(
     val query: String = "",
@@ -46,11 +62,38 @@ class DownloaderViewModel @Inject constructor(
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
+    /**
+     * The download queue, straight from WorkManager.
+     *
+     * No mirror of it is kept in Room. WorkManager already survives process
+     * death and reboots, and a second copy of the same list is a second thing
+     * that can be wrong -- so this reads its state rather than tracking it.
+     */
+    val downloads: StateFlow<List<DownloadStatus>> =
+        WorkManager.getInstance(app)
+            .getWorkInfosForUniqueWorkFlow(DownloadWorker.NAME)
+            .map { infos ->
+                infos.map { info ->
+                    DownloadStatus(
+                        id = info.id.toString(),
+                        label = DownloadWorker.label(info),
+                        state = info.state,
+                        // Absent until the worker reports any, which for a
+                        // queued job is never.
+                        progress = info.progress.getFloat(DownloadWorker.KEY_PROGRESS, 0f),
+                    )
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private var localJob: Job? = null
     private var remoteJob: Job? = null
 
     fun onQueryChanged(query: String) {
-        _state.update { it.copy(query = query) }
+        // Set here rather than after the debounce. Waiting meant the first
+        // half-second showed "No results" and then a spinner, which reads as a
+        // failed search that changed its mind.
+        _state.update { it.copy(query = query, searchingYoutube = query.isNotBlank()) }
 
         localJob?.cancel()
         remoteJob?.cancel()
@@ -83,7 +126,7 @@ class DownloaderViewModel @Inject constructor(
 
         remoteJob = viewModelScope.launch {
             delay(REMOTE_DEBOUNCE_MS)
-            _state.update { it.copy(searchingYoutube = true, youtube = emptyList()) }
+            _state.update { it.copy(youtube = emptyList()) }
 
             val ids = youtube.searchIds(query)
             val failure = ids.exceptionOrNull()
@@ -205,6 +248,11 @@ class DownloaderViewModel @Inject constructor(
     }
 
     fun clearMessage() = _state.update { it.copy(message = null) }
+
+    /** Clears finished rows only; anything still queued or running stays. */
+    fun clearFinishedDownloads() {
+        WorkManager.getInstance(app).pruneWork()
+    }
 
     /**
      * yt-dlp's own errors are several lines of Python traceback. The last

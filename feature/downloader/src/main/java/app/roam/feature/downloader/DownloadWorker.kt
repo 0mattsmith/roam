@@ -97,8 +97,21 @@ class DownloadWorker @AssistedInject constructor(
         const val KEY_PROGRESS = "progress"
         const val KEY_SAVED_AS = "saved_as"
 
+        /**
+         * WorkInfo carries state and progress but not what the work was FOR,
+         * so the label rides along as a tag. Tags survive process death, which
+         * input data on a finished job does not.
+         */
+        const val TAG_LABEL = "label:"
+
+        fun label(info: androidx.work.WorkInfo): String =
+            info.tags.firstOrNull { it.startsWith(TAG_LABEL) }
+                ?.removePrefix(TAG_LABEL)
+                ?: "Download"
+
         fun enqueue(ctx: Context, request: DownloadRequest) {
             val work = OneTimeWorkRequestBuilder<DownloadWorker>()
+                .addTag("$TAG_LABEL${request.title} — ${request.artist}")
                 .setInputData(
                     Data.Builder()
                         .putString(KEY_URL, request.url)

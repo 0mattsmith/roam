@@ -4,6 +4,7 @@ import android.app.Application
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import com.yausername.ffmpeg.FFmpeg
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -34,6 +35,16 @@ data class YoutubeResult(
     val albumLine: String?
         get() = album?.let { if (year != null) "$it ($year)" else it }
 }
+
+/**
+ * runCatching CATCHES CancellationException, which is almost never what you
+ * want: a coroutine cancelled by the next keystroke is not a failure, and
+ * reporting it surfaces "StandaloneCoroutine was cancelled" as though the user
+ * had done something wrong. Worse, swallowing it breaks structured
+ * concurrency, because the parent is never told the child actually stopped.
+ */
+private inline fun <T> Result<T>.rethrowCancellation(): Result<T> =
+    onFailure { if (it is CancellationException) throw it }
 
 /**
  * yt-dlp, wrapped so the rest of the app never sees it.
@@ -88,7 +99,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
         // which has moved between releases; the default has not.
         withContext(Dispatchers.IO) { YoutubeDL.getInstance().updateYoutubeDL(app) }
         Unit
-    }
+    }.rethrowCancellation()
 
     /**
      * Searches YouTube Music rather than YouTube proper: music results carry a
@@ -117,7 +128,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
                     else query("ytsearch$limit:$query", limit)
                 }
             }
-        }
+        }.rethrowCancellation()
 
     /**
      * The expensive half: a real extraction per id, which is the only way to
@@ -152,7 +163,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
                 ids.mapNotNull { byId[it] }
             }
         }
-    }
+    }.rethrowCancellation()
 
     private fun toResult(json: JSONObject): YoutubeResult {
         // `track` is the song's real title where `title` is whatever the video
@@ -271,7 +282,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
             into.listFiles()?.firstOrNull { it.nameWithoutExtension == id }
                 ?: error("yt-dlp reported success but wrote no file")
         }
-    }
+    }.rethrowCancellation()
 
     private fun String.urlEncoded(): String =
         java.net.URLEncoder.encode(this, "UTF-8")
