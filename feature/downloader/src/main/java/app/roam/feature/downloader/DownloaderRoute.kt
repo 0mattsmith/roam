@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
@@ -125,14 +126,38 @@ fun DownloaderRoute(
 
                 tab == 0 -> LibraryResults(state.library, onPlay)
 
-                else -> Column(Modifier.fillMaxSize()) {
-                    if (state.searchingYoutube) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    if (state.youtube.isEmpty() && !state.searchingYoutube) {
-                        Hint("No results. If this keeps happening, update yt-dlp from the menu.")
+                // Nothing is drawn until the first batch is fully looked up:
+                // album and year need a real extraction, and rows that appear
+                // bare and then rearrange are worse than a moment's wait.
+                state.searchingYoutube -> Box(
+                    Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
+
+                state.youtube.isEmpty() ->
+                    Hint("No results. If this keeps happening, update yt-dlp from the menu.")
+
+                else -> LazyColumn(Modifier.fillMaxSize()) {
+                    items(state.youtube.size, key = { state.youtube[it].videoId }) { index ->
+                        val result = state.youtube[index]
+                        YoutubeRow(
+                            result = result,
+                            onDownload = { vm.download(result) },
+                            onViewAlbum = { vm.viewAlbum(result) },
+                        )
                     }
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        items(state.youtube.size, key = { state.youtube[it].videoId }) { index ->
-                            YoutubeRow(state.youtube[index]) { vm.download(it) }
+
+                    if (state.hasMore) {
+                        item {
+                            Box(
+                                Modifier.fillMaxWidth().padding(16.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (state.loadingMore) CircularProgressIndicator()
+                                // Usually instant: the next batch was fetched
+                                // while this one was being read.
+                                else OutlinedButton(onClick = vm::showMore) { Text("Show more") }
+                            }
                         }
                     }
                 }
@@ -168,19 +193,45 @@ private fun LibraryResults(tracks: List<TrackListItem>, onPlay: (TrackListItem) 
     }
 }
 
+/**
+ * A result drawn as the track it is: title, then artist, then album and year.
+ *
+ * Three lines rather than two because the album is the thing that tells you
+ * whether this is the recording you meant -- the same song appears a dozen
+ * times across singles, reissues and compilations.
+ */
 @Composable
-private fun YoutubeRow(result: YoutubeResult, onDownload: (YoutubeResult) -> Unit) {
+private fun YoutubeRow(
+    result: YoutubeResult,
+    onDownload: () -> Unit,
+    onViewAlbum: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+
     ListItem(
         headlineContent = { Text(result.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            Text(
-                listOfNotNull(
-                    result.uploader.ifBlank { null },
-                    result.durationSec?.let { "%d:%02d".format(it / 60, it % 60) },
-                ).joinToString(" · "),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column {
+                Text(
+                    listOfNotNull(
+                        result.artist.ifBlank { null },
+                        result.durationSec?.let { "%d:%02d".format(it / 60, it % 60) },
+                    ).joinToString(" · "),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // Absent rather than blank when YouTube had no album: an empty
+                // third line would leave the rows uneven for no information.
+                result.albumLine?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         },
         leadingContent = {
             val thumbnail = result.thumbnailUrl
@@ -189,15 +240,32 @@ private fun YoutubeRow(result: YoutubeResult, onDownload: (YoutubeResult) -> Uni
                     model = thumbnail,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(48.dp).clip(MaterialTheme.shapes.small),
+                    // 56dp square: this is cover art on a music result, and a
+                    // 16:9 still gets cropped to match rather than left letterboxed.
+                    modifier = Modifier.size(56.dp).clip(MaterialTheme.shapes.small),
                 )
             } else {
                 Icon(Icons.Filled.MusicNote, contentDescription = null)
             }
         },
         trailingContent = {
-            IconButton(onClick = { onDownload(result) }) {
-                Icon(Icons.Filled.Download, contentDescription = "Download")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onDownload) {
+                    Icon(Icons.Filled.Download, contentDescription = "Download")
+                }
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                    }
+                    DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("View album") },
+                            enabled = result.album != null,
+                            onClick = { menuOpen = false; onViewAlbum() },
+                            leadingIcon = { Icon(Icons.Filled.Album, contentDescription = null) },
+                        )
+                    }
+                }
             }
         },
     )

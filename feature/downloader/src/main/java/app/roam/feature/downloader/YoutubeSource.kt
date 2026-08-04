@@ -13,15 +13,26 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** One result from a YouTube Music search, before anything has been fetched. */
+/**
+ * One search result, once it has been looked up properly.
+ *
+ * [album] and [year] are absent from a flat search and only arrive from a full
+ * extraction, which is why results are fetched a batch at a time.
+ */
 data class YoutubeResult(
     val videoId: String,
     val title: String,
-    val uploader: String,
+    val artist: String,
+    val album: String?,
+    val year: Int?,
     val durationSec: Int?,
     val thumbnailUrl: String?,
 ) {
     val url: String get() = "https://music.youtube.com/watch?v=$videoId"
+
+    /** "Nevermind (1991)", or just the album when the year is unknown. */
+    val albumLine: String?
+        get() = album?.let { if (year != null) "$it ($year)" else it }
 }
 
 /**
@@ -80,32 +91,120 @@ class YoutubeSource @Inject constructor(private val app: Application) {
     }
 
     /**
-     * Searches YouTube Music rather than YouTube proper.
+     * Searches YouTube Music rather than YouTube proper: music results carry a
+     * real artist and album where plain YouTube gives whatever the uploader
+     * typed, and they skip the lyric videos and hour-long compilations.
      *
-     * Music results carry a real artist and album where plain YouTube gives
-     * whatever the uploader typed, and they skip the lyric videos, live
-     * recordings and hour-long compilations that otherwise dominate.
+     * The cheap half. One request, ids only -- deliberately separate from
+     * [enrich], because the whole point of the split is that this is fast and
+     * that is not.
      */
-    suspend fun search(query: String, limit: Int = 20): Result<List<YoutubeResult>> = runCatching {
+    suspend fun searchIds(query: String, limit: Int = SEARCH_LIMIT): Result<List<String>> =
+        runCatching {
+            ensureStarted()
+            withContext(Dispatchers.IO) {
+                runLock.withLock {
+                    val music = runCatching {
+                        query("https://music.youtube.com/search?q=${query.urlEncoded()}", limit)
+                    }.getOrNull()
+
+                    // A music search page is built from shelves -- Songs,
+                    // Videos, Albums, Artists -- so a short or ambiguous query
+                    // can come back as sections containing nothing flat.
+                    // ytsearch always returns plain videos, so it is the
+                    // fallback rather than the first choice.
+                    if (!music.isNullOrEmpty()) music
+                    else query("ytsearch$limit:$query", limit)
+                }
+            }
+        }
+
+    /**
+     * The expensive half: a real extraction per id, which is the only way to
+     * learn the album, the year and the square cover.
+     *
+     * All the ids go to ONE yt-dlp invocation. Starting the process is a large
+     * fixed cost -- it is a Python interpreter -- so fifteen ids in one call is
+     * far cheaper than fifteen calls, even though the network work is the same.
+     * Output is one JSON document per line rather than a single array.
+     */
+    suspend fun enrich(ids: List<String>): Result<List<YoutubeResult>> = runCatching {
+        if (ids.isEmpty()) return@runCatching emptyList()
         ensureStarted()
         withContext(Dispatchers.IO) {
             runLock.withLock {
-                val music = runCatching {
-                    query("https://music.youtube.com/search?q=${query.urlEncoded()}", limit)
-                }.getOrNull()
+                val request = YoutubeDLRequest(ids.map { "https://music.youtube.com/watch?v=$it" })
+                    .addOption("--dump-json")
+                    .addOption("--skip-download")
+                    .addOption("--no-warnings")
+                    // One dead video must not take the whole batch with it.
+                    .addOption("--ignore-errors")
 
-                // A music search page is built from shelves -- Songs, Videos,
-                // Albums, Artists -- so a short or ambiguous query can come
-                // back as sections containing nothing flat. ytsearch always
-                // returns plain videos, so it is the fallback rather than the
-                // first choice.
-                if (!music.isNullOrEmpty()) music
-                else query("ytsearch$limit:$query", limit)
+                val byId = YoutubeDL.getInstance().execute(request).out
+                    .lineSequence()
+                    .filter { it.startsWith("{") }
+                    .mapNotNull { line -> runCatching { toResult(JSONObject(line)) }.getOrNull() }
+                    .associateBy { it.videoId }
+
+                // Restored to the order asked for: yt-dlp emits whatever
+                // finishes first, and a search list that reorders itself as it
+                // loads is worse than one that fills in.
+                ids.mapNotNull { byId[it] }
             }
         }
     }
 
-    private fun query(target: String, limit: Int): List<YoutubeResult> {
+    private fun toResult(json: JSONObject): YoutubeResult {
+        // `track` is the song's real title where `title` is whatever the video
+        // was called, which on Music is often "Song (Official Audio)".
+        val title = json.optString("track")
+            .ifBlank { json.optString("title") }
+            .ifBlank { "Unknown" }
+
+        val artist = json.optString("artist")
+            .ifBlank { json.optJSONArray("artists")?.optString(0).orEmpty() }
+            .ifBlank { json.optString("uploader") }
+            .ifBlank { json.optString("channel") }
+            // Music credits arrive comma-joined; the first is the primary.
+            .substringBefore(",")
+            .trim()
+
+        val year = json.optInt("release_year").takeIf { it > 0 }
+            ?: json.optString("upload_date").take(4).toIntOrNull()
+
+        return YoutubeResult(
+            videoId = json.optString("id"),
+            title = title,
+            artist = artist,
+            album = json.optString("album").ifBlank { null },
+            year = year,
+            durationSec = json.optDouble("duration").takeIf { !it.isNaN() }?.toInt(),
+            thumbnailUrl = squareThumbnail(json) ?: json.optString("thumbnail").ifBlank { null },
+        )
+    }
+
+    /**
+     * Music tracks carry a square cover among their thumbnails; videos only
+     * have 16:9 stills. Picking the widest square gives real album art where
+     * there is any and falls back to the still where there is not.
+     */
+    private fun squareThumbnail(json: JSONObject): String? {
+        val thumbs = json.optJSONArray("thumbnails") ?: return null
+        var best: String? = null
+        var bestWidth = 0
+        for (i in 0 until thumbs.length()) {
+            val t = thumbs.optJSONObject(i) ?: continue
+            val w = t.optInt("width")
+            val h = t.optInt("height")
+            if (w > 0 && w == h && w > bestWidth) {
+                bestWidth = w
+                best = t.optString("url").ifBlank { null }
+            }
+        }
+        return best
+    }
+
+    private fun query(target: String, limit: Int): List<String> {
         val request = YoutubeDLRequest(target)
             .addOption("--flat-playlist")
             .addOption("--dump-single-json")
@@ -121,14 +220,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
         return flatten(json, depth = 0).take(limit)
     }
 
-    /**
-     * Walks entries recursively.
-     *
-     * music.youtube.com returns shelves whose own entries are the tracks, so a
-     * single pass over the top level finds playlists rather than anything
-     * playable. Depth is capped because the structure is YouTube's to change.
-     */
-    private fun flatten(node: JSONObject, depth: Int): List<YoutubeResult> {
+    private fun flatten(node: JSONObject, depth: Int): List<String> {
         if (depth > MAX_SHELF_DEPTH) return emptyList()
         val entries = node.optJSONArray("entries") ?: return emptyList()
 
@@ -137,22 +229,10 @@ class YoutubeSource @Inject constructor(private val app: Application) {
             if (entry.optJSONArray("entries") != null) {
                 flatten(entry, depth + 1)
             } else {
+                // Anything that is not an 11-character video id is a browse id
+                // belonging to a shelf header, not something that plays.
                 val id = entry.optString("id")
-                // A browse id from a shelf header is not something that plays.
-                if (id.length != VIDEO_ID_LENGTH) return@flatMap emptyList()
-                listOf(
-                    YoutubeResult(
-                        videoId = id,
-                        title = entry.optString("title").ifBlank { "Unknown" },
-                        // Music results name the artist in `artist`; plain
-                        // YouTube only ever has a channel.
-                        uploader = entry.optString("artist")
-                            .ifBlank { entry.optString("uploader") }
-                            .ifBlank { entry.optString("channel") },
-                        durationSec = entry.optDouble("duration").takeIf { !it.isNaN() }?.toInt(),
-                        thumbnailUrl = entry.optString("thumbnail").ifBlank { null },
-                    )
-                )
+                if (id.length == VIDEO_ID_LENGTH) listOf(id) else emptyList()
             }
         }
     }
@@ -202,5 +282,12 @@ class YoutubeSource @Inject constructor(private val app: Application) {
 
         /** Anything else in an entry list is a browse id, not something playable. */
         const val VIDEO_ID_LENGTH = 11
+
+        /**
+         * Ids are cheap to collect and only ever enriched a batch at a time,
+         * so this is generous -- it is the size of the pool "Show more" draws
+         * from, not the amount of work done up front.
+         */
+        const val SEARCH_LIMIT = 60
     }
 }

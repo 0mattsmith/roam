@@ -22,6 +22,9 @@ data class SearchUiState(
     val library: List<TrackListItem> = emptyList(),
     val youtube: List<YoutubeResult> = emptyList(),
     val searchingYoutube: Boolean = false,
+    /** True while "Show more" is waiting on a batch that is not ready yet. */
+    val loadingMore: Boolean = false,
+    val hasMore: Boolean = false,
     val message: String? = null,
 )
 
@@ -52,8 +55,20 @@ class DownloaderViewModel @Inject constructor(
         localJob?.cancel()
         remoteJob?.cancel()
 
+        prefetchJob?.cancel()
+        remaining = emptyList()
+        prefetched = null
+
         if (query.isBlank()) {
-            _state.update { it.copy(library = emptyList(), youtube = emptyList(), searchingYoutube = false) }
+            _state.update {
+                it.copy(
+                    library = emptyList(),
+                    youtube = emptyList(),
+                    searchingYoutube = false,
+                    loadingMore = false,
+                    hasMore = false,
+                )
+            }
             return
         }
 
@@ -68,20 +83,78 @@ class DownloaderViewModel @Inject constructor(
 
         remoteJob = viewModelScope.launch {
             delay(REMOTE_DEBOUNCE_MS)
-            _state.update { it.copy(searchingYoutube = true) }
-            val results = youtube.search(query)
-            _state.update { s ->
-                s.copy(
-                    searchingYoutube = false,
-                    youtube = results.getOrDefault(emptyList()),
-                    // The real message, not a polite summary of it. yt-dlp
-                    // says exactly what went wrong -- a missing binary reads
-                    // very differently from a blocked request -- and throwing
-                    // that away leaves nothing to act on.
-                    message = results.exceptionOrNull()?.readable() ?: s.message,
-                )
+            _state.update { it.copy(searchingYoutube = true, youtube = emptyList()) }
+
+            val ids = youtube.searchIds(query)
+            val failure = ids.exceptionOrNull()
+            if (failure != null) {
+                _state.update {
+                    // The real message, not a polite summary of it. yt-dlp says
+                    // exactly what went wrong -- a missing binary reads very
+                    // differently from a blocked request -- and throwing that
+                    // away leaves nothing to act on.
+                    it.copy(searchingYoutube = false, message = failure.readable())
+                }
+                return@launch
+            }
+
+            remaining = ids.getOrDefault(emptyList())
+            prefetched = null
+            showNextBatch(firstPage = true)
+        }
+    }
+
+    // ---- batching -----------------------------------------------------------
+    //
+    // Ids are cheap and arrive all at once; turning one into a row costs a real
+    // extraction. So a page is fetched, shown, and then the FOLLOWING page is
+    // fetched immediately in the background -- by the time "Show more" is
+    // pressed the answer is usually already here, and the wait lands while the
+    // person is still reading rather than after they ask.
+
+    private var remaining: List<String> = emptyList()
+    private var prefetched: List<YoutubeResult>? = null
+    private var prefetchJob: Job? = null
+
+    fun showMore() = viewModelScope.launch { showNextBatch(firstPage = false) }
+
+    private suspend fun showNextBatch(firstPage: Boolean) {
+        val ready = prefetched
+        prefetched = null
+
+        val batch = if (ready != null) {
+            ready
+        } else {
+            // Nothing waiting: either this is the first page, or the person
+            // asked faster than the network answered.
+            _state.update { it.copy(searchingYoutube = firstPage, loadingMore = !firstPage) }
+            val ids = takeBatch()
+            youtube.enrich(ids).getOrDefault(emptyList())
+        }
+
+        _state.update {
+            it.copy(
+                youtube = it.youtube + batch,
+                searchingYoutube = false,
+                loadingMore = false,
+                hasMore = remaining.isNotEmpty(),
+            )
+        }
+
+        prefetchJob?.cancel()
+        if (remaining.isNotEmpty()) {
+            prefetchJob = viewModelScope.launch {
+                val ids = takeBatch()
+                prefetched = youtube.enrich(ids).getOrDefault(emptyList())
+                _state.update { it.copy(hasMore = it.hasMore || prefetched?.isNotEmpty() == true) }
             }
         }
+    }
+
+    private fun takeBatch(): List<String> {
+        val batch = remaining.take(BATCH)
+        remaining = remaining.drop(BATCH)
+        return batch
     }
 
     /**
@@ -91,17 +164,33 @@ class DownloaderViewModel @Inject constructor(
      * singles go to a folder of that name. The review sheet is where this gets
      * corrected before it is queued.
      */
-    fun download(result: YoutubeResult, album: String? = null) {
+    fun download(result: YoutubeResult) {
         DownloadWorker.enqueue(
             app,
             DownloadRequest(
                 url = result.url,
                 title = result.title,
-                artist = result.uploader.ifBlank { "Unknown Artist" },
-                album = album?.ifBlank { null } ?: "Singles",
+                artist = result.artist.ifBlank { "Unknown Artist" },
+                // Lands in Artist/Album beside everything else. "Singles" only
+                // when YouTube genuinely had no album -- every existing track
+                // in the library sits inside an album folder, and a loose file
+                // in the artist folder would be the odd one out.
+                album = result.album?.ifBlank { null } ?: "Singles",
             ),
         )
         _state.update { it.copy(message = "Queued ${result.title}") }
+    }
+
+    /**
+     * Re-runs the search scoped to this track's album.
+     *
+     * A YouTube Music album has no id we can address from a video extraction,
+     * so this asks for it by name and artist -- which is what someone typing it
+     * themselves would do, and it lands the whole tracklist in the same list.
+     */
+    fun viewAlbum(result: YoutubeResult) {
+        val album = result.album ?: return
+        onQueryChanged(listOf(album, result.artist).filter { it.isNotBlank() }.joinToString(" "))
     }
 
     /** yt-dlp goes stale and quietly stops returning results when it does. */
@@ -140,5 +229,8 @@ class DownloaderViewModel @Inject constructor(
         const val LOCAL_DEBOUNCE_MS = 150L
         const val REMOTE_DEBOUNCE_MS = 600L
         const val LIMIT = 60
+
+        /** A screenful, and a batch small enough to arrive while it is read. */
+        const val BATCH = 12
     }
 }
