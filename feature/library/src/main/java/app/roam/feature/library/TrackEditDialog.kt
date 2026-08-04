@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +67,7 @@ fun TrackActionSheet(
     onGoToArtist: () -> Unit,
     onEdit: () -> Unit,
     onRevert: () -> Unit,
+    onRemove: () -> Unit,
     onArtworkPicked: (Uri) -> Unit,
 ) {
     val picker = rememberLauncherForActivityResult(
@@ -130,6 +132,17 @@ fun TrackActionSheet(
                     leadingContent = { Icon(Icons.Filled.Restore, contentDescription = null) },
                 )
             }
+
+            ListItem(
+                modifier = Modifier.clickable(onClick = onRemove),
+                headlineContent = { Text("Remove from library") },
+                // Says what it does NOT do, because that is the part people
+                // hesitate over. The file is untouched; Settings puts it back.
+                supportingContent = { Text("Hides it. The file stays on Drive") },
+                leadingContent = {
+                    Icon(Icons.Filled.VisibilityOff, contentDescription = null)
+                },
+            )
 
             Spacer(Modifier.height(12.dp))
         }

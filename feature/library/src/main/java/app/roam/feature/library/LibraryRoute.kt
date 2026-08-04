@@ -367,6 +367,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             onGoToArtist = { sheetFor = null; vm.openArtistByName(track.artistName) },
             onEdit = { sheetFor = null; vm.openTrackEditor(track) },
             onRevert = { sheetFor = null; vm.revertTrackEdits(track.id) },
+            onRemove = { sheetFor = null; vm.removeTrack(track) },
             onArtworkPicked = { uri -> sheetFor = null; vm.setTrackArtwork(track, uri) },
         )
     }
@@ -409,6 +410,10 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             onOpenAlbum = { headerSheetFor = null; vm.openAlbum(track.albumId, track.albumTitle) },
             onGoToArtist = { headerSheetFor = null; vm.openArtistByName(track.albumArtistName) },
             onBulkEdit = { headerSheetFor = null; vm.openAlbumBulkEditor(track) },
+            onRemoveAlbum = {
+                headerSheetFor = null
+                vm.removeAlbum(track.albumId, track.albumTitle)
+            },
             onArtworkPicked = { uri -> headerSheetFor = null; vm.setAlbumArtwork(track, uri) },
         )
     }

@@ -215,6 +215,32 @@ interface TrackDao {
     @Query("UPDATE tracks SET skipCount = skipCount + 1 WHERE id = :id")
     suspend fun markSkipped(id: Long)
 
+    // ---- removed from the library ----
+    //
+    // A hidden track keeps its row on purpose. Deleting it would mean the next
+    // sync rediscovers the file as new and puts it straight back, and it would
+    // take the loved flag and play count with it.
+
+    @Query("UPDATE tracks SET hidden = :hidden WHERE id = :id")
+    suspend fun setHidden(id: Long, hidden: Boolean)
+
+    @Query("UPDATE tracks SET hidden = :hidden WHERE albumId = :albumId")
+    suspend fun setHiddenForAlbum(albumId: Long, hidden: Boolean)
+
+    /** Deliberately reads the table directly: every list query filters these out. */
+    @Query("""
+        SELECT t.id AS id, t.title AS title, ar.name AS artistName, al.title AS albumTitle
+        FROM tracks t
+        JOIN artists ar ON ar.id = t.artistId
+        JOIN albums  al ON al.id = t.albumId
+        WHERE t.hidden = 1
+        ORDER BY ar.sortName, al.sortTitle, t.discNo, t.trackNo
+    """)
+    fun hiddenTracks(): Flow<List<HiddenTrackRow>>
+
+    @Query("SELECT COUNT(*) FROM tracks WHERE hidden = 1")
+    fun hiddenCount(): Flow<Int>
+
     // ---- tag pass ----
 
     /** Tracks still carrying path-derived metadata, oldest first. */
@@ -281,6 +307,14 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks")
     fun count(): Flow<Int>
 }
+
+/** A track removed from the library, as the restore list needs it. */
+data class HiddenTrackRow(
+    val id: Long,
+    val title: String,
+    val artistName: String,
+    val albumTitle: String,
+)
 
 data class PendingTagRow(
     val id: Long,
@@ -404,14 +438,16 @@ interface AlbumDao {
     @Query("UPDATE albums SET artworkId = NULL WHERE id = :albumId")
     suspend fun clearArtwork(albumId: Long)
 
+    // hidden = 0 throughout: a count that includes tracks the list will not
+    // show is how an album ends up claiming twelve tracks and displaying ten.
     @Query("""
         UPDATE albums SET
-          trackCount = (SELECT COUNT(*) FROM tracks WHERE tracks.albumId = albums.id),
-          durationMs = (SELECT COALESCE(SUM(durationMs), 0) FROM tracks WHERE tracks.albumId = albums.id),
+          trackCount = (SELECT COUNT(*) FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0),
+          durationMs = (SELECT COALESCE(SUM(durationMs), 0) FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0),
           -- Counted from the tracks rather than trusted from a tag: plenty of
           -- rips carry no discTotal at all, and this is what decides whether
           -- the album view shows disc headings.
-          discTotal = (SELECT COALESCE(MAX(discNo), 1) FROM tracks WHERE tracks.albumId = albums.id)
+          discTotal = (SELECT COALESCE(MAX(discNo), 1) FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0)
     """)
     suspend fun recomputeRollups()
 }
@@ -541,8 +577,9 @@ interface ArtistDao {
         UPDATE artists SET
           trackCount = (
             SELECT COUNT(*) FROM tracks t
-            WHERE t.artistId = artists.id
-               OR t.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id)
+            WHERE t.hidden = 0
+              AND (t.artistId = artists.id
+               OR t.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id))
           ),
           albumCount = (
             SELECT COUNT(*) FROM albums al

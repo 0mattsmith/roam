@@ -29,13 +29,17 @@ object LibraryQueries {
         -- The album's own artist, which is what album-major views group by.
         -- Without this join a compilation fragments across every guest artist.
         JOIN artists aar ON aar.id = al.artistId
+        -- Hidden tracks are excluded HERE rather than at each call site, so a
+        -- new query cannot forget to do it. Every caller below therefore
+        -- appends AND, never WHERE.
+        WHERE t.hidden = 0
     """
 
     fun tracks(sort: TrackSort): SupportSQLiteQuery =
         SimpleSQLiteQuery("$TRACK_COLUMNS ORDER BY ${sort.orderBy}")
 
     fun lovedTracks(sort: TrackSort): SupportSQLiteQuery =
-        SimpleSQLiteQuery("$TRACK_COLUMNS WHERE t.loved = 1 ORDER BY ${sort.orderBy}")
+        SimpleSQLiteQuery("$TRACK_COLUMNS AND t.loved = 1 ORDER BY ${sort.orderBy}")
 
     /**
      * Tracks BY this artist, plus tracks on albums CREDITED to them.
@@ -46,13 +50,13 @@ object LibraryQueries {
      */
     fun tracksForArtist(artistId: Long, sort: TrackSort): SupportSQLiteQuery =
         SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE $BY_ARTIST_OR_GROUPED ORDER BY ${sort.orderBy}",
+            "$TRACK_COLUMNS AND $BY_ARTIST_OR_GROUPED ORDER BY ${sort.orderBy}",
             arrayOf(artistId, artistId, artistId, artistId),
         )
 
     fun tracksForAlbum(albumId: Long): SupportSQLiteQuery =
         SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE t.albumId = ? ORDER BY t.discNo, t.trackNo, t.title",
+            "$TRACK_COLUMNS AND t.albumId = ? ORDER BY t.discNo, t.trackNo, t.title",
             arrayOf(albumId),
         )
 
@@ -61,7 +65,7 @@ object LibraryQueries {
         SimpleSQLiteQuery("$TRACK_COLUMNS ORDER BY ${sort.orderBy} LIMIT $limit")
 
     fun lovedTracksLimited(sort: TrackSort, limit: Int): SupportSQLiteQuery =
-        SimpleSQLiteQuery("$TRACK_COLUMNS WHERE t.loved = 1 ORDER BY ${sort.orderBy} LIMIT $limit")
+        SimpleSQLiteQuery("$TRACK_COLUMNS AND t.loved = 1 ORDER BY ${sort.orderBy} LIMIT $limit")
 
     /**
      * Top-level artists only. A grouped alias is deliberately absent -- its
@@ -128,7 +132,7 @@ object LibraryQueries {
 
     fun recentTracks(limit: Int): SupportSQLiteQuery =
         SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE t.lastPlayedAt IS NOT NULL " +
+            "$TRACK_COLUMNS AND t.lastPlayedAt IS NOT NULL " +
                 "ORDER BY t.lastPlayedAt DESC LIMIT $limit"
         )
 
@@ -137,12 +141,12 @@ object LibraryQueries {
 
     fun lovedTracksPage(sort: TrackSort, limit: Int, offset: Int): SupportSQLiteQuery =
         SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE t.loved = 1 ORDER BY ${sort.orderBy} LIMIT $limit OFFSET $offset"
+            "$TRACK_COLUMNS AND t.loved = 1 ORDER BY ${sort.orderBy} LIMIT $limit OFFSET $offset"
         )
 
     fun tracksForArtistLimited(artistId: Long, sort: TrackSort, limit: Int): SupportSQLiteQuery =
         SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE $BY_ARTIST_OR_GROUPED " +
+            "$TRACK_COLUMNS AND $BY_ARTIST_OR_GROUPED " +
                 "ORDER BY ${sort.orderBy} LIMIT $limit",
             arrayOf(artistId, artistId, artistId, artistId),
         )
@@ -155,7 +159,7 @@ object LibraryQueries {
     fun tracksForIds(ids: List<Long>): SupportSQLiteQuery {
         val placeholders = List(ids.size) { "?" }.joinToString(",")
         return SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE t.id IN ($placeholders)",
+            "$TRACK_COLUMNS AND t.id IN ($placeholders)",
             ids.toTypedArray(),
         )
     }
@@ -175,7 +179,10 @@ object LibraryQueries {
     fun search(term: String, sort: TrackSort, limit: Int): SupportSQLiteQuery {
         val like = "%${term.trim()}%"
         return SimpleSQLiteQuery(
-            "$TRACK_COLUMNS WHERE t.title LIKE ? OR ar.name LIKE ? OR al.title LIKE ? " +
+            // Bracketed, because AND binds tighter than OR: without these the
+            // hidden filter would apply only to the title clause and a removed
+            // track would come straight back via its artist or album.
+            "$TRACK_COLUMNS AND (t.title LIKE ? OR ar.name LIKE ? OR al.title LIKE ?) " +
                 "ORDER BY ${sort.orderBy} LIMIT $limit",
             arrayOf(like, like, like),
         )
@@ -183,7 +190,7 @@ object LibraryQueries {
 
     /** Single row lookups, for resolving one browse node. */
     fun tracksForTrack(trackId: Long): SupportSQLiteQuery =
-        SimpleSQLiteQuery("$TRACK_COLUMNS WHERE t.id = ?", arrayOf(trackId))
+        SimpleSQLiteQuery("$TRACK_COLUMNS AND t.id = ?", arrayOf(trackId))
 
     fun albumsForId(albumId: Long): SupportSQLiteQuery =
         SimpleSQLiteQuery("$ALBUM_COLUMNS WHERE al.id = ?", arrayOf(albumId))

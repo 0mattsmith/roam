@@ -335,6 +335,30 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { settings.setArtistAlbumViewMode(mode) }
     }
 
+    // ---- removing from the library ------------------------------------------
+    //
+    // The row is kept and flagged, never deleted. Deleting it would mean the
+    // next sync rediscovers the file as new and puts it straight back -- and it
+    // would take the loved flag and play count with it.
+
+    fun removeTrack(track: TrackListItem) = viewModelScope.launch {
+        tracks.setHidden(track.id, hidden = true)
+        recount()
+        _photoMessage.value = "Removed ${track.title}"
+    }
+
+    fun removeAlbum(albumId: Long, title: String) = viewModelScope.launch {
+        tracks.setHiddenForAlbum(albumId, hidden = true)
+        recount()
+        _photoMessage.value = "Removed $title"
+    }
+
+    /** Counts live on the parent rows, so hiding a track has to update them. */
+    private suspend fun recount() {
+        albums.recomputeRollups()
+        artists.recomputeRollups()
+    }
+
     fun toggleAlbumCollapsed(albumId: Long) = _state.update {
         it.copy(
             toggledAlbums =

@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.roam.data.catalog.sync.SyncWorker
+import app.roam.core.database.AlbumDao
+import app.roam.core.database.ArtistDao
 import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
 import app.roam.data.source.drive.DriveAuth
@@ -22,7 +24,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -58,6 +62,8 @@ class SettingsViewModel @Inject constructor(
     private val updateInstaller: UpdateInstaller,
     private val settings: SettingsRepository,
     private val trackDao: TrackDao,
+    private val albumDao: AlbumDao,
+    private val artistDao: ArtistDao,
 ) : AndroidViewModel(app) {
 
 
@@ -80,6 +86,25 @@ class SettingsViewModel @Inject constructor(
 
     init {
         restore()
+    }
+
+    /**
+     * Tracks removed from the library.
+     *
+     * Listed here because this is the only place they exist -- every library
+     * query filters them out by design, so without a way back they would be
+     * gone for good, which is the one thing "remove, do not delete" must not
+     * mean.
+     */
+    val hiddenTracks = trackDao.hiddenTracks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun restoreTrack(id: Long) = viewModelScope.launch {
+        trackDao.setHidden(id, hidden = false)
+        // Counts are stored on the parent rows, so putting a track back has to
+        // put it back into the totals too.
+        albumDao.recomputeRollups()
+        artistDao.recomputeRollups()
     }
 
     /**

@@ -121,6 +121,14 @@ data class TrackEntity(
      * tag columns -- the file's own tags are exactly what the user overrode.
      */
     val userEdited: Boolean = false,
+    /**
+     * Removed from the library WITHOUT touching the file.
+     *
+     * The row stays, so a re-sync finds the track already known and leaves it
+     * alone rather than rediscovering it as new. User state, like [loved] --
+     * sync must never clear it, or every hidden track returns on the next scan.
+     */
+    val hidden: Boolean = false,
     val loved: Boolean = false,
     val lovedAt: Long? = null,
     val playCount: Int = 0,

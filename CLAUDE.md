@@ -78,8 +78,18 @@ other — route between them through `:app`.
    `ArtworkProvider.uri(...)`.
 
 3. **Sync never writes user state.** `loved`, `lovedAt`, `playCount`,
-   `skipCount`, `lastPlayedAt` belong to the user. Sync owns file-derived
-   columns only. Getting this wrong wipes someone's loved list on a re-scan.
+   `skipCount`, `lastPlayedAt`, `hidden` belong to the user. Sync owns
+   file-derived columns only. Getting this wrong wipes someone's loved list on
+   a re-scan.
+
+3c. **"Remove from library" hides, it never deletes.** The row stays with
+   `hidden = 1`, so the next sync finds the track already known and leaves it
+   alone. Deleting the row would have the crawl rediscover the file as new and
+   put it straight back, taking the loved flag and play count with it. The
+   filter lives in `TRACK_COLUMNS` itself, not at each call site, so a new
+   query cannot forget it -- which is why every caller appends `AND`, never
+   `WHERE`. Settings lists what is hidden; without that they would be gone for
+   good, which is the one thing this must not mean.
 
 3a. **Sync inserts, it does not upsert.** Room's `@Upsert` writes *every*
    column of the entity you hand it, so a freshly built row's defaults land on
@@ -274,6 +284,9 @@ argued about mid-flight:
 | A replaced album cover reverts after a re-tag | `TagWorker` must only ever call `setArtworkIfMissing`; the unconditional `setArtwork` is for user picks alone |
 | The edit form shows the previous track after tapping next | `remember { mutableStateOf(initial.x) }` with no key. remember survives recomposition, so a new `initial` is ignored — key every form field on the id of what is being edited |
 | An edited track reverts to the filename after a sync | `userEdited` not honoured — sync's `refreshFromPath` and `TagWorker.pendingTags` both filter on it |
+| A removed track comes back after a sync | Its row was deleted instead of flagged, so the crawl found the file as new |
+| A removed track still shows in one list | That query used `WHERE` after `TRACK_COLUMNS` instead of `AND`, dropping the hidden filter — or it needs brackets, since `AND` binds tighter than `OR` |
+| An album says 12 tracks and lists 10 | `recomputeRollups` counted hidden rows |
 | A whole compilation vanishes after an edit | `artists.pruneOrphans` deleted the album artist. Nothing carries "Various Artists" as a *track* artist, so the prune must also spare artists referenced by `albums.artistId` — the `aar` join is inner |
 | An artist page is empty despite having albums | `tracksForArtist` filtered on `t.artistId` alone. It must also match `al.artistId`, or an album-artist-only credit shows nothing |
 | A grouped alias still shows as its own entry | The Artists list must filter `groupArtistId IS NULL`; grouping only hides the row, the tracks are found through the parent's query |

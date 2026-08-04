@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -146,6 +147,38 @@ fun SettingsRoute(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            // Only when there is something in it. An empty "Removed" section
+            // is a permanent reminder of a feature nobody used.
+            val hidden by vm.hiddenTracks.collectAsStateWithLifecycle()
+            if (hidden.isNotEmpty()) {
+                Spacer(Modifier.height(24.dp))
+                SectionHeader("Removed from library")
+                Text(
+                    "Still on Drive, just hidden. ${hidden.size} " +
+                        if (hidden.size == 1) "track." else "tracks.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                hidden.forEach { track ->
+                    ListItem(
+                        headlineContent = {
+                            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        },
+                        supportingContent = {
+                            Text(
+                                "${track.artistName} · ${track.albumTitle}",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        trailingContent = {
+                            TextButton(onClick = { vm.restoreTrack(track.id) }) { Text("Restore") }
+                        },
+                    )
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
             SectionHeader("Updates")

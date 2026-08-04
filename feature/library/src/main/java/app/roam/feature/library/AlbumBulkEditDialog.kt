@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,6 +60,7 @@ fun AlbumHeaderSheet(
     onOpenAlbum: () -> Unit,
     onGoToArtist: () -> Unit,
     onBulkEdit: () -> Unit,
+    onRemoveAlbum: () -> Unit,
     onArtworkPicked: (Uri) -> Unit,
 ) {
     val picker = rememberLauncherForActivityResult(
@@ -122,6 +124,15 @@ fun AlbumHeaderSheet(
                 headlineContent = { Text("Edit details for all tracks") },
                 supportingContent = { Text("Pick which fields to change") },
                 leadingContent = { Icon(Icons.Filled.Edit, contentDescription = null) },
+            )
+
+            ListItem(
+                modifier = Modifier.clickable(onClick = onRemoveAlbum),
+                headlineContent = { Text("Remove album from library") },
+                supportingContent = { Text("Hides every track. The files stay on Drive") },
+                leadingContent = {
+                    Icon(Icons.Filled.VisibilityOff, contentDescription = null)
+                },
             )
 
             Spacer(Modifier.height(12.dp))
