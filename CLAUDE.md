@@ -261,6 +261,8 @@ argued about mid-flight:
 | A menu opens miles from the button that owns it | `DropdownMenu` anchors to its PARENT layout node, not to the button beside it. Wrap the button and the menu in a small Box and align THAT — aligning only the button leaves the menu at the big parent's origin |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
 | Every search AND the update fail together | `YoutubeDL.init()` threw. Almost always `useLegacyPackaging = true` missing from `:app` — the library unzips a Python runtime out of its .so files, and modern AGP leaves native libs unextracted so there is nothing to unzip |
+| "class X is not a concrete class" from a search | R8 shrank a class that is only ever built reflectively. commons-compress needs `-keep`, not just `-dontwarn`; `-dontobfuscate` alone does not help because this is shrinking, not renaming |
+| A release-only failure with a two-letter class name | Obfuscation. Release builds set `-dontobfuscate` for exactly this reason — debug builds do not minify, so this class of bug never appears in testing |
 | Searching produces an error while typing | Two yt-dlp processes at once. `execute` blocks rather than suspends and cancelling the coroutine does not kill it, so calls are serialised behind `runLock` |
 | A YouTube Music search returns nothing | The results are shelves, not videos — walk `entries` recursively, and treat any id that is not 11 characters as a browse id rather than a track |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |

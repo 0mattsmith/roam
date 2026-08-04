@@ -51,4 +51,15 @@
     @com.fasterxml.jackson.annotation.* *;
 }
 -dontwarn com.fasterxml.jackson.**
+
+# commons-compress, which yt-dlp uses to unpack its Python runtime.
+#
+# -dontwarn is NOT enough: this needs -keep. ExtraFieldUtils registers each
+# ZipExtraField implementation reflectively and checks it is instantiable, so
+# once R8 shrinks away an unreferenced no-arg constructor the check fails with
+# "class org.apache.commons.compress.archivers.zip.AsiExtraField is not a
+# concrete class" -- nothing calls those constructors from Kotlin, so R8 is
+# right that they are unused and wrong that they are removable.
+-keep class org.apache.commons.compress.** { *; }
+-keep interface org.apache.commons.compress.** { *; }
 -dontwarn org.apache.commons.compress.**
