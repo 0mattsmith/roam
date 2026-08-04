@@ -205,8 +205,9 @@ fun DownloaderRoute(
         AlbumSheet(
             album = it,
             onDismiss = vm::closeAlbum,
-            onDownloadAll = vm::downloadAlbum,
+            onDownloadMissing = vm::downloadMissing,
             onDownloadTrack = vm::downloadTrack,
+            onSelectRelease = vm::selectRelease,
         )
     }
 

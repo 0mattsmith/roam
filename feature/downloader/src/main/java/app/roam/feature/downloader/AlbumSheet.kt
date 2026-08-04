@@ -1,13 +1,19 @@
 package app.roam.feature.downloader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,9 +40,12 @@ import coil.compose.AsyncImage
 fun AlbumSheet(
     album: AlbumUiState,
     onDismiss: () -> Unit,
-    onDownloadAll: () -> Unit,
+    onDownloadMissing: () -> Unit,
     onDownloadTrack: (ReleaseTrack) -> Unit,
+    onSelectRelease: (String) -> Unit,
 ) {
+    var pickingRelease by remember(album.selectedMbid) { mutableStateOf(false) }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.navigationBarsPadding()) {
             Row(
@@ -86,9 +95,58 @@ fun AlbumSheet(
                     )
                     if (album.tracks.isNotEmpty()) {
                         Text(
-                            "${album.tracks.size} tracks",
+                            // "9 of 12 in your library" is the sentence someone
+                            // opened this screen to read.
+                            "${album.heldCount} of ${album.tracks.size} in your library",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            // Which pressing this is, and a way to say it is the wrong one.
+            // Track counts differ between an original and a deluxe edition, so
+            // getting this wrong makes every row below it wrong too.
+            if (album.candidates.size > 1) {
+                val selected = album.candidates.firstOrNull { it.mbid == album.selectedMbid }
+                ListItem(
+                    modifier = Modifier.clickable { pickingRelease = !pickingRelease },
+                    headlineContent = {
+                        Text(
+                            selected?.let { listOfNotNull(it.format, "${it.trackCount} tracks").joinToString(" · ") }
+                                ?: "Choose a release",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    },
+                    supportingContent = { Text("${album.candidates.size} releases found") },
+                    trailingContent = {
+                        TextButton(onClick = { pickingRelease = !pickingRelease }) {
+                            Text(if (pickingRelease) "Hide" else "Change")
+                        }
+                    },
+                )
+
+                if (pickingRelease) {
+                    album.candidates.forEach { candidate ->
+                        ListItem(
+                            modifier = Modifier.clickable { onSelectRelease(candidate.mbid) },
+                            headlineContent = {
+                                Text(
+                                    candidate.title,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                            supportingContent = {
+                                Text(candidate.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            leadingContent = {
+                                RadioButton(
+                                    selected = candidate.mbid == album.selectedMbid,
+                                    onClick = { onSelectRelease(candidate.mbid) },
+                                )
+                            },
                         )
                     }
                 }
@@ -97,13 +155,15 @@ fun AlbumSheet(
             Spacer(Modifier.height(12.dp))
 
             if (album.tracks.isNotEmpty()) {
+                val missing = album.missing.size
                 Button(
-                    onClick = onDownloadAll,
+                    onClick = onDownloadMissing,
+                    enabled = missing > 0,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                 ) {
                     Icon(Icons.Filled.Download, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Download all ${album.tracks.size}")
+                    Text(if (missing > 0) "Download $missing missing" else "Nothing missing")
                 }
             }
 
@@ -124,13 +184,17 @@ fun AlbumSheet(
             }
 
             LazyColumn(Modifier.heightIn(max = 380.dp)) {
-                items(album.tracks.size, key = { "${album.tracks[it].discNo}/${album.tracks[it].position}" }) { index ->
-                    val track = album.tracks[index]
-                    val previous = album.tracks.getOrNull(index - 1)
+                items(
+                    album.tracks.size,
+                    key = { "${album.tracks[it].track.discNo}/${album.tracks[it].track.position}" },
+                ) { index ->
+                    val row = album.tracks[index]
+                    val track = row.track
+                    val previous = album.tracks.getOrNull(index - 1)?.track
 
                     // Only on a genuine multi-disc set, and only at the
                     // boundary -- same rule as the library's own list.
-                    val multiDisc = album.tracks.any { it.discNo > 1 }
+                    val multiDisc = album.tracks.any { it.track.discNo > 1 }
                     if (multiDisc && previous?.discNo != track.discNo) {
                         Text(
                             "Disc ${track.discNo}",
@@ -144,11 +208,23 @@ fun AlbumSheet(
 
                     ListItem(
                         headlineContent = {
-                            Text(track.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                track.title,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                // Dimmed, not struck through: you own it, which
+                                // is a good thing, not a cancelled one.
+                                color = if (row.inLibrary) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                            )
                         },
                         supportingContent = {
                             Text(
                                 listOfNotNull(
+                                    if (row.inLibrary) "In your library" else null,
                                     track.artist.takeIf { it != album.artist && it.isNotBlank() },
                                     track.durationMs?.let {
                                         val s = it / 1000
@@ -167,8 +243,19 @@ fun AlbumSheet(
                             )
                         },
                         trailingContent = {
-                            IconButton(onClick = { onDownloadTrack(track) }) {
-                                Icon(Icons.Filled.Download, contentDescription = "Download track")
+                            // A tick where the button would be, so the rows
+                            // stay aligned and the difference is the icon
+                            // rather than a gap.
+                            if (row.inLibrary) {
+                                Icon(
+                                    Icons.Filled.CheckCircle,
+                                    contentDescription = "Already in your library",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                IconButton(onClick = { onDownloadTrack(track) }) {
+                                    Icon(Icons.Filled.Download, contentDescription = "Download track")
+                                }
                             }
                         },
                     )

@@ -302,6 +302,8 @@ argued about mid-flight:
 | A renamed artist makes tracks disappear | Artist and album ids are content-derived (invariant 7), so renaming moves a track to a *different* row. `TrackEditor` must `insertIgnore` the new parent before pointing at it, or the inner joins drop the track |
 | Loved flags or artwork vanish after replacing a file | Something reintroduced `@Upsert` in the sync path — see invariant 3a |
 | MusicBrainz starts 503-ing | Exceeded 1 req/sec, or missing a real User-Agent. `MusicBrainz.get` serialises every call behind one mutex so the limit holds across callers |
+| The album page shows the wrong tracklist | The first MusicBrainz result was taken and not offered for correction. An original, a remaster and a deluxe edition share a name and differ in track count |
+| Tracks you own show as missing | `markHeld` matches on `Ids.normalise(title)`, not on ids — a content-derived album id only matches when the user's tags already agree with MusicBrainz, which is the thing they came here to fix |
 | A download reports success but saves nothing | The output was found by parsing an id out of the URL. An album-page download is a `ytsearch1:` query with no id in it — take whatever landed in an empty per-job directory instead |
 | Two downloads pick up each other's file | Shared staging directory. It is keyed on the WorkManager job id for exactly this reason |
 | Update never installs | Version compared as a string, or the signing key changed |

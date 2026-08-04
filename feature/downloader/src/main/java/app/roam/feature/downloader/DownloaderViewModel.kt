@@ -9,7 +9,9 @@ import app.roam.core.model.TrackSort
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.roam.data.catalog.LibraryQueries
+import app.roam.core.model.Ids
 import app.roam.data.catalog.metadata.MusicBrainz
+import app.roam.data.catalog.metadata.ReleaseMatch
 import app.roam.data.catalog.metadata.ReleaseTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -24,16 +26,34 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** One track of the release, and whether you already have it. */
+data class AlbumTrackRow(
+    val track: ReleaseTrack,
+    val inLibrary: Boolean,
+)
+
 /** The album screen: what it is, and every track it should contain. */
 data class AlbumUiState(
     val title: String,
     val artist: String,
     val year: Int? = null,
     val coverUrl: String? = null,
-    val tracks: List<ReleaseTrack> = emptyList(),
+    val tracks: List<AlbumTrackRow> = emptyList(),
+    /**
+     * Every release MusicBrainz offered, not just the one being shown.
+     *
+     * The original, the remaster, the deluxe edition and three regional
+     * pressings all exist under the same name with different tracklists, and
+     * only the person looking at them knows which one they own.
+     */
+    val candidates: List<ReleaseMatch> = emptyList(),
+    val selectedMbid: String? = null,
     val loading: Boolean = false,
     val message: String? = null,
-)
+) {
+    val missing: List<ReleaseTrack> get() = tracks.filterNot { it.inLibrary }.map { it.track }
+    val heldCount: Int get() = tracks.count { it.inLibrary }
+}
 
 /** One row of the download queue. */
 data class DownloadStatus(
@@ -265,14 +285,9 @@ class DownloaderViewModel @Inject constructor(
         _album.value = AlbumUiState(title = albumName, artist = result.artist, loading = true)
 
         val query = listOf(albumName, result.artist).filter { it.isNotBlank() }.joinToString(" ")
-        val match = musicBrainz.searchReleases(query, limit = 5)
-            .getOrDefault(emptyList())
-            // Prefer the release whose length matches what YouTube listed the
-            // album as; failing that, the first, which MusicBrainz has already
-            // ranked by relevance.
-            .firstOrNull()
+        val candidates = musicBrainz.searchReleases(query, limit = 8).getOrDefault(emptyList())
 
-        if (match == null) {
+        if (candidates.isEmpty()) {
             _album.value = AlbumUiState(
                 title = albumName,
                 artist = result.artist,
@@ -282,16 +297,59 @@ class DownloaderViewModel @Inject constructor(
             return@launch
         }
 
-        val detail = musicBrainz.release(match.mbid).getOrNull()
+        // MusicBrainz has already ranked these, so the first is the opening
+        // guess -- but all of them are kept so it can be corrected.
+        loadRelease(candidates.first().mbid, candidates)
+    }
+
+    /** Switches to a different pressing without re-running the search. */
+    fun selectRelease(mbid: String) = viewModelScope.launch {
+        loadRelease(mbid, _album.value?.candidates.orEmpty())
+    }
+
+    private suspend fun loadRelease(mbid: String, candidates: List<ReleaseMatch>) {
+        val match = candidates.firstOrNull { it.mbid == mbid }
+        _album.value = _album.value?.copy(loading = true, selectedMbid = mbid)
+
+        val detail = musicBrainz.release(mbid).getOrNull()
+        val title = detail?.title ?: match?.title.orEmpty()
+        val artist = detail?.artist ?: match?.artist.orEmpty()
+
         _album.value = AlbumUiState(
-            title = detail?.title ?: match.title,
-            artist = detail?.artist ?: match.artist,
-            year = detail?.year ?: match.year,
-            coverUrl = match.coverUrl,
-            tracks = detail?.tracks.orEmpty(),
+            title = title,
+            artist = artist,
+            year = detail?.year ?: match?.year,
+            coverUrl = match?.coverUrl,
+            tracks = markHeld(detail?.tracks.orEmpty(), title, artist),
+            candidates = candidates,
+            selectedMbid = mbid,
             loading = false,
             message = if (detail == null) "Could not load the tracklist" else null,
         )
+    }
+
+    /**
+     * Works out which of these tracks are already in the library.
+     *
+     * Matched on normalised title rather than on ids. The content-derived album
+     * id would only match if the user's tags agree with MusicBrainz exactly,
+     * and the whole reason someone opens this screen is that they might not.
+     */
+    private suspend fun markHeld(
+        release: List<ReleaseTrack>,
+        albumTitle: String,
+        albumArtist: String,
+    ): List<AlbumTrackRow> {
+        if (release.isEmpty()) return emptyList()
+
+        val held = runCatching {
+            tracks.listItemsRaw(LibraryQueries.search(albumTitle, TrackSort.ALBUM, LIMIT))
+        }.getOrDefault(emptyList())
+            .filter { Ids.normalise(it.albumTitle) == Ids.normalise(albumTitle) }
+            .map { Ids.normalise(it.title) }
+            .toSet()
+
+        return release.map { AlbumTrackRow(it, inLibrary = Ids.normalise(it.title) in held) }
     }
 
     fun closeAlbum() {
@@ -316,10 +374,23 @@ class DownloaderViewModel @Inject constructor(
         _state.update { it.copy(message = "Queued ${track.title}") }
     }
 
-    fun downloadAlbum() {
+    /**
+     * Queues only what is missing.
+     *
+     * Downloading tracks you already have would waste the connection and then
+     * land a second copy beside the first under a slightly different name --
+     * the filenames come from MusicBrainz, the originals from whatever ripped
+     * them.
+     */
+    fun downloadMissing() {
         val album = _album.value ?: return
-        album.tracks.forEach { downloadTrack(it) }
-        _state.update { it.copy(message = "Queued ${album.tracks.size} tracks") }
+        val missing = album.missing
+        if (missing.isEmpty()) {
+            _state.update { it.copy(message = "You already have all of these") }
+            return
+        }
+        missing.forEach { downloadTrack(it) }
+        _state.update { it.copy(message = "Queued ${missing.size} tracks") }
     }
 
     /** yt-dlp goes stale and quietly stops returning results when it does. */
