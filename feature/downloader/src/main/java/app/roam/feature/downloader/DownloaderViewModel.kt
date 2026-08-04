@@ -74,7 +74,11 @@ class DownloaderViewModel @Inject constructor(
                 s.copy(
                     searchingYoutube = false,
                     youtube = results.getOrDefault(emptyList()),
-                    message = results.exceptionOrNull()?.let { "YouTube search failed" } ?: s.message,
+                    // The real message, not a polite summary of it. yt-dlp
+                    // says exactly what went wrong -- a missing binary reads
+                    // very differently from a blocked request -- and throwing
+                    // that away leaves nothing to act on.
+                    message = results.exceptionOrNull()?.readable() ?: s.message,
                 )
             }
         }
@@ -105,11 +109,26 @@ class DownloaderViewModel @Inject constructor(
         _state.update { it.copy(message = "Updating yt-dlp…") }
         val result = youtube.update()
         _state.update {
-            it.copy(message = if (result.isSuccess) "yt-dlp updated" else "Could not update yt-dlp")
+            it.copy(
+                message = result.exceptionOrNull()?.readable() ?: "yt-dlp updated",
+            )
         }
     }
 
     fun clearMessage() = _state.update { it.copy(message = null) }
+
+    /**
+     * yt-dlp's own errors are several lines of Python traceback. The last
+     * non-blank line is the part that says what happened; the rest is where.
+     */
+    private fun Throwable.readable(): String {
+        val detail = (message ?: cause?.message).orEmpty()
+            .lines()
+            .lastOrNull { it.isNotBlank() }
+            ?.trim()
+            .orEmpty()
+        return if (detail.isBlank()) this::class.java.simpleName else detail.take(300)
+    }
 
     private companion object {
         const val LOCAL_DEBOUNCE_MS = 150L

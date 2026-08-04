@@ -36,6 +36,27 @@ android {
         System.getenv("ROAM_VERSION_NAME")?.let { versionName = it }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // yt-dlp ships a whole Python environment per ABI. Without this the
+        // APK carries all four and roughly triples in size.
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
+    }
+
+    /**
+     * REQUIRED by yt-dlp, not an optimisation.
+     *
+     * youtubedl-android ships its Python runtime as .so files that it unzips
+     * at runtime. Modern AGP defaults to leaving native libraries uncompressed
+     * and un-extracted inside the APK, so there is nothing on disk for it to
+     * unpack and YoutubeDL.init() throws -- which surfaces as every search and
+     * every update failing, with the downloader otherwise looking fine.
+     */
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     signingConfigs {

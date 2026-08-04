@@ -38,6 +38,17 @@ class YoutubeSource @Inject constructor(private val app: Application) {
     private var started = false
 
     /**
+     * yt-dlp is ONE native process with one working directory, and its execute
+     * call blocks a thread rather than suspending. Two at once is not slower,
+     * it is undefined -- and typing "d12" fires three searches in under a
+     * second, so this is the common case rather than an edge one.
+     *
+     * Cancelling the coroutine does not stop the process either, which is the
+     * other half of why searches are serialised here instead of being raced.
+     */
+    private val runLock = Mutex()
+
+    /**
      * Unpacks the bundled binaries on first use.
      *
      * Deliberately not done at app start: it costs a second or two and writes
@@ -78,28 +89,69 @@ class YoutubeSource @Inject constructor(private val app: Application) {
     suspend fun search(query: String, limit: Int = 20): Result<List<YoutubeResult>> = runCatching {
         ensureStarted()
         withContext(Dispatchers.IO) {
-            val request = YoutubeDLRequest("https://music.youtube.com/search?q=${query.urlEncoded()}")
-                .addOption("--flat-playlist")
-                .addOption("--dump-single-json")
-                .addOption("--playlist-end", limit.toString())
-                .addOption("--no-warnings")
+            runLock.withLock {
+                val music = runCatching {
+                    query("https://music.youtube.com/search?q=${query.urlEncoded()}", limit)
+                }.getOrNull()
 
-            val json = JSONObject(YoutubeDL.getInstance().execute(request).out)
-            val entries = json.optJSONArray("entries") ?: return@withContext emptyList()
+                // A music search page is built from shelves -- Songs, Videos,
+                // Albums, Artists -- so a short or ambiguous query can come
+                // back as sections containing nothing flat. ytsearch always
+                // returns plain videos, so it is the fallback rather than the
+                // first choice.
+                if (!music.isNullOrEmpty()) music
+                else query("ytsearch$limit:$query", limit)
+            }
+        }
+    }
 
-            (0 until entries.length()).mapNotNull { i ->
-                val entry = entries.optJSONObject(i) ?: return@mapNotNull null
-                val id = entry.optString("id").ifBlank { return@mapNotNull null }
-                YoutubeResult(
-                    videoId = id,
-                    title = entry.optString("title").ifBlank { "Unknown" },
-                    // Music results name the artist in `artist`; plain YouTube
-                    // only ever has a channel.
-                    uploader = entry.optString("artist")
-                        .ifBlank { entry.optString("uploader") }
-                        .ifBlank { entry.optString("channel") },
-                    durationSec = entry.optDouble("duration").takeIf { !it.isNaN() }?.toInt(),
-                    thumbnailUrl = entry.optString("thumbnail").ifBlank { null },
+    private fun query(target: String, limit: Int): List<YoutubeResult> {
+        val request = YoutubeDLRequest(target)
+            .addOption("--flat-playlist")
+            .addOption("--dump-single-json")
+            .addOption("--playlist-end", limit.toString())
+            .addOption("--no-warnings")
+            .addOption("--ignore-errors")
+
+        val out = YoutubeDL.getInstance().execute(request).out
+        // yt-dlp still prints the odd notice ahead of the payload, and one
+        // stray line makes the whole document unparseable.
+        val json = JSONObject(out.substring(out.indexOf('{').coerceAtLeast(0)))
+
+        return flatten(json, depth = 0).take(limit)
+    }
+
+    /**
+     * Walks entries recursively.
+     *
+     * music.youtube.com returns shelves whose own entries are the tracks, so a
+     * single pass over the top level finds playlists rather than anything
+     * playable. Depth is capped because the structure is YouTube's to change.
+     */
+    private fun flatten(node: JSONObject, depth: Int): List<YoutubeResult> {
+        if (depth > MAX_SHELF_DEPTH) return emptyList()
+        val entries = node.optJSONArray("entries") ?: return emptyList()
+
+        return (0 until entries.length()).flatMap { i ->
+            val entry = entries.optJSONObject(i) ?: return@flatMap emptyList()
+            if (entry.optJSONArray("entries") != null) {
+                flatten(entry, depth + 1)
+            } else {
+                val id = entry.optString("id")
+                // A browse id from a shelf header is not something that plays.
+                if (id.length != VIDEO_ID_LENGTH) return@flatMap emptyList()
+                listOf(
+                    YoutubeResult(
+                        videoId = id,
+                        title = entry.optString("title").ifBlank { "Unknown" },
+                        // Music results name the artist in `artist`; plain
+                        // YouTube only ever has a channel.
+                        uploader = entry.optString("artist")
+                            .ifBlank { entry.optString("uploader") }
+                            .ifBlank { entry.optString("channel") },
+                        durationSec = entry.optDouble("duration").takeIf { !it.isNaN() }?.toInt(),
+                        thumbnailUrl = entry.optString("thumbnail").ifBlank { null },
+                    )
                 )
             }
         }
@@ -143,4 +195,12 @@ class YoutubeSource @Inject constructor(private val app: Application) {
 
     private fun String.urlEncoded(): String =
         java.net.URLEncoder.encode(this, "UTF-8")
+
+    private companion object {
+        /** Songs, Videos, Albums, Artists -- shelves are one level, with room. */
+        const val MAX_SHELF_DEPTH = 3
+
+        /** Anything else in an entry list is a browse id, not something playable. */
+        const val VIDEO_ID_LENGTH = 11
+    }
 }

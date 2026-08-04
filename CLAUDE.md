@@ -260,6 +260,9 @@ argued about mid-flight:
 | Grid and list disagree about scroll position | Expected — they hold separate state objects, because a row index does not translate to a cell index |
 | A menu opens miles from the button that owns it | `DropdownMenu` anchors to its PARENT layout node, not to the button beside it. Wrap the button and the menu in a small Box and align THAT — aligning only the button leaves the menu at the big parent's origin |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
+| Every search AND the update fail together | `YoutubeDL.init()` threw. Almost always `useLegacyPackaging = true` missing from `:app` — the library unzips a Python runtime out of its .so files, and modern AGP leaves native libs unextracted so there is nothing to unzip |
+| Searching produces an error while typing | Two yt-dlp processes at once. `execute` blocks rather than suspends and cancelling the coroutine does not kill it, so calls are serialised behind `runLock` |
+| A YouTube Music search returns nothing | The results are shelves, not videos — walk `entries` recursively, and treat any id that is not 11 characters as a browse id rather than a track |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
 | `Cannot access class X. Check your module classpath` | A public signature in a dependency module exposes a type from one of ITS `implementation` deps — declare an explicit return type, or promote to `api` |
 | Artist photo saves to Photos do nothing | MediaStore `RELATIVE_PATH`/`IS_PENDING` are API 29+; the version check must *wrap* the call, not early-throw, or lint's NewApi fails `lintVitalRelease` |
