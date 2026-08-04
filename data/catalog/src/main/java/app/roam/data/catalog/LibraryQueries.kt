@@ -22,7 +22,8 @@ object LibraryQueries {
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                al.discTotal AS albumDiscTotal,
                t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
-               t.artworkId AS artworkId, t.loved AS loved
+               t.artworkId AS artworkId, t.loved AS loved,
+               t.startMs AS startMs, t.endMs AS endMs
         FROM tracks t
         JOIN artists ar  ON ar.id  = t.artistId
         JOIN albums  al  ON al.id  = t.albumId

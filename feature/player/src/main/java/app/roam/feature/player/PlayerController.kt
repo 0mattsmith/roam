@@ -2,6 +2,7 @@ package app.roam.feature.player
 
 import android.content.ComponentName
 import android.content.Context
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -148,6 +149,19 @@ fun TrackListItem.toMediaItem(ctx: Context): MediaItem = MediaItem.Builder()
     // the current track for the love button, and the two surfaces share a queue.
     .setMediaId(MediaId.Track(id).raw)
     .setUri("drive://file/$remoteId")
+    // Trim points, applied at playback rather than to the file. The silence,
+    // the count-in or the DJ talking over the intro is skipped; the bytes on
+    // Drive are untouched, so clearing the values restores the whole track.
+    // Built here, so the phone and the car cannot disagree about where a song
+    // starts.
+    .setClippingConfiguration(
+        MediaItem.ClippingConfiguration.Builder()
+            .setStartPositionMs(startMs ?: 0L)
+            // C.TIME_END_OF_SOURCE, not the duration: a stored duration that is
+            // slightly wrong would clip the last second off every track.
+            .setEndPositionMs(endMs ?: C.TIME_END_OF_SOURCE)
+            .build()
+    )
     .setMediaMetadata(
         MediaMetadata.Builder()
             .setTitle(title)

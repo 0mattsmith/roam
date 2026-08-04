@@ -53,6 +53,14 @@ data class TrackEdits(
     val sortArtist: String?,
     /** Folds this artist into another one entirely. Blank means standalone. */
     val groupArtist: String?,
+    /**
+     * Where playback starts and ends, in milliseconds. Null means the whole
+     * track. Carried on the same form because that is where someone editing a
+     * song expects to find them -- but written separately, since they are a
+     * playback preference rather than metadata.
+     */
+    val startMs: Long? = null,
+    val endMs: Long? = null,
 )
 
 /**
@@ -92,11 +100,19 @@ class TrackEditor @Inject constructor(
             sortArtist = artists.byId(track.artistId)?.sortAs,
             groupArtist = artists.byId(track.artistId)?.groupArtistId
                 ?.let { artists.byId(it)?.name },
+            startMs = track.startMs,
+            endMs = track.endMs,
         )
     }
 
     suspend fun apply(trackId: Long, edits: TrackEdits): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            // Written first and on its own: setClip does NOT set userEdited,
+            // because skipping an intro says nothing about whether the title is
+            // right, and marking the track edited would stop the tag pass ever
+            // refreshing it again.
+            tracks.setClip(trackId, edits.startMs, edits.endMs)
+
             val artistName = edits.artist.trim().ifBlank { UNKNOWN_ARTIST }
             val albumName = edits.album.trim().ifBlank { UNKNOWN_ALBUM }
             // A blank album artist means "same as the track artist", which is

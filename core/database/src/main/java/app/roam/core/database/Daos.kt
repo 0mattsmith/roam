@@ -128,7 +128,8 @@ interface TrackDao {
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                al.discTotal AS albumDiscTotal,
                t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
-               t.artworkId AS artworkId, t.loved AS loved
+               t.artworkId AS artworkId, t.loved AS loved,
+               t.startMs AS startMs, t.endMs AS endMs
         FROM tracks t
         JOIN artists ar  ON ar.id  = t.artistId
         JOIN albums  al  ON al.id  = t.albumId
@@ -161,7 +162,8 @@ interface TrackDao {
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                al.discTotal AS albumDiscTotal,
                t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
-               t.artworkId AS artworkId, t.loved AS loved
+               t.artworkId AS artworkId, t.loved AS loved,
+               t.startMs AS startMs, t.endMs AS endMs
         FROM tracks t
         JOIN artists ar  ON ar.id  = t.artistId
         JOIN albums  al  ON al.id  = t.albumId
@@ -220,6 +222,14 @@ interface TrackDao {
     // A hidden track keeps its row on purpose. Deleting it would mean the next
     // sync rediscovers the file as new and puts it straight back, and it would
     // take the loved flag and play count with it.
+
+    /**
+     * Trim points. Separate from the tag editor on purpose: these are a
+     * playback preference, not metadata, so setting one must NOT mark the
+     * track userEdited and stop the tag pass ever refreshing it.
+     */
+    @Query("UPDATE tracks SET startMs = :startMs, endMs = :endMs WHERE id = :id")
+    suspend fun setClip(id: Long, startMs: Long?, endMs: Long?)
 
     @Query("UPDATE tracks SET hidden = :hidden WHERE id = :id")
     suspend fun setHidden(id: Long, hidden: Boolean)
@@ -350,6 +360,9 @@ data class TrackListItem(
     val durationMs: Long,
     val artworkId: String?,
     val loved: Boolean,
+    /** Playback window. Null means play the whole file. */
+    val startMs: Long?,
+    val endMs: Long?,
 )
 
 data class ShuffleRow(val id: Long, val loved: Boolean, val skipCount: Int, val lastPlayedAt: Long?)
@@ -443,7 +456,12 @@ interface AlbumDao {
     @Query("""
         UPDATE albums SET
           trackCount = (SELECT COUNT(*) FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0),
-          durationMs = (SELECT COALESCE(SUM(durationMs), 0) FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0),
+          -- Clipped length, not file length: an album whose tracks each skip a
+          -- minute of silence is genuinely shorter than the sum of its files.
+          durationMs = (
+            SELECT COALESCE(SUM(COALESCE(endMs, durationMs) - COALESCE(startMs, 0)), 0)
+            FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0
+          ),
           -- Counted from the tracks rather than trusted from a tag: plenty of
           -- rips carry no discTotal at all, and this is what decides whether
           -- the album view shows disc headings.

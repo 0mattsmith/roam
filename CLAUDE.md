@@ -284,6 +284,9 @@ argued about mid-flight:
 | A replaced album cover reverts after a re-tag | `TagWorker` must only ever call `setArtworkIfMissing`; the unconditional `setArtwork` is for user picks alone |
 | The edit form shows the previous track after tapping next | `remember { mutableStateOf(initial.x) }` with no key. remember survives recomposition, so a new `initial` is ignored — key every form field on the id of what is being edited |
 | An edited track reverts to the filename after a sync | `userEdited` not honoured — sync's `refreshFromPath` and `TagWorker.pendingTags` both filter on it |
+| Scrubbing reaches into a trimmed intro | `ClippingConfiguration` was not applied, or was rebuilt somewhere that bypasses `toMediaItem`. The clipped timeline is what makes the region unreachable — the player has no representation of it at all |
+| Trim points stop the tag pass refreshing a track | `setClip` must not set `userEdited`. Skipping an intro says nothing about whether the title is right |
+| The last second is clipped off every track | `endMs` fell back to the stored duration. Unset means `C.TIME_END_OF_SOURCE`, not a number |
 | A removed track comes back after a sync | Its row was deleted instead of flagged, so the crawl found the file as new |
 | A removed track still shows in one list | That query used `WHERE` after `TRACK_COLUMNS` instead of `AND`, dropping the hidden filter — or it needs brackets, since `AND` binds tighter than `OR` |
 | An album says 12 tracks and lists 10 | `recomputeRollups` counted hidden rows |

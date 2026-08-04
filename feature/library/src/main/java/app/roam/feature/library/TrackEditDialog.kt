@@ -192,6 +192,8 @@ fun TrackEditDialog(
     var compilation by remember(trackId) { mutableStateOf(initial.compilation) }
     var sortArtist by remember(trackId) { mutableStateOf(initial.sortArtist.orEmpty()) }
     var groupArtist by remember(trackId) { mutableStateOf(initial.groupArtist.orEmpty()) }
+    var startAt by remember(trackId) { mutableStateOf(formatClip(initial.startMs)) }
+    var endAt by remember(trackId) { mutableStateOf(formatClip(initial.endMs)) }
 
     fun collect() = TrackEdits(
         title = title,
@@ -205,6 +207,8 @@ fun TrackEditDialog(
         compilation = compilation,
         sortArtist = sortArtist.ifBlank { null },
         groupArtist = groupArtist.ifBlank { null },
+        startMs = parseClip(startAt),
+        endMs = parseClip(endAt),
     )
 
     AlertDialog(
@@ -253,6 +257,19 @@ fun TrackEditDialog(
                     NumberField(year, "Year", Modifier.weight(1.2f)) { year = it }
                 }
                 Field(genre, "Genre") { genre = it }
+
+                // Playback window, not a trim. Nothing is cut from the file --
+                // the player is simply told where the song really begins and
+                // ends, so clearing these puts everything back.
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ClipField(startAt, "Start at", Modifier.weight(1f)) { startAt = it }
+                    ClipField(endAt, "End at", Modifier.weight(1f)) { endAt = it }
+                }
+                Text(
+                    "m:ss, for skipping silence or an intro. Leave blank for the whole track.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
                 AlbumArtBlock(
                     targetKey = trackId,
@@ -310,6 +327,56 @@ private fun Field(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/**
+ * A time in m:ss.
+ *
+ * Digits and one colon only, so "1:23" can be typed but "1:2:3" cannot. Not
+ * validated on submit -- a field that accepts nonsense and complains afterwards
+ * is worse than one that never accepts it.
+ */
+@Composable
+private fun ClipField(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    onChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { entered ->
+            val cleaned = entered.filter { it.isDigit() || it == ':' }
+            if (cleaned.count { it == ':' } <= 1) onChange(cleaned.take(7))
+        },
+        label = { Text(label) },
+        placeholder = { Text("0:00") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier,
+    )
+}
+
+/** "1:23" and a bare "83" both mean 83 seconds. Blank means unset. */
+internal fun parseClip(raw: String): Long? {
+    val text = raw.trim().ifBlank { return null }
+    val parts = text.split(':')
+    val seconds = when (parts.size) {
+        1 -> parts[0].toLongOrNull()
+        2 -> {
+            val m = parts[0].toLongOrNull() ?: return null
+            val s = parts[1].toLongOrNull() ?: return null
+            m * 60 + s
+        }
+        else -> null
+    } ?: return null
+    return (seconds * 1000).takeIf { it >= 0 }
+}
+
+internal fun formatClip(ms: Long?): String {
+    if (ms == null) return ""
+    val total = ms / 1000
+    return "%d:%02d".format(total / 60, total % 60)
 }
 
 @Composable

@@ -129,6 +129,17 @@ data class TrackEntity(
      * sync must never clear it, or every hidden track returns on the next scan.
      */
     val hidden: Boolean = false,
+    /**
+     * Where playback should actually begin and end, in milliseconds.
+     *
+     * For the silence, the count-in or the DJ talking over the intro. Nothing
+     * is trimmed -- the file is untouched and these are handed to the player as
+     * a clipping window, so clearing them restores the whole track instantly.
+     *
+     * User state: neither sync nor the tag pass may write these.
+     */
+    val startMs: Long? = null,
+    val endMs: Long? = null,
     val loved: Boolean = false,
     val lovedAt: Long? = null,
     val playCount: Int = 0,
