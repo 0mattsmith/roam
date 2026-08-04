@@ -51,6 +51,14 @@ data class RoamSettings(
     /** Version found by the last launch-time check, if any. */
     val updateAvailable: String? = null,
 
+    /**
+     * Personal access token for Discogs. Null until someone pastes one in.
+     *
+     * Discogs refuses /database/search outright without it, so the downloader
+     * treats that source as unavailable rather than failing every lookup.
+     */
+    val discogsToken: String? = null,
+
     // How the library is laid out and ordered. These live here rather than in
     // the ViewModel's UI state because they are preferences, not screen state:
     // picking "grid" once should still mean grid tomorrow morning in the car.
@@ -99,6 +107,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val SYNC_ON_LAUNCH = booleanPreferencesKey("sync_on_launch")
         val SAVE_ARTIST_PHOTOS = booleanPreferencesKey("save_artist_photos_to_drive")
         val UPDATE_AVAILABLE = stringPreferencesKey("update_available")
+        val DISCOGS_TOKEN = stringPreferencesKey("discogs_token")
 
         val ARTIST_VIEW = stringPreferencesKey("artist_view_mode")
         val ARTIST_ALBUM_VIEW = stringPreferencesKey("artist_album_view_mode")
@@ -129,6 +138,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             syncOnLaunch = p[K.SYNC_ON_LAUNCH] ?: true,
             saveArtistPhotosToDrive = p[K.SAVE_ARTIST_PHOTOS] ?: true,
             updateAvailable = p[K.UPDATE_AVAILABLE],
+            discogsToken = p[K.DISCOGS_TOKEN],
             artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID_3),
             artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID_3),
             trackSort = p[K.TRACK_SORT].toEnum(TrackSort.ARTIST),
@@ -192,6 +202,13 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
 
     suspend fun setSaveArtistPhotosToDrive(v: Boolean) {
         ctx.dataStore.edit { it[K.SAVE_ARTIST_PHOTOS] = v }
+    }
+
+    suspend fun setDiscogsToken(token: String?) {
+        ctx.dataStore.edit {
+            val trimmed = token?.trim().orEmpty()
+            if (trimmed.isBlank()) it.remove(K.DISCOGS_TOKEN) else it[K.DISCOGS_TOKEN] = trimmed
+        }
     }
 
     suspend fun setArtistViewMode(v: ViewMode) {

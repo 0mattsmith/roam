@@ -301,6 +301,10 @@ argued about mid-flight:
 | A renamed album loses its cover | The new `AlbumEntity` must inherit `artworkId` from the old row — `insertIgnore` creates a fresh row, and a fresh row's default is null |
 | A renamed artist makes tracks disappear | Artist and album ids are content-derived (invariant 7), so renaming moves a track to a *different* row. `TrackEditor` must `insertIgnore` the new parent before pointing at it, or the inner joins drop the track |
 | Loved flags or artwork vanish after replacing a file | Something reintroduced `@Upsert` in the sync path — see invariant 3a |
+| Discogs returns nothing at all | No token. `/database/search` refuses unauthenticated requests outright, so `available()` reports false and the source is hidden rather than failing every lookup with a 401 |
+| Discogs starts 429-ing | Over 60 req/min. Both headers are required too — it rejects a missing or default User-Agent as well as a missing token |
+| A Discogs artist reads "Nirvana (2)" | Their disambiguation suffix for duplicate names. Stripped on the way in; it is not part of the name |
+| Vinyl tracks all number 1 | Positions are "A1"/"B2", not integers. `parsePosition` maps the side letter to a disc and the digits to a track |
 | MusicBrainz starts 503-ing | Exceeded 1 req/sec, or missing a real User-Agent. `MusicBrainz.get` serialises every call behind one mutex so the limit holds across callers |
 | The album page shows the wrong tracklist | The first MusicBrainz result was taken and not offered for correction. An original, a remaster and a deluxe edition share a name and differ in track count |
 | Tracks you own show as missing | `markHeld` matches on `Ids.normalise(title)`, not on ids — a content-derived album id only matches when the user's tags already agree with MusicBrainz, which is the thing they came here to fix |

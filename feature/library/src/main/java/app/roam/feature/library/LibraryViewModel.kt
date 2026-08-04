@@ -335,6 +335,20 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { settings.setArtistAlbumViewMode(mode) }
     }
 
+    /**
+     * The album in a random order.
+     *
+     * A plain shuffle, not the weighted engine. Weighting exists to stop a
+     * library-wide shuffle circling the same forty songs; inside one album
+     * there is nothing to correct for, and skewing a twelve-track record
+     * towards the loved ones would just be wrong.
+     */
+    fun shuffleAlbum(albumId: Long) = viewModelScope.launch {
+        val queue = tracks.listItemsRaw(LibraryQueries.tracksForAlbum(albumId))
+        if (queue.isEmpty()) return@launch
+        player.play(queue.shuffled(), 0)
+    }
+
     // ---- removing from the library ------------------------------------------
     //
     // The row is kept and flagged, never deleted. Deleting it would mean the

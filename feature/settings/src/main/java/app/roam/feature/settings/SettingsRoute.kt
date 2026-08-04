@@ -148,6 +148,29 @@ fun SettingsRoute(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            Spacer(Modifier.height(24.dp))
+            SectionHeader("Discogs")
+
+            val discogsToken by vm.discogsToken.collectAsStateWithLifecycle()
+            OutlinedTextField(
+                value = discogsToken,
+                onValueChange = vm::setDiscogsToken,
+                label = { Text("Personal access token") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                // Said plainly because there is no way around it: Discogs
+                // refuses searches outright without a token, and the album
+                // screen simply will not offer it until one is here.
+                "Discogs will not answer searches without one. Generate a token at " +
+                    "discogs.com/settings/developers and paste it here. Leave blank to use " +
+                    "MusicBrainz only.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+
             // Only when there is something in it. An empty "Removed" section
             // is a permanent reminder of a feature nobody used.
             val hidden by vm.hiddenTracks.collectAsStateWithLifecycle()

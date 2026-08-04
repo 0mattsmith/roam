@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -98,6 +99,15 @@ class SettingsViewModel @Inject constructor(
      */
     val hiddenTracks = trackDao.hiddenTracks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Kept as typed. Trimming and emptiness are handled on the way to disk. */
+    val discogsToken = settings.settings
+        .map { it.discogsToken.orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    fun setDiscogsToken(token: String) = viewModelScope.launch {
+        settings.setDiscogsToken(token)
+    }
 
     fun restoreTrack(id: Long) = viewModelScope.launch {
         trackDao.setHidden(id, hidden = false)

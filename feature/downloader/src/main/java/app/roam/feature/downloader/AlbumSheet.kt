@@ -21,6 +21,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.roam.data.catalog.metadata.MetadataSource
 import app.roam.data.catalog.metadata.ReleaseTrack
 import coil.compose.AsyncImage
 
@@ -43,8 +44,9 @@ fun AlbumSheet(
     onDownloadMissing: () -> Unit,
     onDownloadTrack: (ReleaseTrack) -> Unit,
     onSelectRelease: (String) -> Unit,
+    onSelectSource: (MetadataSource) -> Unit,
 ) {
-    var pickingRelease by remember(album.selectedMbid) { mutableStateOf(false) }
+    var pickingRelease by remember(album.selectedId) { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.navigationBarsPadding()) {
@@ -105,11 +107,29 @@ fun AlbumSheet(
                 }
             }
 
+            // Which catalogue answered. Only offered when there is a choice --
+            // Discogs is absent until a token has been pasted into Settings.
+            if (album.sources.size > 1) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    album.sources.forEach { option ->
+                        FilterChip(
+                            selected = option == album.source,
+                            onClick = { onSelectSource(option) },
+                            label = { Text(option.label) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
             // Which pressing this is, and a way to say it is the wrong one.
             // Track counts differ between an original and a deluxe edition, so
             // getting this wrong makes every row below it wrong too.
             if (album.candidates.size > 1) {
-                val selected = album.candidates.firstOrNull { it.mbid == album.selectedMbid }
+                val selected = album.candidates.firstOrNull { it.id == album.selectedId }
                 ListItem(
                     modifier = Modifier.clickable { pickingRelease = !pickingRelease },
                     headlineContent = {
@@ -130,7 +150,7 @@ fun AlbumSheet(
                 if (pickingRelease) {
                     album.candidates.forEach { candidate ->
                         ListItem(
-                            modifier = Modifier.clickable { onSelectRelease(candidate.mbid) },
+                            modifier = Modifier.clickable { onSelectRelease(candidate.id) },
                             headlineContent = {
                                 Text(
                                     candidate.title,
@@ -143,8 +163,8 @@ fun AlbumSheet(
                             },
                             leadingContent = {
                                 RadioButton(
-                                    selected = candidate.mbid == album.selectedMbid,
-                                    onClick = { onSelectRelease(candidate.mbid) },
+                                    selected = candidate.id == album.selectedId,
+                                    onClick = { onSelectRelease(candidate.id) },
                                 )
                             },
                         )

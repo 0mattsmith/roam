@@ -12,43 +12,6 @@ import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** One candidate release from a search, before its tracklist is fetched. */
-data class ReleaseMatch(
-    val mbid: String,
-    val title: String,
-    val artist: String,
-    val year: Int?,
-    val trackCount: Int,
-    /** "CD", "Digital Media", "Vinyl" -- useful for telling reissues apart. */
-    val format: String?,
-) {
-    val coverUrl: String get() = "https://coverartarchive.org/release/$mbid/front-500"
-
-    val subtitle: String
-        get() = listOfNotNull(artist, year?.toString(), format, "$trackCount tracks")
-            .joinToString(" · ")
-}
-
-/** A release with its tracks, in order. */
-data class ReleaseDetail(
-    val mbid: String,
-    val title: String,
-    val artist: String,
-    val year: Int?,
-    val tracks: List<ReleaseTrack>,
-) {
-    val coverUrl: String get() = "https://coverartarchive.org/release/$mbid/front-500"
-}
-
-data class ReleaseTrack(
-    val position: Int,
-    val discNo: Int,
-    val title: String,
-    /** Per-track credit, which differs from the album artist on a compilation. */
-    val artist: String,
-    val durationMs: Long?,
-)
-
 /**
  * MusicBrainz, and Cover Art Archive alongside it.
  *
@@ -62,7 +25,13 @@ data class ReleaseTrack(
  * Break either and the answer becomes 503 for everyone on your address.
  */
 @Singleton
-class MusicBrainz @Inject constructor() {
+class MusicBrainz @Inject constructor() : ReleaseSource {
+
+    override val source = MetadataSource.MUSICBRAINZ
+
+    /** No account, no token, nothing to set up. Always usable. */
+    override suspend fun available(): Boolean = true
+
 
     private val client = OkHttpClient()
 
@@ -98,7 +67,7 @@ class MusicBrainz @Inject constructor() {
      * remaster, a deluxe edition and three regional pressings with different
      * tracklists, and only the person looking at them knows which they own.
      */
-    suspend fun searchReleases(query: String, limit: Int = 10): Result<List<ReleaseMatch>> =
+    override suspend fun searchReleases(query: String, limit: Int): Result<List<ReleaseMatch>> =
         runCatching {
             if (query.isBlank()) return@runCatching emptyList()
             val url = "$BASE/release/?query=${query.encoded()}&fmt=json&limit=$limit"
@@ -107,8 +76,10 @@ class MusicBrainz @Inject constructor() {
 
             (0 until releases.length()).mapNotNull { i ->
                 val release = releases.optJSONObject(i) ?: return@mapNotNull null
+                val id = release.optString("id").ifBlank { return@mapNotNull null }
                 ReleaseMatch(
-                    mbid = release.optString("id").ifBlank { return@mapNotNull null },
+                    id = id,
+                    source = MetadataSource.MUSICBRAINZ,
                     title = release.optString("title").ifBlank { "Unknown" },
                     artist = release.creditedArtist(),
                     year = release.optString("date").take(4).toIntOrNull(),
@@ -117,12 +88,13 @@ class MusicBrainz @Inject constructor() {
                         ?.optJSONObject(0)
                         ?.optString("format")
                         ?.ifBlank { null },
+                    coverUrl = coverUrl(id),
                 )
             }
         }
 
     /** The tracklist, flattened across discs but keeping the disc number. */
-    suspend fun release(mbid: String): Result<ReleaseDetail?> = runCatching {
+    override suspend fun release(mbid: String): Result<ReleaseDetail?> = runCatching {
         val url = "$BASE/release/$mbid?inc=recordings+artist-credits&fmt=json"
         val json = get(url) ?: return@runCatching null
 
@@ -152,7 +124,9 @@ class MusicBrainz @Inject constructor() {
         }
 
         ReleaseDetail(
-            mbid = mbid,
+            id = mbid,
+            source = MetadataSource.MUSICBRAINZ,
+            coverUrl = coverUrl(mbid),
             title = json.optString("title").ifBlank { "Unknown" },
             artist = json.creditedArtist(),
             year = json.optString("date").take(4).toIntOrNull(),
@@ -175,6 +149,13 @@ class MusicBrainz @Inject constructor() {
             }
         }.trim()
     }
+
+    /**
+     * Cover Art Archive is keyed on the SAME release id, so no second lookup
+     * is needed -- the URL either resolves or 404s and the image simply does
+     * not load.
+     */
+    private fun coverUrl(mbid: String) = "https://coverartarchive.org/release/$mbid/front-500"
 
     private fun String.encoded(): String = URLEncoder.encode(this, "UTF-8")
 

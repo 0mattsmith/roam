@@ -208,6 +208,7 @@ fun DownloaderRoute(
             onDownloadMissing = vm::downloadMissing,
             onDownloadTrack = vm::downloadTrack,
             onSelectRelease = vm::selectRelease,
+            onSelectSource = vm::selectSource,
         )
     }
 

@@ -2,7 +2,6 @@ package app.roam.feature.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +18,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +57,7 @@ fun AlbumHeader(
     loved: Boolean?,
     collapsed: Boolean,
     onPlay: () -> Unit,
+    onShuffle: () -> Unit,
     onToggleCollapsed: () -> Unit,
     onLongPress: () -> Unit,
     onToggleLoved: () -> Unit,
@@ -106,7 +107,10 @@ fun AlbumHeader(
 
                 Spacer(Modifier.width(16.dp))
 
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                // The actions sit UNDER the title rather than beside it. Four
+                // of them in a row alongside a 96dp cover left about ten
+                // characters for the album name on a phone.
+                Column(Modifier.weight(1f)) {
                     Text(
                         albumTitleWithYear(track.albumTitle, track.albumYear),
                         style = MaterialTheme.typography.titleMedium,
@@ -123,29 +127,44 @@ fun AlbumHeader(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onToggleLoved, enabled = loved != null) {
+                            Icon(
+                                if (loved == true) Icons.Filled.Favorite
+                                else Icons.Filled.FavoriteBorder,
+                                contentDescription = if (loved == true) {
+                                    "Remove album from Loved"
+                                } else {
+                                    "Add album to Loved"
+                                },
+                                tint = if (loved == true) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        IconButton(onClick = onShuffle) {
+                            Icon(
+                                Icons.Filled.Shuffle,
+                                contentDescription = "Shuffle album",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        FilledTonalIconButton(onClick = onPlay) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = "Play album")
+                        }
+                    }
                 }
 
-                // Not a button: the whole row already toggles, and a third tap
-                // target beside the heart and play would crowd a phone header.
+                // Not a button: the whole row already toggles, and it stays at
+                // the edge so the collapse state reads as a property of the
+                // header rather than one action among several.
                 Icon(
                     if (collapsed) Icons.Filled.ExpandMore else Icons.Filled.ExpandLess,
                     contentDescription = if (collapsed) "Show tracks" else "Hide tracks",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-
-                IconButton(onClick = onToggleLoved, enabled = loved != null) {
-                    Icon(
-                        if (loved == true) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        contentDescription =
-                            if (loved == true) "Remove album from Loved" else "Add album to Loved",
-                        tint = if (loved == true) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                FilledTonalIconButton(onClick = onPlay) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = "Play album")
-                }
             }
             HorizontalDivider()
         }

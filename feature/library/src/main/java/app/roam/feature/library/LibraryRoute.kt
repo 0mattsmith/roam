@@ -318,6 +318,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                             loved = albumLoved[track.albumId],
                             collapsed = collapsed,
                             onPlay = { vm.playFrom(track) },
+                            onShuffle = { vm.shuffleAlbum(track.albumId) },
                             onToggleCollapsed = { vm.toggleAlbumCollapsed(track.albumId) },
                             onLongPress = { headerSheetFor = track },
                             onToggleLoved = {

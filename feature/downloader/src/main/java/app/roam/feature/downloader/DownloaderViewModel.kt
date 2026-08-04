@@ -10,8 +10,11 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.roam.data.catalog.LibraryQueries
 import app.roam.core.model.Ids
+import app.roam.data.catalog.metadata.Discogs
+import app.roam.data.catalog.metadata.MetadataSource
 import app.roam.data.catalog.metadata.MusicBrainz
 import app.roam.data.catalog.metadata.ReleaseMatch
+import app.roam.data.catalog.metadata.ReleaseSource
 import app.roam.data.catalog.metadata.ReleaseTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -40,14 +43,17 @@ data class AlbumUiState(
     val coverUrl: String? = null,
     val tracks: List<AlbumTrackRow> = emptyList(),
     /**
-     * Every release MusicBrainz offered, not just the one being shown.
+     * Every release the source offered, not just the one being shown.
      *
      * The original, the remaster, the deluxe edition and three regional
      * pressings all exist under the same name with different tracklists, and
      * only the person looking at them knows which one they own.
      */
     val candidates: List<ReleaseMatch> = emptyList(),
-    val selectedMbid: String? = null,
+    val selectedId: String? = null,
+    /** Which catalogue answered. Discogs only appears once a token is set. */
+    val source: MetadataSource = MetadataSource.MUSICBRAINZ,
+    val sources: List<MetadataSource> = emptyList(),
     val loading: Boolean = false,
     val message: String? = null,
 ) {
@@ -97,6 +103,7 @@ class DownloaderViewModel @Inject constructor(
     private val tracks: TrackDao,
     private val youtube: YoutubeSource,
     private val musicBrainz: MusicBrainz,
+    private val discogs: Discogs,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SearchUiState())
@@ -285,33 +292,75 @@ class DownloaderViewModel @Inject constructor(
         _album.value = AlbumUiState(title = albumName, artist = result.artist, loading = true)
 
         val query = listOf(albumName, result.artist).filter { it.isNotBlank() }.joinToString(" ")
-        val candidates = musicBrainz.searchReleases(query, limit = 8).getOrDefault(emptyList())
+        // Discogs first when it can be used: it knows about pressings and
+        // one-off variants MusicBrainz has never heard of, which is the whole
+        // reason for having it. MusicBrainz needs no account, so it is always
+        // there as the fallback.
+        val usable = listOf(discogs, musicBrainz).filter { it.available() }
+        search(query, usable, albumName, result.artist)
+    }
 
-        if (candidates.isEmpty()) {
-            _album.value = AlbumUiState(
-                title = albumName,
-                artist = result.artist,
-                loading = false,
-                message = "No release found for this album",
-            )
-            return@launch
+    /** Re-runs the current album against a different catalogue. */
+    fun selectSource(source: MetadataSource) = viewModelScope.launch {
+        val album = _album.value ?: return@launch
+        val client = clientFor(source) ?: return@launch
+        _album.value = album.copy(loading = true)
+        search(
+            query = listOf(album.title, album.artist).filter { it.isNotBlank() }.joinToString(" "),
+            sources = listOf(client),
+            fallbackTitle = album.title,
+            fallbackArtist = album.artist,
+            offered = album.sources,
+        )
+    }
+
+    private suspend fun search(
+        query: String,
+        sources: List<ReleaseSource>,
+        fallbackTitle: String,
+        fallbackArtist: String,
+        offered: List<MetadataSource>? = null,
+    ) {
+        val available = offered ?: listOf(discogs, musicBrainz).filter { it.available() }.map { it.source }
+
+        for (client in sources) {
+            val candidates = client.searchReleases(query, limit = 8).getOrDefault(emptyList())
+            if (candidates.isEmpty()) continue
+            loadRelease(candidates.first().id, candidates, client, available)
+            return
         }
 
-        // MusicBrainz has already ranked these, so the first is the opening
-        // guess -- but all of them are kept so it can be corrected.
-        loadRelease(candidates.first().mbid, candidates)
+        _album.value = AlbumUiState(
+            title = fallbackTitle,
+            artist = fallbackArtist,
+            sources = available,
+            loading = false,
+            message = "No release found for this album",
+        )
+    }
+
+    private fun clientFor(source: MetadataSource): ReleaseSource? = when (source) {
+        MetadataSource.DISCOGS -> discogs
+        MetadataSource.MUSICBRAINZ -> musicBrainz
     }
 
     /** Switches to a different pressing without re-running the search. */
-    fun selectRelease(mbid: String) = viewModelScope.launch {
-        loadRelease(mbid, _album.value?.candidates.orEmpty())
+    fun selectRelease(id: String) = viewModelScope.launch {
+        val album = _album.value ?: return@launch
+        val client = clientFor(album.source) ?: return@launch
+        loadRelease(id, album.candidates, client, album.sources)
     }
 
-    private suspend fun loadRelease(mbid: String, candidates: List<ReleaseMatch>) {
-        val match = candidates.firstOrNull { it.mbid == mbid }
-        _album.value = _album.value?.copy(loading = true, selectedMbid = mbid)
+    private suspend fun loadRelease(
+        id: String,
+        candidates: List<ReleaseMatch>,
+        client: ReleaseSource,
+        available: List<MetadataSource>,
+    ) {
+        val match = candidates.firstOrNull { it.id == id }
+        _album.value = _album.value?.copy(loading = true, selectedId = id)
 
-        val detail = musicBrainz.release(mbid).getOrNull()
+        val detail = client.release(id).getOrNull()
         val title = detail?.title ?: match?.title.orEmpty()
         val artist = detail?.artist ?: match?.artist.orEmpty()
 
@@ -319,37 +368,17 @@ class DownloaderViewModel @Inject constructor(
             title = title,
             artist = artist,
             year = detail?.year ?: match?.year,
-            coverUrl = match?.coverUrl,
+            // The release lookup's own image wins: Discogs ships a proper cover
+            // there, and a search thumbnail is 150px.
+            coverUrl = detail?.coverUrl ?: match?.coverUrl,
             tracks = markHeld(detail?.tracks.orEmpty(), title, artist),
             candidates = candidates,
-            selectedMbid = mbid,
+            selectedId = id,
+            source = client.source,
+            sources = available,
             loading = false,
             message = if (detail == null) "Could not load the tracklist" else null,
         )
-    }
-
-    /**
-     * Works out which of these tracks are already in the library.
-     *
-     * Matched on normalised title rather than on ids. The content-derived album
-     * id would only match if the user's tags agree with MusicBrainz exactly,
-     * and the whole reason someone opens this screen is that they might not.
-     */
-    private suspend fun markHeld(
-        release: List<ReleaseTrack>,
-        albumTitle: String,
-        albumArtist: String,
-    ): List<AlbumTrackRow> {
-        if (release.isEmpty()) return emptyList()
-
-        val held = runCatching {
-            tracks.listItemsRaw(LibraryQueries.search(albumTitle, TrackSort.ALBUM, LIMIT))
-        }.getOrDefault(emptyList())
-            .filter { Ids.normalise(it.albumTitle) == Ids.normalise(albumTitle) }
-            .map { Ids.normalise(it.title) }
-            .toSet()
-
-        return release.map { AlbumTrackRow(it, inLibrary = Ids.normalise(it.title) in held) }
     }
 
     fun closeAlbum() {
