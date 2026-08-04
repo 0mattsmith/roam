@@ -265,21 +265,30 @@ class YoutubeSource @Inject constructor(private val app: Application) {
     ): Result<File> = runCatching {
         ensureStarted()
         withContext(Dispatchers.IO) {
+            // A directory of its own per download, emptied first.
+            //
+            // The output used to be found by pulling the video id out of the
+            // URL, which breaks the moment the URL is a SEARCH -- an album
+            // page asks for "ytsearch1:artist title" and there is no id in it
+            // to parse. Whatever lands in an empty directory is the answer,
+            // whichever form the request took.
+            into.deleteRecursively()
             into.mkdirs()
+
             val request = YoutubeDLRequest(url)
                 .addOption("-f", "bestaudio[ext=m4a]/bestaudio")
                 .addOption("--no-playlist")
                 .addOption("--no-warnings")
-                // Names the file by id, so the result can be found afterwards
-                // without parsing yt-dlp's chatter for a path.
                 .addOption("-o", "${into.absolutePath}/%(id)s.%(ext)s")
 
             YoutubeDL.getInstance().execute(request) { progress, _, _ ->
                 onProgress(progress.coerceIn(0f, 100f) / 100f)
             }
 
-            val id = url.substringAfter("watch?v=").substringBefore('&')
-            into.listFiles()?.firstOrNull { it.nameWithoutExtension == id }
+            into.listFiles()
+                // yt-dlp leaves .part files behind on a partial fetch.
+                ?.filterNot { it.extension == "part" }
+                ?.maxByOrNull { it.length() }
                 ?: error("yt-dlp reported success but wrote no file")
         }
     }.rethrowCancellation()

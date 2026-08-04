@@ -9,6 +9,8 @@ import app.roam.core.model.TrackSort
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.roam.data.catalog.LibraryQueries
+import app.roam.data.catalog.metadata.MusicBrainz
+import app.roam.data.catalog.metadata.ReleaseTrack
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -21,6 +23,17 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** The album screen: what it is, and every track it should contain. */
+data class AlbumUiState(
+    val title: String,
+    val artist: String,
+    val year: Int? = null,
+    val coverUrl: String? = null,
+    val tracks: List<ReleaseTrack> = emptyList(),
+    val loading: Boolean = false,
+    val message: String? = null,
+)
 
 /** One row of the download queue. */
 data class DownloadStatus(
@@ -63,6 +76,7 @@ class DownloaderViewModel @Inject constructor(
     private val app: Application,
     private val tracks: TrackDao,
     private val youtube: YoutubeSource,
+    private val musicBrainz: MusicBrainz,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SearchUiState())
@@ -233,16 +247,79 @@ class DownloaderViewModel @Inject constructor(
         _state.update { it.copy(message = "Queued ${result.title}") }
     }
 
+    // ---- the album page -----------------------------------------------------
+
+    private val _album = MutableStateFlow<AlbumUiState?>(null)
+    val album: StateFlow<AlbumUiState?> = _album.asStateFlow()
+
     /**
-     * Re-runs the search scoped to this track's album.
+     * Opens the album a track belongs to.
      *
-     * A YouTube Music album has no id we can address from a video extraction,
-     * so this asks for it by name and artist -- which is what someone typing it
-     * themselves would do, and it lands the whole tracklist in the same list.
+     * The tracklist comes from MusicBrainz rather than from YouTube. YouTube
+     * knows what it happens to be hosting; MusicBrainz knows what the album
+     * actually contains -- which is the only way a missing track can show up as
+     * missing rather than simply not existing.
      */
-    fun viewAlbum(result: YoutubeResult) {
-        val album = result.album ?: return
-        onQueryChanged(listOf(album, result.artist).filter { it.isNotBlank() }.joinToString(" "))
+    fun viewAlbum(result: YoutubeResult) = viewModelScope.launch {
+        val albumName = result.album ?: return@launch
+        _album.value = AlbumUiState(title = albumName, artist = result.artist, loading = true)
+
+        val query = listOf(albumName, result.artist).filter { it.isNotBlank() }.joinToString(" ")
+        val match = musicBrainz.searchReleases(query, limit = 5)
+            .getOrDefault(emptyList())
+            // Prefer the release whose length matches what YouTube listed the
+            // album as; failing that, the first, which MusicBrainz has already
+            // ranked by relevance.
+            .firstOrNull()
+
+        if (match == null) {
+            _album.value = AlbumUiState(
+                title = albumName,
+                artist = result.artist,
+                loading = false,
+                message = "No release found for this album",
+            )
+            return@launch
+        }
+
+        val detail = musicBrainz.release(match.mbid).getOrNull()
+        _album.value = AlbumUiState(
+            title = detail?.title ?: match.title,
+            artist = detail?.artist ?: match.artist,
+            year = detail?.year ?: match.year,
+            coverUrl = match.coverUrl,
+            tracks = detail?.tracks.orEmpty(),
+            loading = false,
+            message = if (detail == null) "Could not load the tracklist" else null,
+        )
+    }
+
+    fun closeAlbum() {
+        _album.value = null
+    }
+
+    /** Queues one track off the album page, searched for by name and artist. */
+    fun downloadTrack(track: ReleaseTrack) {
+        val album = _album.value ?: return
+        DownloadWorker.enqueue(
+            app,
+            DownloadRequest(
+                // Searched rather than addressed: MusicBrainz knows what the
+                // track IS, YouTube has to be asked where it is.
+                url = "ytsearch1:${track.artist} ${track.title}",
+                title = track.title,
+                artist = track.artist.ifBlank { album.artist },
+                album = album.title,
+                trackNo = track.position,
+            ),
+        )
+        _state.update { it.copy(message = "Queued ${track.title}") }
+    }
+
+    fun downloadAlbum() {
+        val album = _album.value ?: return
+        album.tracks.forEach { downloadTrack(it) }
+        _state.update { it.copy(message = "Queued ${album.tracks.size} tracks") }
     }
 
     /** yt-dlp goes stale and quietly stops returning results when it does. */

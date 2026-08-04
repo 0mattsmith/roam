@@ -46,7 +46,10 @@ class DownloadWorker @AssistedInject constructor(
         val root = settings.settings.first().driveFolderId ?: return Result.failure()
         val provider = providers[SourceType.DRIVE]?.get() ?: return Result.failure()
 
-        val staging = applicationContext.cacheDir.resolve("downloads")
+        // Per-job, because the queue can be appended to while one is running
+        // and two downloads sharing a directory would each pick up the other's
+        // file. `id` is WorkManager's, so it is unique and stable across a retry.
+        val staging = applicationContext.cacheDir.resolve("downloads/$id")
         val file = youtube.download(url, staging) { progress ->
             setProgressAsync(workDataOf(KEY_PROGRESS to progress))
         }.getOrElse {
@@ -77,7 +80,7 @@ class DownloadWorker @AssistedInject constructor(
         } catch (e: Exception) {
             Result.retry()
         } finally {
-            file.delete()
+            staging.deleteRecursively()
         }
     }
 

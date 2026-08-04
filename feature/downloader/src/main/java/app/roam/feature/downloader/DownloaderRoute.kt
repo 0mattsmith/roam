@@ -55,6 +55,7 @@ fun DownloaderRoute(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val downloads by vm.downloads.collectAsStateWithLifecycle()
+    val album by vm.album.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
@@ -198,6 +199,15 @@ fun DownloaderRoute(
                 }
             }
         }
+    }
+
+    album?.let {
+        AlbumSheet(
+            album = it,
+            onDismiss = vm::closeAlbum,
+            onDownloadAll = vm::downloadAlbum,
+            onDownloadTrack = vm::downloadTrack,
+        )
     }
 
     if (showDownloads) {
