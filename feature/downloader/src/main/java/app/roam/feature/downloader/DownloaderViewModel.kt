@@ -381,6 +381,30 @@ class DownloaderViewModel @Inject constructor(
         )
     }
 
+    /**
+     * Works out which of these tracks are already in the library.
+     *
+     * Matched on normalised title rather than on ids. The content-derived album
+     * id would only match if the user's tags agree with the catalogue exactly,
+     * and the whole reason someone opens this screen is that they might not.
+     */
+    private suspend fun markHeld(
+        release: List<ReleaseTrack>,
+        albumTitle: String,
+        albumArtist: String,
+    ): List<AlbumTrackRow> {
+        if (release.isEmpty()) return emptyList()
+
+        val held = runCatching {
+            tracks.listItemsRaw(LibraryQueries.search(albumTitle, TrackSort.ALBUM, LIMIT))
+        }.getOrDefault(emptyList())
+            .filter { Ids.normalise(it.albumTitle) == Ids.normalise(albumTitle) }
+            .map { Ids.normalise(it.title) }
+            .toSet()
+
+        return release.map { AlbumTrackRow(it, inLibrary = Ids.normalise(it.title) in held) }
+    }
+
     fun closeAlbum() {
         _album.value = null
     }
