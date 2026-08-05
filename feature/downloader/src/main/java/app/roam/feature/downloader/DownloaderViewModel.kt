@@ -61,6 +61,17 @@ data class AlbumUiState(
     val heldCount: Int get() = tracks.count { it.inLibrary }
 }
 
+/** An artist's discography, as a catalogue lists it. */
+data class ArtistUiState(
+    val name: String,
+    val detail: String? = null,
+    val imageUrl: String? = null,
+    val releases: List<ReleaseMatch> = emptyList(),
+    val source: MetadataSource = MetadataSource.MUSICBRAINZ,
+    val loading: Boolean = false,
+    val message: String? = null,
+)
+
 /** One row of the download queue. */
 data class DownloadStatus(
     val id: String,
@@ -135,6 +146,22 @@ class DownloaderViewModel @Inject constructor(
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * URLs already in the download queue, finished or not.
+     *
+     * Derived from WorkManager rather than remembered in the UI, so the tick
+     * is still there after scrolling the row out of view, after leaving the
+     * screen, and after the app has been killed and reopened -- which for a
+     * long album download is the normal case.
+     */
+    val queuedUrls: StateFlow<Set<String>> = downloads
+        .map { list -> list.mapNotNull { it.request?.url }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** The URL a track from the album page would be queued under. */
+    fun searchUrlFor(track: ReleaseTrack, albumArtist: String): String =
+        "ytsearch1:${track.artist.ifBlank { albumArtist }} ${track.title}"
 
     private var localJob: Job? = null
     private var remoteJob: Job? = null
@@ -409,15 +436,65 @@ class DownloaderViewModel @Inject constructor(
         _album.value = null
     }
 
+    // ---- the artist's discography -------------------------------------------
+
+    private val _artist = MutableStateFlow<ArtistUiState?>(null)
+    val artist: StateFlow<ArtistUiState?> = _artist.asStateFlow()
+
+    /**
+     * Everything a catalogue lists under this name.
+     *
+     * The artist is looked up by name and the first match taken, because a
+     * YouTube result carries a name and nothing else. That is occasionally the
+     * wrong Nirvana -- the fix is the artist search proper, where the
+     * disambiguation is on screen and the choice is yours.
+     */
+    fun viewArtist(name: String) = viewModelScope.launch {
+        if (name.isBlank()) return@launch
+        _artist.value = ArtistUiState(name = name, loading = true)
+
+        val client = listOf(discogs, musicBrainz).firstOrNull { it.available() } ?: return@launch
+        val match = client.searchArtists(name, limit = 5).getOrDefault(emptyList()).firstOrNull()
+
+        if (match == null) {
+            _artist.value = ArtistUiState(name = name, loading = false, message = "No artist found")
+            return@launch
+        }
+
+        val releases = client.releasesForArtist(match.id).getOrDefault(emptyList())
+        _artist.value = ArtistUiState(
+            name = match.name,
+            detail = match.detail,
+            imageUrl = match.imageUrl,
+            releases = releases,
+            source = client.source,
+            loading = false,
+            message = if (releases.isEmpty()) "Nothing listed for this artist" else null,
+        )
+    }
+
+    /** Opens one of the discography's releases as an album. */
+    fun openRelease(match: ReleaseMatch) = viewModelScope.launch {
+        val client = clientFor(match.source) ?: return@launch
+        _artist.value = null
+        _album.value = AlbumUiState(title = match.title, artist = match.artist, loading = true)
+        loadRelease(match.id, listOf(match), client, listOf(client.source))
+    }
+
+    fun closeArtist() {
+        _artist.value = null
+    }
+
     /** Queues one track off the album page, searched for by name and artist. */
     fun downloadTrack(track: ReleaseTrack) {
         val album = _album.value ?: return
         DownloadWorker.enqueue(
             app,
             DownloadRequest(
-                // Searched rather than addressed: MusicBrainz knows what the
-                // track IS, YouTube has to be asked where it is.
-                url = "ytsearch1:${track.artist} ${track.title}",
+                // Searched rather than addressed: the catalogue knows what the
+                // track IS, YouTube has to be asked where it is. Built through
+                // searchUrlFor so the queued-state check compares like for like.
+                url = searchUrlFor(track, album.artist),
                 title = track.title,
                 artist = track.artist.ifBlank { album.artist },
                 album = album.title,

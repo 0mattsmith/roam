@@ -1,6 +1,8 @@
 package app.roam.feature.downloader
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -13,6 +15,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -56,6 +59,8 @@ fun DownloaderRoute(
     val state by vm.state.collectAsStateWithLifecycle()
     val downloads by vm.downloads.collectAsStateWithLifecycle()
     val album by vm.album.collectAsStateWithLifecycle()
+    val artist by vm.artist.collectAsStateWithLifecycle()
+    val queued by vm.queuedUrls.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
@@ -178,8 +183,10 @@ fun DownloaderRoute(
                         val result = state.youtube[index]
                         YoutubeRow(
                             result = result,
+                            queued = result.url in queued,
                             onDownload = { vm.download(result) },
                             onViewAlbum = { vm.viewAlbum(result) },
+                            onViewArtist = { vm.viewArtist(result.artist) },
                         )
                     }
 
@@ -201,6 +208,14 @@ fun DownloaderRoute(
         }
     }
 
+    artist?.let {
+        ArtistSheet(
+            artist = it,
+            onDismiss = vm::closeArtist,
+            onOpenRelease = vm::openRelease,
+        )
+    }
+
     album?.let {
         AlbumSheet(
             album = it,
@@ -209,6 +224,8 @@ fun DownloaderRoute(
             onDownloadTrack = vm::downloadTrack,
             onSelectRelease = vm::selectRelease,
             onSelectSource = vm::selectSource,
+            queuedUrls = queued,
+            urlFor = vm::searchUrlFor,
         )
     }
 
@@ -400,15 +417,25 @@ private fun LibraryResults(tracks: List<TrackListItem>, onPlay: (TrackListItem) 
  * whether this is the recording you meant -- the same song appears a dozen
  * times across singles, reissues and compilations.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun YoutubeRow(
     result: YoutubeResult,
+    queued: Boolean,
     onDownload: () -> Unit,
     onViewAlbum: () -> Unit,
+    onViewArtist: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
     ListItem(
+        // Long-press for the same actions the overflow carries. The menu stays
+        // because a long press is not discoverable; the gesture is there
+        // because once you know it, reaching for a 48dp target is slower.
+        modifier = Modifier.combinedClickable(
+            onClick = { if (!queued) onDownload() },
+            onLongClick = { menuOpen = true },
+        ),
         headlineContent = { Text(result.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
             Column {
@@ -450,8 +477,19 @@ private fun YoutubeRow(
         },
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onDownload) {
-                    Icon(Icons.Filled.Download, contentDescription = "Download")
+                // The tick is derived from the download queue, not from having
+                // tapped the button, so it survives scrolling, leaving the
+                // screen, and the app being killed mid-album.
+                if (queued) {
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = "Queued",
+                        tint = DONE_GREEN,
+                    )
+                } else {
+                    IconButton(onClick = onDownload) {
+                        Icon(Icons.Filled.Download, contentDescription = "Download")
+                    }
                 }
                 Box {
                     IconButton(onClick = { menuOpen = true }) {
@@ -464,6 +502,21 @@ private fun YoutubeRow(
                             onClick = { menuOpen = false; onViewAlbum() },
                             leadingIcon = { Icon(Icons.Filled.Album, contentDescription = null) },
                         )
+                        DropdownMenuItem(
+                            text = { Text("View artist") },
+                            enabled = result.artist.isNotBlank(),
+                            onClick = { menuOpen = false; onViewArtist() },
+                            leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                        )
+                        if (!queued) {
+                            DropdownMenuItem(
+                                text = { Text("Download") },
+                                onClick = { menuOpen = false; onDownload() },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Download, contentDescription = null)
+                                },
+                            )
+                        }
                     }
                 }
             }

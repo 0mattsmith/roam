@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.roam.data.catalog.metadata.MetadataSource
 import app.roam.data.catalog.metadata.ReleaseTrack
+import androidx.compose.ui.graphics.Color
 import coil.compose.AsyncImage
 
 /**
@@ -45,6 +46,9 @@ fun AlbumSheet(
     onDownloadTrack: (ReleaseTrack) -> Unit,
     onSelectRelease: (String) -> Unit,
     onSelectSource: (MetadataSource) -> Unit,
+    /** Download URLs already queued, so a tapped row can show a tick. */
+    queuedUrls: Set<String>,
+    urlFor: (ReleaseTrack, String) -> String,
 ) {
     var pickingRelease by remember(album.selectedId) { mutableStateOf(false) }
 
@@ -175,7 +179,9 @@ fun AlbumSheet(
             Spacer(Modifier.height(12.dp))
 
             if (album.tracks.isNotEmpty()) {
-                val missing = album.missing.size
+                // Counts what is neither owned nor already queued, so pressing
+                // it twice does not offer to fetch the same tracks again.
+                val missing = album.missing.count { urlFor(it, album.artist) !in queuedUrls }
                 Button(
                     onClick = onDownloadMissing,
                     enabled = missing > 0,
@@ -183,7 +189,13 @@ fun AlbumSheet(
                 ) {
                     Icon(Icons.Filled.Download, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (missing > 0) "Download $missing missing" else "Nothing missing")
+                    Text(
+                        when {
+                            missing > 0 -> "Download $missing missing"
+                            album.missing.isNotEmpty() -> "All queued"
+                            else -> "Nothing missing"
+                        }
+                    )
                 }
             }
 
@@ -265,15 +277,23 @@ fun AlbumSheet(
                         trailingContent = {
                             // A tick where the button would be, so the rows
                             // stay aligned and the difference is the icon
-                            // rather than a gap.
-                            if (row.inLibrary) {
-                                Icon(
+                            // rather than a gap. Two different ticks: grey for
+                            // "you already own this", green for "queued just
+                            // now" -- they mean different things and the
+                            // second is the one you are waiting to see.
+                            val queued = urlFor(track, album.artist) in queuedUrls
+                            when {
+                                row.inLibrary -> Icon(
                                     Icons.Filled.CheckCircle,
                                     contentDescription = "Already in your library",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                            } else {
-                                IconButton(onClick = { onDownloadTrack(track) }) {
+                                queued -> Icon(
+                                    Icons.Filled.CheckCircle,
+                                    contentDescription = "Queued",
+                                    tint = QUEUED_GREEN,
+                                )
+                                else -> IconButton(onClick = { onDownloadTrack(track) }) {
                                     Icon(Icons.Filled.Download, contentDescription = "Download track")
                                 }
                             }
@@ -286,3 +306,6 @@ fun AlbumSheet(
         }
     }
 }
+
+/** Matches the download manager's green, so a tick means one thing. */
+private val QUEUED_GREEN = Color(0xFF2E7D32)
