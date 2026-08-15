@@ -2,7 +2,9 @@ package app.roam.feature.downloader
 
 import android.content.Context
 import androidx.hilt.work.HiltWorker
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.NetworkType
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -53,9 +55,12 @@ class DownloadWorker @AssistedInject constructor(
         val file = youtube.download(url, staging) { progress ->
             setProgressAsync(workDataOf(KEY_PROGRESS to progress))
         }.getOrElse {
-            // Retried rather than failed: the usual cause is a dead connection
-            // part way through, and WorkManager already knows how to wait.
-            return Result.retry()
+            // Retried rather than failed while there is reason to hope -- the
+            // usual cause is a dead connection part way through. But NOT
+            // forever: WorkManager's backoff doubles to five hours, so an
+            // uncapped retry looks exactly like a job that is quietly waiting
+            // for something, and there is no way to tell the difference.
+            return if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
         }
 
         return try {
@@ -78,7 +83,7 @@ class DownloadWorker @AssistedInject constructor(
             SyncWorker.enqueue(applicationContext, root)
             Result.success(workDataOf(KEY_SAVED_AS to name))
         } catch (e: Exception) {
-            Result.retry()
+            if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
         } finally {
             staging.deleteRecursively()
         }
@@ -127,7 +132,10 @@ class DownloadWorker @AssistedInject constructor(
             )
         }
 
-        fun enqueue(ctx: Context, request: DownloadRequest) {
+        /**
+         * @param wifiOnly wait for an unmetered network before starting.
+         */
+        fun enqueue(ctx: Context, request: DownloadRequest, wifiOnly: Boolean) {
             // A unit separator, because titles legitimately contain every
             // punctuation mark anyone would reach for as a delimiter.
             val encoded = listOf(
@@ -136,7 +144,15 @@ class DownloadWorker @AssistedInject constructor(
             ).joinToString(SEP)
 
             val work = OneTimeWorkRequestBuilder<DownloadWorker>()
+                .addTag(TAG_ALL)
                 .addTag("$TAG_REQUEST$encoded")
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(
+                            if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
+                        )
+                        .build()
+                )
                 .setInputData(
                     Data.Builder()
                         .putString(KEY_URL, request.url)
@@ -148,14 +164,31 @@ class DownloadWorker @AssistedInject constructor(
                 )
                 .build()
 
-            // APPEND, not KEEP: queueing a second track must not be mistaken
-            // for a duplicate of the first, and two large downloads at once on
-            // a phone connection is worse than one after the other.
+            // ONE UNIQUE JOB PER TRACK, not a single appended chain.
+            //
+            // A chain looked right -- downloads run one at a time on a phone
+            // connection -- but it made every track hostage to the one in
+            // front. A job that keeps retrying leaves everything behind it
+            // BLOCKED and apparently waiting for nothing, and APPEND_OR_REPLACE
+            // resolves a failed chain by DELETING the queue behind it, which is
+            // worse. Independent jobs cannot do either.
+            //
+            // KEEP also makes queueing the same track twice a no-op, since the
+            // name is derived from the request itself.
             WorkManager.getInstance(ctx)
-                .enqueueUniqueWork(NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, work)
+                .enqueueUniqueWork(nameFor(request), ExistingWorkPolicy.KEEP, work)
         }
 
+        private fun nameFor(request: DownloadRequest): String =
+            "$NAME:${request.url.hashCode()}:${request.title.hashCode()}"
+
         const val NAME = "roam_download"
+
+        /** Every download carries this, so the manager can list them all. */
+        const val TAG_ALL = "roam_download_all"
+
+        /** Two failures are a bad connection; six is something that will not work. */
+        const val MAX_ATTEMPTS = 6
     }
 }
 

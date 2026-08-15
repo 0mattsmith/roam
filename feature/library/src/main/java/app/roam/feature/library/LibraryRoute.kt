@@ -67,8 +67,17 @@ fun LibraryRoute(
     onOpenPlayer: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenDownloader: () -> Unit,
+    /** Set when arriving from the download manager. Consumed once. */
+    revealTrackId: Long? = null,
+    revealForEditing: Boolean = false,
     vm: LibraryViewModel = hiltViewModel(),
 ) {
+    // Keyed on the id so returning with a different track works, but not
+    // re-run on every recomposition -- this navigates and opens a dialog.
+    LaunchedEffect(revealTrackId) {
+        revealTrackId?.let { vm.revealTrack(it, revealForEditing) }
+    }
+
     val state by vm.state.collectAsStateWithLifecycle()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
     val photoMessage by vm.photoMessage.collectAsStateWithLifecycle()

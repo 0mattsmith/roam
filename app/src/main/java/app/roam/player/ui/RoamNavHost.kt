@@ -11,6 +11,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -22,6 +24,9 @@ import app.roam.feature.settings.SettingsRoute
 
 object Routes {
     const val LIBRARY = "library"
+    /** The library, told to jump to one track. Both arguments optional. */
+    const val LIBRARY_AT = "library?track={track}&edit={edit}"
+    fun libraryAt(trackId: Long, edit: Boolean) = "library?track=$trackId&edit=$edit"
     const val DOWNLOADER = "downloader"
     const val SETTINGS = "settings"
     const val REMOVED = "settings/removed"
@@ -59,10 +64,16 @@ fun RoamNavHost() {
     ) {
         NavHost(
             navController = nav,
-            startDestination = Routes.LIBRARY,
+            startDestination = Routes.LIBRARY_AT,
             modifier = Modifier.weight(1f),
         ) {
-            composable(Routes.LIBRARY) {
+            composable(
+                Routes.LIBRARY_AT,
+                arguments = listOf(
+                    navArgument("track") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("edit") { type = NavType.BoolType; defaultValue = false },
+                ),
+            ) { entry ->
                 // Now Playing is an overlay ON the library, not a destination of
                 // its own. As a route the NavHost disposes the library while it
                 // is showing, so dragging the panel down would reveal the window
@@ -72,6 +83,8 @@ fun RoamNavHost() {
 
                 Box(Modifier.fillMaxSize()) {
                     LibraryRoute(
+                        revealTrackId = entry.arguments?.getString("track")?.toLongOrNull(),
+                        revealForEditing = entry.arguments?.getBoolean("edit") == true,
                         onOpenPlayer = { playerExpanded = true },
                         onOpenSettings = { go(Routes.SETTINGS) },
                         onOpenDownloader = { go(Routes.DOWNLOADER) },
@@ -85,7 +98,18 @@ fun RoamNavHost() {
                     }
                 }
             }
-            composable(Routes.DOWNLOADER)  { DownloaderRoute(onBack = back) }
+            composable(Routes.DOWNLOADER) {
+                DownloaderRoute(
+                    onBack = back,
+                    // popUpTo so the library is not stacked twice: this is a
+                    // jump back to where you already were, not a new screen.
+                    onOpenTrack = { id, edit ->
+                        nav.navigate(Routes.libraryAt(id, edit)) {
+                            popUpTo(Routes.LIBRARY_AT) { inclusive = true }
+                        }
+                    },
+                )
+            }
             composable(Routes.SETTINGS) {
                 SettingsRoute(onBack = back, onOpenRemoved = { go(Routes.REMOVED) })
             }

@@ -476,6 +476,21 @@ class LibraryViewModel @Inject constructor(
     private val _editing = MutableStateFlow<Pair<TrackListItem, TrackEdits>?>(null)
     val editing: StateFlow<Pair<TrackListItem, TrackEdits>?> = _editing.asStateFlow()
 
+    /**
+     * Opens the album a track sits in, and optionally its editor.
+     *
+     * The entry point from the download manager, where the only handle on a
+     * finished download is a track id. Opening the ALBUM rather than a bare
+     * track is deliberate -- landing on one row with no context reads as a
+     * broken search result.
+     */
+    fun revealTrack(trackId: Long, openEditor: Boolean) = viewModelScope.launch {
+        val track = tracks.listItemsRaw(LibraryQueries.tracksForTrack(trackId)).firstOrNull()
+            ?: return@launch
+        openAlbum(track.albumId, track.albumTitle)
+        if (openEditor) openTrackEditor(track)
+    }
+
     fun openTrackEditor(track: TrackListItem) = viewModelScope.launch {
         val current = trackEditor.current(track.id) ?: return@launch
         _editing.value = track to current

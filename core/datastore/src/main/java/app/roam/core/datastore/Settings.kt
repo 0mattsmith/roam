@@ -59,6 +59,13 @@ data class RoamSettings(
      */
     val discogsToken: String? = null,
 
+    /**
+     * Wait for wifi before downloading. On by default -- a queued album is
+     * hundreds of megabytes, and the surprise is far worse in that direction
+     * than the wait is in the other.
+     */
+    val downloadOnWifiOnly: Boolean = true,
+
     // How the library is laid out and ordered. These live here rather than in
     // the ViewModel's UI state because they are preferences, not screen state:
     // picking "grid" once should still mean grid tomorrow morning in the car.
@@ -108,6 +115,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val SAVE_ARTIST_PHOTOS = booleanPreferencesKey("save_artist_photos_to_drive")
         val UPDATE_AVAILABLE = stringPreferencesKey("update_available")
         val DISCOGS_TOKEN = stringPreferencesKey("discogs_token")
+        val WIFI_ONLY_DOWNLOADS = booleanPreferencesKey("download_wifi_only")
 
         val ARTIST_VIEW = stringPreferencesKey("artist_view_mode")
         val ARTIST_ALBUM_VIEW = stringPreferencesKey("artist_album_view_mode")
@@ -139,6 +147,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             saveArtistPhotosToDrive = p[K.SAVE_ARTIST_PHOTOS] ?: true,
             updateAvailable = p[K.UPDATE_AVAILABLE],
             discogsToken = p[K.DISCOGS_TOKEN],
+            downloadOnWifiOnly = p[K.WIFI_ONLY_DOWNLOADS] ?: true,
             artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID_3),
             artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID_3),
             trackSort = p[K.TRACK_SORT].toEnum(TrackSort.ARTIST),
@@ -202,6 +211,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
 
     suspend fun setSaveArtistPhotosToDrive(v: Boolean) {
         ctx.dataStore.edit { it[K.SAVE_ARTIST_PHOTOS] = v }
+    }
+
+    suspend fun setDownloadOnWifiOnly(v: Boolean) {
+        ctx.dataStore.edit { it[K.WIFI_ONLY_DOWNLOADS] = v }
     }
 
     suspend fun setDiscogsToken(token: String?) {

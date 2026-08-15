@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.roam.core.database.TrackDao
 import app.roam.core.database.TrackListItem
+import app.roam.core.datastore.SettingsRepository
 import app.roam.core.model.TrackSort
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -115,6 +117,7 @@ class DownloaderViewModel @Inject constructor(
     private val youtube: YoutubeSource,
     private val musicBrainz: MusicBrainz,
     private val discogs: Discogs,
+    private val settings: SettingsRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SearchUiState())
@@ -129,7 +132,7 @@ class DownloaderViewModel @Inject constructor(
      */
     val downloads: StateFlow<List<DownloadStatus>> =
         WorkManager.getInstance(app)
-            .getWorkInfosForUniqueWorkFlow(DownloadWorker.NAME)
+            .getWorkInfosByTagFlow(DownloadWorker.TAG_ALL)
             .map { infos ->
                 infos.map { info ->
                     val request = DownloadWorker.requestOf(info)
@@ -284,10 +287,11 @@ class DownloaderViewModel @Inject constructor(
      * singles go to a folder of that name. The review sheet is where this gets
      * corrected before it is queued.
      */
-    fun download(result: YoutubeResult) {
+    fun download(result: YoutubeResult) = viewModelScope.launch {
         DownloadWorker.enqueue(
             app,
-            DownloadRequest(
+            wifiOnly = settings.settings.first().downloadOnWifiOnly,
+            request = DownloadRequest(
                 url = result.url,
                 title = result.title,
                 artist = result.artist.ifBlank { "Unknown Artist" },
@@ -486,11 +490,12 @@ class DownloaderViewModel @Inject constructor(
     }
 
     /** Queues one track off the album page, searched for by name and artist. */
-    fun downloadTrack(track: ReleaseTrack) {
-        val album = _album.value ?: return
+    fun downloadTrack(track: ReleaseTrack) = viewModelScope.launch {
+        val album = _album.value ?: return@launch
         DownloadWorker.enqueue(
             app,
-            DownloadRequest(
+            wifiOnly = settings.settings.first().downloadOnWifiOnly,
+            request = DownloadRequest(
                 // Searched rather than addressed: the catalogue knows what the
                 // track IS, YouTube has to be asked where it is. Built through
                 // searchUrlFor so the queued-state check compares like for like.
@@ -541,10 +546,56 @@ class DownloaderViewModel @Inject constructor(
         WorkManager.getInstance(app).pruneWork()
     }
 
+    /** Stops a download that has not finished. Its row stays, marked cancelled. */
+    fun cancel(download: DownloadStatus) {
+        WorkManager.getInstance(app).cancelWorkById(java.util.UUID.fromString(download.id))
+    }
+
+    /**
+     * Cancels and re-queues in one move.
+     *
+     * Cancel first, because the unique name is derived from the request and
+     * KEEP would otherwise treat the new job as a duplicate of the old one and
+     * quietly do nothing.
+     */
+    fun restart(download: DownloadStatus) = viewModelScope.launch {
+        val request = download.request ?: return@launch
+        WorkManager.getInstance(app).cancelWorkById(java.util.UUID.fromString(download.id))
+        DownloadWorker.enqueue(app, request, settings.settings.first().downloadOnWifiOnly)
+        _state.update { it.copy(message = "Restarted ${request.title}") }
+    }
+
+    /**
+     * Finds the downloaded track in the library.
+     *
+     * Null until sync has run: the file reaches Drive first and the row only
+     * appears when the catalogue next crawls, so "downloaded" and "in your
+     * library" are minutes apart and the UI has to say so rather than opening
+     * nothing.
+     */
+    suspend fun resolveTrackId(request: DownloadRequest): Long? {
+        val matches = runCatching {
+            tracks.listItemsRaw(LibraryQueries.search(request.title, TrackSort.ARTIST, LIMIT))
+        }.getOrDefault(emptyList())
+
+        val wantedTitle = Ids.normalise(request.title)
+        val wantedAlbum = Ids.normalise(request.album)
+        return matches.firstOrNull {
+            Ids.normalise(it.title) == wantedTitle && Ids.normalise(it.albumTitle) == wantedAlbum
+        }?.id
+            // The album can differ if the tags disagreed with what was queued;
+            // a title match alone is still better than refusing to open.
+            ?: matches.firstOrNull { Ids.normalise(it.title) == wantedTitle }?.id
+    }
+
+    fun reportNotInLibrary() {
+        _state.update { it.copy(message = "Not in your library yet — it appears after the next sync") }
+    }
+
     /** Re-queues a failed download from the request stored on its tag. */
-    fun retry(download: DownloadStatus) {
-        val request = download.request ?: return
-        DownloadWorker.enqueue(app, request)
+    fun retry(download: DownloadStatus) = viewModelScope.launch {
+        val request = download.request ?: return@launch
+        DownloadWorker.enqueue(app, request, settings.settings.first().downloadOnWifiOnly)
         _state.update { it.copy(message = "Retrying ${request.title}") }
     }
 

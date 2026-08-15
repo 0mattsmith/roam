@@ -153,6 +153,18 @@ fun SettingsRoute(
             )
 
             Spacer(Modifier.height(24.dp))
+            SectionHeader("Downloads")
+
+            val wifiOnly by vm.wifiOnlyDownloads.collectAsStateWithLifecycle()
+            SwitchRow(
+                title = "Download on Wi-Fi only",
+                subtitle = "Queued tracks wait for an unmetered network. Turn this " +
+                    "off to download over mobile data.",
+                checked = wifiOnly,
+                onChange = vm::setWifiOnlyDownloads,
+            )
+
+            Spacer(Modifier.height(24.dp))
             SectionHeader("Discogs")
 
             val discogsToken by vm.discogsToken.collectAsStateWithLifecycle()

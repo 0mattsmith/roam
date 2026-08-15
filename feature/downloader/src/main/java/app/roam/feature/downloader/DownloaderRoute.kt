@@ -11,7 +11,10 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -24,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkInfo
 import app.roam.core.database.TrackListItem
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 
 /**
  * One search box over the library and over YouTube Music.
@@ -54,6 +59,8 @@ import coil.compose.AsyncImage
 fun DownloaderRoute(
     onBack: () -> Unit,
     onPlay: (TrackListItem) -> Unit = {},
+    /** Jumps to a downloaded track in the library, optionally opening its editor. */
+    onOpenTrack: (Long, Boolean) -> Unit = { _, _ -> },
     vm: DownloaderViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -65,6 +72,7 @@ fun DownloaderRoute(
     var menuOpen by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
 
+    val scope = rememberCoroutineScope()
     val snackbars = remember { SnackbarHostState() }
     LaunchedEffect(state.message) {
         state.message?.let { snackbars.showSnackbar(it); vm.clearMessage() }
@@ -235,6 +243,16 @@ fun DownloaderRoute(
             onDismiss = { showDownloads = false },
             onClearFinished = vm::clearFinishedDownloads,
             onRetry = vm::retry,
+            onCancel = vm::cancel,
+            onRestart = vm::restart,
+            onOpenTrack = { download, edit ->
+                scope.launch {
+                    val request = download.request ?: return@launch
+                    val id = vm.resolveTrackId(request)
+                    if (id == null) vm.reportNotInLibrary()
+                    else { showDownloads = false; onOpenTrack(id, edit) }
+                }
+            },
         )
     }
 }
@@ -253,6 +271,9 @@ private fun DownloadsSheet(
     onDismiss: () -> Unit,
     onClearFinished: () -> Unit,
     onRetry: (DownloadStatus) -> Unit,
+    onCancel: (DownloadStatus) -> Unit,
+    onRestart: (DownloadStatus) -> Unit,
+    onOpenTrack: (DownloadStatus, Boolean) -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.navigationBarsPadding()) {
@@ -281,7 +302,15 @@ private fun DownloadsSheet(
 
             LazyColumn(Modifier.heightIn(max = 420.dp)) {
                 items(downloads.size, key = { downloads[it].id }) { index ->
-                    DownloadRow(downloads[index], onRetry = { onRetry(downloads[index]) })
+                    val download = downloads[index]
+                    DownloadRow(
+                        download = download,
+                        onRetry = { onRetry(download) },
+                        onCancel = { onCancel(download) },
+                        onRestart = { onRestart(download) },
+                        onOpenTrack = { onOpenTrack(download, false) },
+                        onEditTrack = { onOpenTrack(download, true) },
+                    )
                 }
             }
 
@@ -298,7 +327,14 @@ private fun DownloadsSheet(
  * that comes out purple because the palette says so communicates nothing.
  */
 @Composable
-private fun DownloadRow(download: DownloadStatus, onRetry: () -> Unit) {
+private fun DownloadRow(
+    download: DownloadStatus,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+    onRestart: () -> Unit,
+    onOpenTrack: () -> Unit,
+    onEditTrack: () -> Unit,
+) {
     ListItem(
         headlineContent = {
             Text(download.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -357,23 +393,72 @@ private fun DownloadRow(download: DownloadStatus, onRetry: () -> Unit) {
         },
         leadingContent = { Icon(Icons.Filled.Download, contentDescription = null) },
         trailingContent = {
-            when {
-                download.succeeded -> Icon(
-                    Icons.Filled.CheckCircle,
-                    contentDescription = "Finished",
-                    tint = DONE_GREEN,
-                )
-                download.failed -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Cancel,
-                        contentDescription = "Failed",
-                        tint = FAILED_RED,
-                    )
-                    IconButton(onClick = onRetry, enabled = download.request != null) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Retry")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                when {
+                    // Done: the useful actions are about the track now, not
+                    // about the download.
+                    download.succeeded -> {
+                        Icon(
+                            Icons.Filled.CheckCircle,
+                            contentDescription = "Finished",
+                            tint = DONE_GREEN,
+                        )
+                        IconButton(onClick = onOpenTrack) {
+                            Icon(Icons.Filled.Folder, contentDescription = "Show in library")
+                        }
+                        IconButton(onClick = onEditTrack) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit details")
+                        }
+                    }
+
+                    download.failed -> {
+                        Icon(
+                            Icons.Filled.Cancel,
+                            contentDescription = "Failed",
+                            tint = FAILED_RED,
+                        )
+                        IconButton(onClick = onRetry, enabled = download.request != null) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Retry")
+                        }
+                    }
+
+                    // Still going: stopping it is the only thing worth
+                    // offering. Restart lives in the overflow, because tapping
+                    // it by accident on a half-finished download costs the
+                    // bytes already spent.
+                    else -> {
+                        IconButton(onClick = onCancel) {
+                            Icon(Icons.Filled.Stop, contentDescription = "Cancel")
+                        }
                     }
                 }
-                else -> {}
+
+                if (download.request != null) {
+                    var rowMenu by remember(download.id) { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { rowMenu = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(rowMenu, onDismissRequest = { rowMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Restart") },
+                                onClick = { rowMenu = false; onRestart() },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Refresh, contentDescription = null)
+                                },
+                            )
+                            if (!download.finished) {
+                                DropdownMenuItem(
+                                    text = { Text("Cancel") },
+                                    onClick = { rowMenu = false; onCancel() },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Stop, contentDescription = null)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
     )
