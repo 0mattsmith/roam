@@ -37,10 +37,21 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // yt-dlp ships a whole Python environment per ABI. Without this the
-        // APK carries all four and roughly triples in size.
+        // yt-dlp ships a whole Python runtime AND an FFmpeg build per ABI, so
+        // each one costs tens of megabytes. Four of them is most of the APK.
+        //
+        // arm64-v8a alone by default. Every Android phone sold since about
+        // 2017 is arm64; armeabi-v7a is 32-bit hardware Roam will never run
+        // on, and x86/x86_64 exist for emulators. For a sideloaded personal
+        // app that is a ~75% saving for nothing lost.
+        //
+        // Override when a wider build is genuinely needed:
+        //   ./gradlew assembleRelease -Proam.abis=arm64-v8a,x86_64
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            abiFilters += (findProperty("roam.abis") as String? ?: "arm64-v8a")
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
         }
     }
 

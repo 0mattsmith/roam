@@ -210,6 +210,45 @@ resumable Drive upload with cached folder IDs.
 
 **Phase 5 —** SMB/WebDAV sources, playlists, AcoustID fingerprinting, AAOS.
 
+**Phase 6 — the desktop app.** Compose Multiplatform on the JVM. Deliberately
+last: the shared modules are what make the port cheap, and they are the part
+still moving. Porting before the phone and the car are solid means every bug
+after that has to be diagnosed twice.
+
+*What ports as-is.* `:core:model`, `:core:database` (Room supports desktop),
+`:data:source-api`, `:data:source-drive`, `TagParser`, `MusicBrainz`,
+`Discogs`, and most of `:data:catalog`. All plain Kotlin already.
+
+*What does not.* **Media3 is Android-only** -- desktop needs a different audio
+pipeline, and VLCJ is the pragmatic choice because it handles ranged HTTP and
+every format without a codec hunt. **Hilt is Android-only** -- hand-wire the
+graph or move to Koin. WorkManager likewise: the sync, tag and download passes
+need a plain coroutine scheduler behind the same interfaces.
+
+*Sync: use Drive, NOT a backend.* The library is already synced -- both devices
+read the same folder and derive the same catalogue. Only USER STATE has to
+travel: loved, playCount, hidden, startMs/endMs, userEdited tags, sortAs,
+groupArtistId, artwork choices. A couple of megabytes for a 10k library, and
+Roam already holds the token, the folder and a sync pass. A `.roam/state.json`
+beside the music needs no account, no API key in a sideloaded build, no server
+to keep running, and no server-side identity in an app whose whole premise is
+that the music is yours.
+
+The hard part is the MERGE, not the transport, and it is the same work whoever
+hosts it -- which is why hosting is not the interesting decision:
+
+- Per-FIELD timestamps, not per-file. Whole-file last-write-wins loses data the
+  moment one device loves a track while the other hides a different one.
+- Play counts SUM per device rather than overwrite, or a week of offline
+  listening on the phone is erased by the desktop's stale copy.
+- Drive's `headRevisionId` detects a concurrent write; re-read and re-merge
+  rather than clobbering.
+
+Firebase only wins with multiple users, sharing, or a need for changes to land
+in seconds rather than at next launch. Cloudflare Workers + D1 only wins if
+Roam ever wants a real API for something else -- and then it is an API to write
+and maintain.
+
 *Playlists parking lot.* Ideas land here as they come up, rather than being
 argued about mid-flight:
 
@@ -270,6 +309,8 @@ argued about mid-flight:
 | The album header opens the album instead of collapsing | Tap toggles; "Open album" is in the long-press sheet |
 | Grid and list disagree about scroll position | Expected — they hold separate state objects, because a row index does not translate to a cell index |
 | A menu opens miles from the button that owns it | `DropdownMenu` anchors to its PARENT layout node, not to the button beside it. Wrap the button and the menu in a small Box and align THAT — aligning only the button leaves the menu at the big parent's origin |
+| The APK is suddenly 100 MB | Built for more than one ABI. yt-dlp ships a Python runtime and an FFmpeg build per ABI; `roam.abis` defaults to `arm64-v8a` alone for exactly this reason |
+| Roam will not install on a device | That device is not arm64. Rebuild with `-Proam.abis=arm64-v8a,armeabi-v7a` |
 | Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
 | Every search AND the update fail together | `YoutubeDL.init()` threw. Almost always `useLegacyPackaging = true` missing from `:app` — the library unzips a Python runtime out of its .so files, and modern AGP leaves native libs unextracted so there is nothing to unzip |
 | "class X is not a concrete class" from a search | R8 shrank a class that is only ever built reflectively. commons-compress needs `-keep`, not just `-dontwarn`; `-dontobfuscate` alone does not help because this is shrinking, not renaming |

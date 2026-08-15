@@ -120,6 +120,26 @@ internal fun parsePosition(raw: String, index: Int): Pair<Int, Int> {
     return 1 to (text.toIntOrNull() ?: (index + 1))
 }
 
+/**
+ * Renumbers tracks sequentially within each disc, keeping their order.
+ *
+ * Vinyl positions carry a SIDE, not a number: A1 and B1 are the first track of
+ * each side, and both parse to track 1. That is wrong twice over -- two files
+ * would be named "01", and any list keyed on disc plus position gets duplicate
+ * keys, which Compose treats as fatal.
+ *
+ * Applied to sources whose positions are not already authoritative. MusicBrainz
+ * numbers its tracks properly and is left alone.
+ */
+internal fun renumberWithinDiscs(tracks: List<ReleaseTrack>): List<ReleaseTrack> {
+    val nextForDisc = mutableMapOf<Int, Int>()
+    return tracks.map { track ->
+        val next = (nextForDisc[track.discNo] ?: 0) + 1
+        nextForDisc[track.discNo] = next
+        track.copy(position = next)
+    }
+}
+
 /** "4:33" and "1:02:11" to milliseconds. Blank or malformed gives null. */
 internal fun parseDuration(raw: String?): Long? {
     val parts = raw?.trim()?.takeIf { it.isNotBlank() }?.split(':') ?: return null

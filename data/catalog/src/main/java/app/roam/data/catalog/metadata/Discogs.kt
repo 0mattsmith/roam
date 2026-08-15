@@ -196,7 +196,8 @@ class Discogs @Inject constructor(
             year = json.optInt("year").takeIf { it > 0 },
             coverUrl = json.optJSONArray("images")?.optJSONObject(0)?.optString("uri")
                 ?.ifBlank { null },
-            tracks = tracks,
+            // Renumbered because Discogs positions are sides, not numbers.
+            tracks = renumberWithinDiscs(tracks),
         )
     }
 

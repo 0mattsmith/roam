@@ -216,10 +216,11 @@ fun AlbumSheet(
             }
 
             LazyColumn(Modifier.heightIn(max = 380.dp)) {
-                items(
-                    album.tracks.size,
-                    key = { "${album.tracks[it].track.discNo}/${album.tracks[it].track.position}" },
-                ) { index ->
+                // Keyed on the INDEX, not on disc and position. Those are not
+                // guaranteed unique -- a vinyl tracklist gives A1 and B1, both
+                // of which are disc 1 track 1 until they are renumbered -- and
+                // a duplicate key is a hard crash in Compose, not a warning.
+                items(album.tracks.size, key = { it }) { index ->
                     val row = album.tracks[index]
                     val track = row.track
                     val previous = album.tracks.getOrNull(index - 1)?.track
