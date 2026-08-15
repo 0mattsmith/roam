@@ -46,13 +46,13 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 /**
- * One search box over the library and over YouTube Music.
+ * One search box over three different questions.
  *
- * Two tabs rather than one merged list: "do I already have this" and "can I
- * get this" are different questions, and interleaving the answers makes both
- * harder to read. The library tab answers from Room as you type; the YouTube
- * one costs a round trip through a native binary, so it waits longer before
- * asking and says so while it works.
+ * "Do I already have this" (Library), "what does this record contain" (Albums)
+ * and "where can I get this" (YouTube) want different answers, and interleaving
+ * them makes all three harder to read. Library answers from Room as you type;
+ * Albums asks Discogs and MusicBrainz; YouTube costs a round trip through a
+ * native binary, so it waits longer before asking and says so while it works.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -150,22 +150,93 @@ fun DownloaderRoute(
         Column(Modifier.padding(padding).fillMaxSize()) {
             PrimaryTabRow(selectedTabIndex = tab) {
                 Tab(tab == 0, onClick = { tab = 0 }, text = { Text("Library") })
-                Tab(tab == 1, onClick = { tab = 1 }, text = { Text("YouTube Music") })
+                Tab(tab == 1, onClick = { tab = 1 }, text = { Text("Albums") })
+                Tab(tab == 2, onClick = { tab = 2 }, text = { Text("YouTube") })
+            }
+
+            // Only on the Albums tab, where it changes what is searched rather
+            // than filtering what came back.
+            if (tab == 1) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = state.compilationsOnly,
+                        onClick = { vm.setCompilationsOnly(!state.compilationsOnly) },
+                        label = { Text("Compilations only") },
+                    )
+                }
             }
 
             // Sits OUTSIDE the when below, deliberately. A spinner that lives
             // in one branch of a when can be hidden by any branch above it
             // changing, which is exactly how the last two attempts at this
             // failed. This bar depends on one boolean and nothing else.
-            if (tab == 1 && (state.searchingYoutube || state.loadingMore)) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
+            val busy = when (tab) {
+                1 -> state.searchingAlbums
+                2 -> state.searchingYoutube || state.loadingMore
+                else -> false
             }
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
 
             when {
                 state.query.isBlank() ->
-                    Hint("Search your library, or YouTube Music for something new")
+                    Hint("Search your library, an album, or YouTube for something new")
 
                 tab == 0 -> LibraryResults(state.library, onPlay)
+
+                tab == 1 -> when {
+                    state.searchingAlbums -> Hint("Searching Discogs and MusicBrainz…")
+                    state.albums.isEmpty() -> Hint(
+                        if (state.compilationsOnly) {
+                            "No compilations found. Try turning the filter off."
+                        } else {
+                            "No albums found"
+                        }
+                    )
+                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                        items(
+                            state.albums.size,
+                            // Two catalogues can issue the same numeric id, so
+                            // the source has to be part of the key.
+                            key = { "${state.albums[it].source}/${state.albums[it].id}" },
+                        ) { index ->
+                            val match = state.albums[index]
+                            ListItem(
+                                modifier = Modifier.clickable { vm.openRelease(match) },
+                                headlineContent = {
+                                    Text(
+                                        match.year?.let { "${match.title} ($it)" } ?: match.title,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                supportingContent = {
+                                    Text(
+                                        match.subtitle,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                leadingContent = {
+                                    val cover = match.coverUrl
+                                    if (cover != null) {
+                                        AsyncImage(
+                                            model = cover,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.size(56.dp)
+                                                .clip(MaterialTheme.shapes.small),
+                                        )
+                                    } else {
+                                        Icon(Icons.Filled.Album, contentDescription = null)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
 
                 // Nothing is drawn until the first batch is fully looked up:
                 // album and year need a real extraction, and rows that appear

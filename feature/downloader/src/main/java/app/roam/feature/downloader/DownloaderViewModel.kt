@@ -99,6 +99,11 @@ data class SearchUiState(
     /** True while "Show more" is waiting on a batch that is not ready yet. */
     val loadingMore: Boolean = false,
     val hasMore: Boolean = false,
+    /** Releases from the catalogues, for the Albums tab. */
+    val albums: List<ReleaseMatch> = emptyList(),
+    val searchingAlbums: Boolean = false,
+    /** Narrows the album search to various-artists collections. */
+    val compilationsOnly: Boolean = false,
     val message: String? = null,
 )
 
@@ -168,6 +173,41 @@ class DownloaderViewModel @Inject constructor(
 
     private var localJob: Job? = null
     private var remoteJob: Job? = null
+    private var albumJob: Job? = null
+
+    /**
+     * Albums from the catalogues rather than from YouTube.
+     *
+     * Both sources are asked and the results merged, because they disagree
+     * usefully: Discogs knows the pressings and the mixtapes, MusicBrainz has
+     * the canonical tracklists. Whichever a release came from, opening it uses
+     * the album screen's own source chips, so the metadata can still be taken
+     * from MusicBrainz afterwards.
+     */
+    private suspend fun searchAlbums(query: String) {
+        _state.update { it.copy(searchingAlbums = true, albums = emptyList()) }
+        val compilations = _state.value.compilationsOnly
+
+        val found = listOf(discogs, musicBrainz)
+            .filter { it.available() }
+            .flatMap { client ->
+                client.searchReleases(query, limit = 12, compilationsOnly = compilations)
+                    .getOrDefault(emptyList())
+            }
+            // Interleaved rather than one source after the other, so a
+            // Discogs-heavy query does not bury every MusicBrainz result.
+            .sortedByDescending { it.year ?: 0 }
+
+        _state.update { it.copy(searchingAlbums = false, albums = found) }
+    }
+
+    fun setCompilationsOnly(value: Boolean) {
+        _state.update { it.copy(compilationsOnly = value) }
+        val query = _state.value.query
+        if (query.isBlank()) return
+        albumJob?.cancel()
+        albumJob = viewModelScope.launch { searchAlbums(query) }
+    }
 
     fun onQueryChanged(query: String) {
         // Set here rather than after the debounce. Waiting meant the first
@@ -187,6 +227,8 @@ class DownloaderViewModel @Inject constructor(
                 it.copy(
                     library = emptyList(),
                     youtube = emptyList(),
+                    albums = emptyList(),
+                    searchingAlbums = false,
                     searchingYoutube = false,
                     loadingMore = false,
                     hasMore = false,
@@ -202,6 +244,12 @@ class DownloaderViewModel @Inject constructor(
             _state.update {
                 it.copy(library = tracks.listItemsRaw(LibraryQueries.search(query, TrackSort.ARTIST, LIMIT)))
             }
+        }
+
+        albumJob?.cancel()
+        albumJob = viewModelScope.launch {
+            delay(REMOTE_DEBOUNCE_MS)
+            searchAlbums(query)
         }
 
         remoteJob = viewModelScope.launch {
