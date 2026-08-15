@@ -89,12 +89,12 @@ class SettingsViewModel @Inject constructor(
     val hiddenCount = trackDao.hiddenCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    val wifiOnlyDownloads = settings.settings
-        .map { it.downloadOnWifiOnly }
+    val wifiOnlyLargeTransfers = settings.settings
+        .map { it.wifiOnlyForLargeTransfers }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
-    fun setWifiOnlyDownloads(v: Boolean) = viewModelScope.launch {
-        settings.setDownloadOnWifiOnly(v)
+    fun setWifiOnlyLargeTransfers(v: Boolean) = viewModelScope.launch {
+        settings.setWifiOnlyForLargeTransfers(v)
     }
 
     /** Kept as typed. Trimming and emptiness are handled on the way to disk. */

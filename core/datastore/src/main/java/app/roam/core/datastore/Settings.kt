@@ -30,7 +30,6 @@ data class RoamSettings(
     val lastSyncAt: Long? = null,
 
     val cachePolicy: CachePolicy = CachePolicy.NextTracks(10),
-    val syncOnWifiOnly: Boolean = true,
     val prefetchOnMobile: Boolean = false,
     val lovedMultiplier: Float = 3.0f,
     val recencyDamping: Boolean = true,
@@ -60,11 +59,17 @@ data class RoamSettings(
     val discogsToken: String? = null,
 
     /**
-     * Wait for wifi before downloading. On by default -- a queued album is
-     * hundreds of megabytes, and the surprise is far worse in that direction
-     * than the wait is in the other.
+     * Hold LARGE transfers until an unmetered network is available.
+     *
+     * Covers downloads, the tag pass (a 1 MB ranged read per new track) and
+     * artist images. Deliberately NOT the library crawl -- that is a handful of
+     * folder listings, and making it wait would mean opening Roam away from
+     * home and seeing none of your new music.
+     *
+     * On by default: a queued album is hundreds of megabytes, and the surprise
+     * is far worse in that direction than the wait is in the other.
      */
-    val downloadOnWifiOnly: Boolean = true,
+    val wifiOnlyForLargeTransfers: Boolean = true,
 
     // How the library is laid out and ordered. These live here rather than in
     // the ViewModel's UI state because they are preferences, not screen state:
@@ -102,7 +107,6 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
 
         val CACHE_MODE = stringPreferencesKey("cache_mode")        // "tracks" | "bytes"
         val CACHE_VALUE = longPreferencesKey("cache_value")
-        val WIFI_ONLY = booleanPreferencesKey("sync_wifi_only")
         val PREFETCH_MOBILE = booleanPreferencesKey("prefetch_mobile")
         val LOVED_MULT = floatPreferencesKey("loved_multiplier")
         val RECENCY = booleanPreferencesKey("recency_damping")
@@ -115,7 +119,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val SAVE_ARTIST_PHOTOS = booleanPreferencesKey("save_artist_photos_to_drive")
         val UPDATE_AVAILABLE = stringPreferencesKey("update_available")
         val DISCOGS_TOKEN = stringPreferencesKey("discogs_token")
-        val WIFI_ONLY_DOWNLOADS = booleanPreferencesKey("download_wifi_only")
+        val WIFI_ONLY_LARGE = booleanPreferencesKey("wifi_only_large_transfers")
 
         val ARTIST_VIEW = stringPreferencesKey("artist_view_mode")
         val ARTIST_ALBUM_VIEW = stringPreferencesKey("artist_album_view_mode")
@@ -134,7 +138,6 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             lastSyncAt = p[K.LAST_SYNC_AT],
             cachePolicy = if (mode == "bytes") CachePolicy.StorageBudget(value)
                           else CachePolicy.NextTracks(value.toInt()),
-            syncOnWifiOnly = p[K.WIFI_ONLY] ?: true,
             prefetchOnMobile = p[K.PREFETCH_MOBILE] ?: false,
             lovedMultiplier = p[K.LOVED_MULT] ?: 3.0f,
             recencyDamping = p[K.RECENCY] ?: true,
@@ -147,7 +150,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             saveArtistPhotosToDrive = p[K.SAVE_ARTIST_PHOTOS] ?: true,
             updateAvailable = p[K.UPDATE_AVAILABLE],
             discogsToken = p[K.DISCOGS_TOKEN],
-            downloadOnWifiOnly = p[K.WIFI_ONLY_DOWNLOADS] ?: true,
+            wifiOnlyForLargeTransfers = p[K.WIFI_ONLY_LARGE] ?: true,
             artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID_3),
             artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID_3),
             trackSort = p[K.TRACK_SORT].toEnum(TrackSort.ARTIST),
@@ -213,8 +216,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         ctx.dataStore.edit { it[K.SAVE_ARTIST_PHOTOS] = v }
     }
 
-    suspend fun setDownloadOnWifiOnly(v: Boolean) {
-        ctx.dataStore.edit { it[K.WIFI_ONLY_DOWNLOADS] = v }
+    suspend fun setWifiOnlyForLargeTransfers(v: Boolean) {
+        ctx.dataStore.edit { it[K.WIFI_ONLY_LARGE] = v }
     }
 
     suspend fun setDiscogsToken(token: String?) {

@@ -50,11 +50,11 @@ class StartupViewModel @Inject constructor(
         // tying artwork to a successful crawl means a failing sync also means
         // never seeing a cover. It is unique work with KEEP, so enqueueing it
         // here is free when one is already running or nothing is pending.
-        TagWorker.enqueue(ctx)
+        TagWorker.enqueue(ctx, saved.wifiOnlyForLargeTransfers)
 
         // Artist photos are not in the tags -- they have to come from Deezer.
         // Also unique/KEEP, and it only looks at artists never tried before.
-        ArtistPhotoWorker.enqueue(ctx)
+        ArtistPhotoWorker.enqueue(ctx, saved.wifiOnlyForLargeTransfers)
 
         // Result lands in UpdateRepository, which the banner observes.
         if (saved.autoCheckUpdates) updates.checkQuietly()

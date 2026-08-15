@@ -132,11 +132,18 @@ class TagWorker @AssistedInject constructor(
         /** Ranged reads are far heavier than folder listings, so fan out less. */
         const val CONCURRENCY = 4
 
-        fun enqueue(ctx: Context) {
+        /**
+         * @param wifiOnly hold until unmetered. This pass costs a 1 MB ranged read for every new track,
+         * so it is one of the large transfers that setting is about -- the
+         * library crawl is not.
+         */
+        fun enqueue(ctx: Context, wifiOnly: Boolean = true) {
             val request = OneTimeWorkRequestBuilder<TagWorker>()
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .setRequiredNetworkType(
+                            if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
+                        )
                         .build()
                 )
                 .build()

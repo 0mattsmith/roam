@@ -153,15 +153,17 @@ fun SettingsRoute(
             )
 
             Spacer(Modifier.height(24.dp))
-            SectionHeader("Downloads")
+            SectionHeader("Data usage")
 
-            val wifiOnly by vm.wifiOnlyDownloads.collectAsStateWithLifecycle()
+            val wifiOnly by vm.wifiOnlyLargeTransfers.collectAsStateWithLifecycle()
             SwitchRow(
-                title = "Download on Wi-Fi only",
-                subtitle = "Queued tracks wait for an unmetered network. Turn this " +
-                    "off to download over mobile data.",
+                title = "Use Wi-Fi only for large transfers",
+                subtitle = "Downloads, reading tags and covers from your files, and " +
+                    "fetching artist images all wait for an unmetered network. " +
+                    "Looking for new music is not held back - that is a few " +
+                    "folder listings, so your library still updates anywhere.",
                 checked = wifiOnly,
-                onChange = vm::setWifiOnlyDownloads,
+                onChange = vm::setWifiOnlyLargeTransfers,
             )
 
             Spacer(Modifier.height(24.dp))

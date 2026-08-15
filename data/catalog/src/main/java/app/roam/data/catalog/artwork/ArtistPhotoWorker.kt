@@ -404,11 +404,18 @@ class ArtistPhotoWorker @AssistedInject constructor(
         private const val AUDIODB_KEY = "123"
         private const val AUDIODB_GAP_MS = 2200L
 
-        fun enqueue(ctx: Context) {
+        /**
+         * @param wifiOnly hold until unmetered. This pass costs a photo, a logo and a banner for every new artist,
+         * so it is one of the large transfers that setting is about -- the
+         * library crawl is not.
+         */
+        fun enqueue(ctx: Context, wifiOnly: Boolean = true) {
             val request = OneTimeWorkRequestBuilder<ArtistPhotoWorker>()
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .setRequiredNetworkType(
+                            if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
+                        )
                         .build()
                 )
                 .build()

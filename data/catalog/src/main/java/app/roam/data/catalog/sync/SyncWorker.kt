@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import app.roam.core.datastore.SettingsRepository
 import app.roam.core.model.SourceType
 import app.roam.data.catalog.artwork.ArtistPhotoWorker
 import app.roam.data.catalog.tags.TagWorker
@@ -17,6 +18,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import app.roam.data.source.RemoteFile
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import javax.inject.Provider
 
 /**
@@ -35,6 +37,7 @@ class SyncWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>,
     private val catalog: CatalogWriter,
+    private val settings: SettingsRepository,
 ) : CoroutineWorker(ctx, params) {
 
     override suspend fun doWork(): Result {
@@ -101,8 +104,13 @@ class SyncWorker @AssistedInject constructor(
 
         // Second pass: real tags and embedded covers. Separate job so the
         // catalogue is browsable now rather than after every ranged read.
-        TagWorker.enqueue(applicationContext)
-        ArtistPhotoWorker.enqueue(applicationContext)
+        //
+        // The crawl itself runs on any connection -- it is a handful of folder
+        // listings, and it is what makes new music appear at all. These two are
+        // the expensive part, so they are what the wifi-only setting holds.
+        val wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers
+        TagWorker.enqueue(applicationContext, wifiOnly)
+        ArtistPhotoWorker.enqueue(applicationContext, wifiOnly)
 
         return Result.success(workDataOf(KEY_FOUND to found, KEY_WRITTEN to written))
     }

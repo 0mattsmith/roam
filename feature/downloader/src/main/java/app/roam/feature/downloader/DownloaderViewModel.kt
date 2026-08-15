@@ -373,7 +373,7 @@ class DownloaderViewModel @Inject constructor(
     fun download(result: YoutubeResult) = viewModelScope.launch {
         DownloadWorker.enqueue(
             app,
-            wifiOnly = settings.settings.first().downloadOnWifiOnly,
+            wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers,
             request = DownloadRequest(
                 url = result.url,
                 title = result.title,
@@ -589,7 +589,7 @@ class DownloaderViewModel @Inject constructor(
         val album = _album.value ?: return@launch
         DownloadWorker.enqueue(
             app,
-            wifiOnly = settings.settings.first().downloadOnWifiOnly,
+            wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers,
             request = DownloadRequest(
                 // Searched rather than addressed: the catalogue knows what the
                 // track IS, YouTube has to be asked where it is. Built through
@@ -656,7 +656,7 @@ class DownloaderViewModel @Inject constructor(
     fun restart(download: DownloadStatus) = viewModelScope.launch {
         val request = download.request ?: return@launch
         WorkManager.getInstance(app).cancelWorkById(java.util.UUID.fromString(download.id))
-        DownloadWorker.enqueue(app, request, settings.settings.first().downloadOnWifiOnly)
+        DownloadWorker.enqueue(app, request, settings.settings.first().wifiOnlyForLargeTransfers)
         _state.update { it.copy(message = "Restarted ${request.title}") }
     }
 
@@ -690,7 +690,7 @@ class DownloaderViewModel @Inject constructor(
     /** Re-queues a failed download from the request stored on its tag. */
     fun retry(download: DownloadStatus) = viewModelScope.launch {
         val request = download.request ?: return@launch
-        DownloadWorker.enqueue(app, request, settings.settings.first().downloadOnWifiOnly)
+        DownloadWorker.enqueue(app, request, settings.settings.first().wifiOnlyForLargeTransfers)
         _state.update { it.copy(message = "Retrying ${request.title}") }
     }
 
