@@ -99,6 +99,9 @@ class Discogs @Inject constructor(
                     format = entry.optJSONArray("format")?.optString(0)?.ifBlank { null },
                     coverUrl = entry.optString("cover_image").ifBlank { null }
                         ?: entry.optString("thumb").ifBlank { null },
+                    popularity = entry.optJSONObject("community")?.optInt("have")
+                        ?.takeIf { it > 0 },
+                    isCompilation = entry.isCompilation(),
                 )
             }
         }
@@ -146,6 +149,13 @@ class Discogs @Inject constructor(
                     trackCount = 0,
                     format = entry.optString("format").ifBlank { null },
                     coverUrl = entry.optString("thumb").ifBlank { null },
+                    // The discography endpoint reports holdings under `stats`
+                    // rather than `community`, unlike search.
+                    popularity = entry.optJSONObject("stats")
+                        ?.optJSONObject("community")
+                        ?.optInt("in_collection")
+                        ?.takeIf { it > 0 },
+                    isCompilation = entry.isCompilation(),
                 )
             }
         }
@@ -199,6 +209,17 @@ class Discogs @Inject constructor(
             // Renumbered because Discogs positions are sides, not numbers.
             tracks = renumberWithinDiscs(tracks),
         )
+    }
+
+    /**
+     * Discogs says "compilation" in the FORMAT, which arrives as an array on
+     * a search result and a comma-joined string on a discography entry.
+     */
+    private fun JSONObject.isCompilation(): Boolean {
+        val fromArray = optJSONArray("format")?.let { array ->
+            (0 until array.length()).any { array.optString(it).contains("Compilation", true) }
+        } ?: false
+        return fromArray || optString("format").contains("Compilation", true)
     }
 
     private fun String.encoded(): String = URLEncoder.encode(this, "UTF-8")

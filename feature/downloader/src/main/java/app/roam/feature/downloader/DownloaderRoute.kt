@@ -292,6 +292,8 @@ fun DownloaderRoute(
             artist = it,
             onDismiss = vm::closeArtist,
             onOpenRelease = vm::openRelease,
+            onSort = vm::setReleaseSort,
+            onIncludeCompilations = vm::setIncludeCompilations,
         )
     }
 

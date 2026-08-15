@@ -134,7 +134,10 @@ class MusicBrainz @Inject constructor() : ReleaseSource {
             // The BROWSE endpoint, not search: it takes an artist id directly
             // and returns everything credited to them rather than guessing
             // from a name that half a dozen acts share.
-            val url = "$BASE/release?artist=$artistId&fmt=json&limit=$limit"
+            // release-groups included so a compilation can be told apart: the
+            // secondary type lives on the GROUP, not on the release.
+            val url =
+                "$BASE/release?artist=$artistId&inc=release-groups&fmt=json&limit=$limit"
             val releases = get(url)?.optJSONArray("releases") ?: return@runCatching emptyList()
 
             (0 until releases.length()).mapNotNull { i ->
@@ -151,6 +154,9 @@ class MusicBrainz @Inject constructor() : ReleaseSource {
                     format = release.optJSONArray("media")
                         ?.optJSONObject(0)?.optString("format")?.ifBlank { null },
                     coverUrl = coverUrl(id),
+                    // MusicBrainz has no popularity data at all.
+                    popularity = null,
+                    isCompilation = release.isCompilation(),
                 )
             }.sortedByDescending { it.year ?: 0 }
         }
@@ -217,6 +223,12 @@ class MusicBrainz @Inject constructor() : ReleaseSource {
      * is needed -- the URL either resolves or 404s and the image simply does
      * not load.
      */
+    private fun JSONObject.isCompilation(): Boolean {
+        val types = optJSONObject("release-group")?.optJSONArray("secondary-types")
+            ?: return false
+        return (0 until types.length()).any { types.optString(it).equals("Compilation", true) }
+    }
+
     private fun coverUrl(mbid: String) = "https://coverartarchive.org/release/$mbid/front-500"
 
     private fun String.encoded(): String = URLEncoder.encode(this, "UTF-8")

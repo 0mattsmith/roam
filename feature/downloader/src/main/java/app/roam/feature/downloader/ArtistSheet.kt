@@ -8,8 +8,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,7 +38,11 @@ fun ArtistSheet(
     artist: ArtistUiState,
     onDismiss: () -> Unit,
     onOpenRelease: (ReleaseMatch) -> Unit,
+    onSort: (ReleaseSort) -> Unit,
+    onIncludeCompilations: (Boolean) -> Unit,
 ) {
+    var sortOpen by remember { mutableStateOf(false) }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.navigationBarsPadding()) {
             Row(
@@ -104,7 +113,70 @@ fun ArtistSheet(
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            if (artist.allReleases.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Button and menu inside one Box so the menu anchors to the
+                    // button rather than to the whole row.
+                    Box {
+                        TextButton(onClick = { sortOpen = true }) {
+                            Icon(Icons.Filled.Sort, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(artist.sort.label)
+                        }
+                        DropdownMenu(sortOpen, onDismissRequest = { sortOpen = false }) {
+                            ReleaseSort.entries.forEach { option ->
+                                val popularity = option == ReleaseSort.POPULARITY_ASC ||
+                                    option == ReleaseSort.POPULARITY_DESC
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    // Disabled rather than hidden, so it is
+                                    // clear the option exists and why it cannot
+                                    // be used: MusicBrainz publishes no
+                                    // popularity data of any kind.
+                                    enabled = !popularity || artist.supportsPopularity,
+                                    onClick = { sortOpen = false; onSort(option) },
+                                    leadingIcon = {
+                                        RadioButton(
+                                            selected = artist.sort == option,
+                                            onClick = null,
+                                        )
+                                    },
+                                )
+                            }
+                            if (!artist.supportsPopularity) {
+                                Text(
+                                    "Popularity needs Discogs",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.weight(1f))
+
+                    Row(
+                        Modifier.clickable {
+                            onIncludeCompilations(!artist.includeCompilations)
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = artist.includeCompilations,
+                            onCheckedChange = onIncludeCompilations,
+                        )
+                        Text(
+                            "Compilations",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(end = 12.dp),
+                        )
+                    }
+                }
+            }
 
             LazyColumn(Modifier.heightIn(max = 420.dp)) {
                 items(artist.releases.size, key = { artist.releases[it].id }) { index ->

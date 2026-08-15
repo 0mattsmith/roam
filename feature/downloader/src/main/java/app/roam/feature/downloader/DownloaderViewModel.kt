@@ -63,16 +63,51 @@ data class AlbumUiState(
     val heldCount: Int get() = tracks.count { it.inLibrary }
 }
 
+/** How a discography is ordered. */
+enum class ReleaseSort(val label: String) {
+    RELEASE_DATE_DESC("Newest first"),
+    RELEASE_DATE_ASC("Oldest first"),
+    POPULARITY_DESC("Most popular"),
+    POPULARITY_ASC("Least popular"),
+}
+
 /** An artist's discography, as a catalogue lists it. */
 data class ArtistUiState(
     val name: String,
     val detail: String? = null,
     val imageUrl: String? = null,
-    val releases: List<ReleaseMatch> = emptyList(),
+    /** Everything the catalogue returned, before sorting or filtering. */
+    val allReleases: List<ReleaseMatch> = emptyList(),
+    val sort: ReleaseSort = ReleaseSort.RELEASE_DATE_DESC,
+    val includeCompilations: Boolean = true,
     val source: MetadataSource = MetadataSource.MUSICBRAINZ,
     val loading: Boolean = false,
     val message: String? = null,
-)
+) {
+    /** True when the source can actually rank by popularity. Discogs only. */
+    val supportsPopularity: Boolean get() = allReleases.any { it.popularity != null }
+
+    val releases: List<ReleaseMatch>
+        get() {
+            val filtered =
+                if (includeCompilations) allReleases
+                else allReleases.filterNot { it.isCompilation }
+
+            return when (sort) {
+                ReleaseSort.RELEASE_DATE_DESC -> filtered.sortedByDescending { it.year ?: 0 }
+                ReleaseSort.RELEASE_DATE_ASC ->
+                    // Unknown years last rather than pretending they are ancient.
+                    filtered.sortedBy { it.year ?: Int.MAX_VALUE }
+                // Nulls last BOTH ways: no popularity data means unknown, not
+                // unpopular, and burying a record at one end would be a claim
+                // the source never made.
+                ReleaseSort.POPULARITY_DESC ->
+                    filtered.sortedByDescending { it.popularity ?: Int.MIN_VALUE }
+                ReleaseSort.POPULARITY_ASC ->
+                    filtered.sortedBy { it.popularity ?: Int.MAX_VALUE }
+            }
+        }
+}
 
 /** One row of the download queue. */
 data class DownloadStatus(
@@ -513,12 +548,16 @@ class DownloaderViewModel @Inject constructor(
             return@launch
         }
 
-        val releases = client.releasesForArtist(match.id).getOrDefault(emptyList())
+        // Generous, because this is a discography rather than a search result
+        // and "every album" is the point. The catalogues cap it anyway.
+        val releases = client.releasesForArtist(match.id, limit = 200)
+            .getOrDefault(emptyList())
+
         _artist.value = ArtistUiState(
             name = match.name,
             detail = match.detail,
             imageUrl = match.imageUrl,
-            releases = releases,
+            allReleases = releases,
             source = client.source,
             loading = false,
             message = if (releases.isEmpty()) "Nothing listed for this artist" else null,
@@ -531,6 +570,14 @@ class DownloaderViewModel @Inject constructor(
         _artist.value = null
         _album.value = AlbumUiState(title = match.title, artist = match.artist, loading = true)
         loadRelease(match.id, listOf(match), client, listOf(client.source))
+    }
+
+    fun setReleaseSort(sort: ReleaseSort) {
+        _artist.value = _artist.value?.copy(sort = sort)
+    }
+
+    fun setIncludeCompilations(include: Boolean) {
+        _artist.value = _artist.value?.copy(includeCompilations = include)
     }
 
     fun closeArtist() {

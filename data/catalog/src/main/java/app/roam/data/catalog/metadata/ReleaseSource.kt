@@ -19,6 +19,16 @@ data class ReleaseMatch(
     val format: String?,
     /** Discogs ships cover URLs with the search; MusicBrainz derives one. */
     val coverUrl: String?,
+    /**
+     * How many people hold this release, where the source counts such things.
+     *
+     * Discogs only -- MusicBrainz has no popularity data of any kind. NULL
+     * means unknown rather than unpopular, which is why sorting puts nulls
+     * last in both directions rather than treating them as zero.
+     */
+    val popularity: Int? = null,
+    /** A various-artists collection rather than an album by one act. */
+    val isCompilation: Boolean = false,
 ) {
     val subtitle: String
         get() = listOfNotNull(
