@@ -5,8 +5,9 @@
 .DESCRIPTION
     The development loop. Use this for ordinary work.
 
-        ./commit.ps1     stage everything, push, follow ci.yml     <- day to day
-        ./push.ps1       bump version, tag, publish a signed APK   <- releases only
+        ./commit.ps1            stage everything, push, follow ci.yml  <- day to day
+        ./commit.ps1 -PushOnly  push commits that already exist
+        ./push.ps1              bump, tag, publish a signed APK        <- releases
 
     On a red build it pulls the failed log and surfaces just the error lines,
     so you can paste those rather than hunting through the Actions UI.
@@ -18,6 +19,12 @@
     Fold the changes into the previous commit and force-push with
     --force-with-lease. Handy in a fix-the-build loop where you would otherwise
     end up with eleven commits called "fix ci". Do not use on a shared branch.
+
+.PARAMETER PushOnly
+    Skip staging and committing; push whatever is already committed and follow
+    CI. For when the commits were made by hand (or by an agent) and all that is
+    left is to send them. Without this the script sees a clean tree, decides
+    there is nothing to do, and exits WITHOUT pushing.
 
 .PARAMETER NoWatch
     Push and exit without following the run.
@@ -41,6 +48,7 @@ param(
     [string] $Message = "",
 
     [switch] $Amend,
+    [switch] $PushOnly,
     [switch] $NoWatch,
     [switch] $DryRun
 )
@@ -81,7 +89,25 @@ $repoSlug = "$slug".Trim()
 Write-Step "Changes on $branch"
 
 $status = @(git status --porcelain)
-if ($status.Count -eq 0 -and -not $Amend) {
+
+# -PushOnly reports what is about to be SENT rather than what changed, because
+# with a clean tree the changed-file list is empty and would say nothing at all.
+if ($PushOnly) {
+    $ahead = @(git log --oneline '@{upstream}..HEAD' 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        $ahead = @(git log --oneline -5)
+        Write-Warn 'No upstream yet - these are the last 5 commits.'
+    }
+    if ($ahead.Count -eq 0) { Write-Info 'Nothing to push.'; exit 0 }
+    $ahead | ForEach-Object { Write-Info $_ }
+    Write-Host ''
+    Write-Info ("{0} commit(s) to push" -f $ahead.Count)
+    if ($status.Count -gt 0) {
+        Write-Warn ("{0} uncommitted change(s) will be LEFT BEHIND" -f $status.Count)
+    }
+}
+
+if ($status.Count -eq 0 -and -not $Amend -and -not $PushOnly) {
     Write-Info 'Nothing to commit.'
     $answer = Read-Host 'Re-run CI on the current commit anyway? [y/N]'
     if ($answer -match '^[Yy]') {
@@ -92,9 +118,11 @@ if ($status.Count -eq 0 -and -not $Amend) {
     exit 0
 }
 
-git status --short
-Write-Host ''
-Write-Info ("{0} file(s) changed" -f $status.Count)
+if (-not $PushOnly) {
+    git status --short
+    Write-Host ''
+    Write-Info ("{0} file(s) changed" -f $status.Count)
+}
 
 # ----------------------------------------------------------------------------
 # Dependency sanity check
@@ -117,7 +145,9 @@ if (Test-Path 'tools/check-deps.py') {
 # ----------------------------------------------------------------------------
 # Message
 # ----------------------------------------------------------------------------
-if ([string]::IsNullOrWhiteSpace($Message)) {
+if ($PushOnly) {
+    Write-Info 'push only - not committing'
+} elseif ([string]::IsNullOrWhiteSpace($Message)) {
     $names = @($status | ForEach-Object { ($_ -replace '^.{3}', '').Trim().Split('/')[-1] } |
                Select-Object -Unique)
     $head  = ($names | Select-Object -First 3) -join ', '
@@ -130,7 +160,9 @@ if ([string]::IsNullOrWhiteSpace($Message)) {
 
 if ($DryRun) {
     Write-Step 'Dry run - plan only'
-    Write-Info ("commit  {0}{1}" -f $Message, $(if ($Amend) { '  [amending HEAD]' } else { '' }))
+    if (-not $PushOnly) {
+        Write-Info ("commit  {0}{1}" -f $Message, $(if ($Amend) { '  [amending HEAD]' } else { '' }))
+    }
     Write-Info ("push    origin {0}{1}" -f $branch, $(if ($Amend) { ' --force-with-lease' } else { '' }))
     Write-Info "watch   $CiWorkflow"
     Write-Host "`nNothing was changed.`n" -ForegroundColor Cyan
@@ -142,19 +174,21 @@ if ($DryRun) {
 # ----------------------------------------------------------------------------
 # Commit and push
 # ----------------------------------------------------------------------------
-Write-Step 'Committing'
+if (-not $PushOnly) {
+    Write-Step 'Committing'
 
-git add -A
-if ($LASTEXITCODE -ne 0) { Fail 'git add failed.' }
+    git add -A
+    if ($LASTEXITCODE -ne 0) { Fail 'git add failed.' }
 
-if ($Amend) {
-    git commit --amend -m $Message
-    if ($LASTEXITCODE -ne 0) { Fail 'git commit --amend failed.' }
-    Write-Ok 'amended HEAD'
-} else {
-    git commit -m $Message | Out-Null
-    if ($LASTEXITCODE -ne 0) { Fail 'git commit failed.' }
-    Write-Ok (git log -1 --pretty=format:'%h %s')
+    if ($Amend) {
+        git commit --amend -m $Message
+        if ($LASTEXITCODE -ne 0) { Fail 'git commit --amend failed.' }
+        Write-Ok 'amended HEAD'
+    } else {
+        git commit -m $Message | Out-Null
+        if ($LASTEXITCODE -ne 0) { Fail 'git commit failed.' }
+        Write-Ok (git log -1 --pretty=format:'%h %s')
+    }
 }
 
 Write-Step 'Pushing'
