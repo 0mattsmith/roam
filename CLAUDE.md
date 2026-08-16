@@ -377,6 +377,7 @@ argued about mid-flight:
 | A chorus only appears once | One LRC line can carry several timestamps for repeats -- emit one entry per stamp, not per line |
 | Lyrics vanish after correcting a title | `TrackEditor.apply` wrote lyrics unconditionally, nulling `syncedLyrics` on every save. It must compare against the stored words first |
 | A track with no lyrics is looked up on every play | `lyricsAttemptedAt` not stamped on a miss. Same mistake as `artworkAttemptedAt` -- a miss is an answer |
+| KSP says `no such column` for a column you just added | It landed on the wrong entity -- `artworkId` appears in three of them and a search-and-replace takes the first. `tools/check-schema.py` compares every `ALTER TABLE` against the entity for that table and names where the field actually went |
 | Lyrics are looked up again on a track that has them | The sidecar read ran but Room was not stamped, or `folderPath`/`fileName` are still null on a row that predates schema 13. They fill in on the next crawl |
 | A lyrics sweep writes nothing to Drive | `saveLyricsToDrive` off, or the folder did not resolve. `LyricFiles` resolves with `create = false` like the photo pass -- a tag that does not match a folder must not conjure one |
 | "Sync lyrics" skips tracks that are plainly wrong | By design it only visits tracks with NO lyrics. Roam has nothing to compare words against, so it cannot detect a wrong one -- "Re-check all" is the manual answer |

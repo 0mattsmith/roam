@@ -129,11 +129,18 @@ if (-not $PushOnly) {
 # ----------------------------------------------------------------------------
 # Most early CI failures on this project were a module importing something it
 # never declared. This catches that in a second rather than a round trip.
-if (Test-Path 'tools/check-deps.py') {
-    $py = (Get-Command python -ErrorAction SilentlyContinue) ?? (Get-Command python3 -ErrorAction SilentlyContinue)
-    if ($py) {
-        Write-Step 'Checking declared dependencies'
-        & $py.Source tools/check-deps.py
+$py = (Get-Command python -ErrorAction SilentlyContinue) ?? (Get-Command python3 -ErrorAction SilentlyContinue)
+if ($py) {
+    # check-schema is not a heuristic: a migration and an entity disagreeing is
+    # always a broken build, so it is checked first and its findings are real.
+    $preflight = @(
+        @{ Script = 'tools/check-deps.py';   Step = 'Checking declared dependencies' }
+        @{ Script = 'tools/check-schema.py'; Step = 'Checking Room migrations' }
+    )
+    foreach ($check in $preflight) {
+        if (-not (Test-Path $check.Script)) { continue }
+        Write-Step $check.Step
+        & $py.Source $check.Script
         if ($LASTEXITCODE -ne 0) {
             Write-Warn 'Push anyway? These are heuristics and can be wrong.'
             $answer = Read-Host '[y/N]'
