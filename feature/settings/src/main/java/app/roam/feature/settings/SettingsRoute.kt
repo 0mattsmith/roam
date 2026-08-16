@@ -165,6 +165,67 @@ fun SettingsRoute(
                 onChange = vm::setShowLyrics,
             )
 
+            val saveLyrics by vm.saveLyricsToDrive.collectAsStateWithLifecycle()
+            SwitchRow(
+                title = "Save lyrics beside the music",
+                subtitle = "Writes a .lrc or .txt next to each track on Drive, so " +
+                    "they survive a reinstall and any other player can read them. " +
+                    "Never replaces a file that is already there.",
+                checked = saveLyrics,
+                onChange = vm::setSaveLyricsToDrive,
+            )
+
+            val sweep by vm.lyricsSweep.collectAsStateWithLifecycle()
+
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Button(
+                    onClick = { vm.syncLyrics(force = false) },
+                    enabled = sweep?.running != true,
+                ) { Text("Sync lyrics") }
+
+                OutlinedButton(
+                    onClick = { vm.syncLyrics(force = true) },
+                    enabled = sweep?.running != true,
+                ) { Text("Re-check all") }
+            }
+
+            Text(
+                // Being straight about the limit. Roam has nothing to compare a
+                // lyric against, so it cannot find a wrong one -- "Re-check all"
+                // is the manual answer to that, not a smarter algorithm.
+                "\"Sync lyrics\" fills in tracks with none. \"Re-check all\" asks " +
+                    "again about every track, including ones that came back empty " +
+                    "or came back wrong.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+
+            sweep?.let { progress ->
+                if (progress.running && progress.total > 0) {
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { progress.done.toFloat() / progress.total },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "${progress.done} of ${progress.total} - ${progress.found} found",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (progress.finished && progress.total > 0) {
+                    Text(
+                        "Found lyrics for ${progress.found} of ${progress.total} tracks",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
             SectionHeader("Data usage")
 

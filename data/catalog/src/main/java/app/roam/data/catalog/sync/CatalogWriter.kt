@@ -90,6 +90,8 @@ class CatalogWriter @Inject constructor(
                 trackNo = tags.trackNo,
                 mimeType = file.mimeType,
                 sizeBytes = file.sizeBytes,
+                fileName = file.name,
+                folderPath = file.pathSegments.joinToString("/"),
                 addedAt = now,
                 tagState = TagState.PATH_INFERRED,
             )
@@ -112,7 +114,18 @@ class CatalogWriter @Inject constructor(
         // the user has not overridden them.
         for (row in trackRows) {
             if (known[row.remoteId] == null) continue
-            tracks.updateFileFacts(row.id, row.remoteRevision, row.mimeType, row.sizeBytes)
+            // fileName and folderPath ride with the other file facts, so a
+            // track that MOVED on the source stops pointing at where it used
+            // to be. Unconditional, unlike refreshFromPath -- where a file
+            // lives is never the user's edit to lose.
+            tracks.updateFileFacts(
+                id = row.id,
+                remoteRevision = row.remoteRevision,
+                mimeType = row.mimeType,
+                sizeBytes = row.sizeBytes,
+                fileName = row.fileName,
+                folderPath = row.folderPath,
+            )
             tracks.refreshFromPath(
                 id = row.id,
                 title = row.title,

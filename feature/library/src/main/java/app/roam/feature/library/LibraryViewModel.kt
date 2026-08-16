@@ -15,7 +15,11 @@ import app.roam.core.model.LibraryTab
 import app.roam.core.model.Ids
 import app.roam.core.model.TrackSort
 import app.roam.core.model.ViewMode
+import android.content.Context
 import app.roam.core.datastore.SettingsRepository
+import app.roam.data.catalog.metadata.LyricsRepository
+import app.roam.data.catalog.metadata.LyricsWorker
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import android.net.Uri
 import app.roam.core.database.ArtistListItem
@@ -76,6 +80,8 @@ class LibraryViewModel @Inject constructor(
     private val photos: ArtworkEditor,
     private val trackEditor: TrackEditor,
     private val settings: SettingsRepository,
+    private val lyrics: LyricsRepository,
+    @ApplicationContext private val ctx: Context,
 ) : ViewModel() {
 
     private sealed interface Drill {
@@ -506,6 +512,30 @@ class LibraryViewModel @Inject constructor(
         // the edit touches, including the artist and album it may have moved to.
         _photoMessage.value = trackEditor.apply(trackId, edits)
             .fold({ "Track updated" }, { "Could not save: ${it.message}" })
+    }
+
+    /**
+     * Lyrics for every track on an album that has none.
+     *
+     * A worker rather than a coroutine here: an album is up to a couple of
+     * dozen lookups, and locking the phone half way through should not abandon
+     * them. The message is fire-and-forget -- the words appear on each track as
+     * they land, and a progress bar for something nobody is waiting on is
+     * clutter.
+     */
+    fun fetchLyricsForAlbum(albumId: Long, albumTitle: String) = viewModelScope.launch {
+        LyricsWorker.enqueue(
+            ctx = ctx,
+            wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers,
+            albumId = albumId,
+        )
+        _photoMessage.value = "Looking up lyrics for $albumTitle"
+    }
+
+    /** The Fetch button beside the lyrics field. Forced: it was asked for. */
+    suspend fun fetchLyricsNow(trackId: Long): String? {
+        val found = lyrics.ensureFetched(trackId, force = true)
+        return if (found) tracks.lyricsForOnce(trackId)?.plain else null
     }
 
     fun revertTrackEdits(trackId: Long) = viewModelScope.launch {

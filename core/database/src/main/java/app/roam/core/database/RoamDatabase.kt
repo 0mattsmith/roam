@@ -19,7 +19,7 @@ import javax.inject.Singleton
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
         TrackEntity::class, ArtworkEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -122,6 +122,25 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
     }
 }
 
+/**
+ * Where the file actually lives, which the crawl always knew and always threw
+ * away.
+ *
+ * Needed to find the .lrc sitting beside a track: the folder cannot be derived
+ * from the artist and album TAGS, because a tag and a folder name are allowed
+ * to disagree -- that mismatch is exactly why the artist photo pass resolves
+ * with create = false. Both are file facts, so sync owns them and refreshes
+ * them when a file moves.
+ *
+ * Null until the next crawl fills them in, so every read has to cope with that.
+ */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN fileName TEXT")
+        db.execSQL("ALTER TABLE tracks ADD COLUMN folderPath TEXT")
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -132,6 +151,7 @@ object DatabaseModule {
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                 MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
+                MIGRATION_12_13,
             )
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()

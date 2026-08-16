@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import app.roam.data.catalog.sync.SyncWorker
 import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
+import app.roam.data.catalog.metadata.LyricsWorker
 import app.roam.data.source.drive.DriveAuth
 import app.roam.data.source.drive.DriveSourceProvider
 import app.roam.data.source.drive.DriveSourceProvider.Companion.SOURCE_ID
@@ -49,6 +50,15 @@ data class SettingsUiState(
     val autoCheckUpdates: Boolean = true,
     val saveArtistPhotos: Boolean = true,
     val confirmDisconnect: Boolean = false,
+)
+
+/** What the lyrics sweep row shows. */
+data class LyricsSweepUi(
+    val running: Boolean,
+    val found: Int,
+    val done: Int,
+    val total: Int,
+    val finished: Boolean,
 )
 
 @HiltViewModel
@@ -95,6 +105,50 @@ class SettingsViewModel @Inject constructor(
 
     fun setShowLyrics(v: Boolean) = viewModelScope.launch {
         settings.setShowLyrics(v)
+    }
+
+    val saveLyricsToDrive = settings.settings
+        .map { it.saveLyricsToDrive }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    fun setSaveLyricsToDrive(v: Boolean) = viewModelScope.launch {
+        settings.setSaveLyricsToDrive(v)
+    }
+
+    /**
+     * Progress of a lyrics sweep, straight from WorkManager rather than mirrored
+     * in state -- the pass outlives this screen, and a copy here would be wrong
+     * the moment someone backed out and came back.
+     */
+    val lyricsSweep: StateFlow<LyricsSweepUi?> =
+        WorkManager.getInstance(getApplication())
+            .getWorkInfosForUniqueWorkFlow(LyricsWorker.NAME)
+            .map { infos ->
+                val info = infos.firstOrNull() ?: return@map null
+                val data = if (info.state == WorkInfo.State.SUCCEEDED) info.outputData
+                           else info.progress
+                LyricsSweepUi(
+                    running = info.state == WorkInfo.State.RUNNING ||
+                        info.state == WorkInfo.State.ENQUEUED,
+                    found = data.getInt(LyricsWorker.KEY_FOUND, 0),
+                    done = data.getInt(LyricsWorker.KEY_DONE, 0),
+                    total = data.getInt(LyricsWorker.KEY_TOTAL, 0),
+                    finished = info.state == WorkInfo.State.SUCCEEDED,
+                )
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * @param force re-ask about tracks already tried. Roam cannot tell a WRONG
+     * lyric from a right one -- there is nothing to compare against -- so this
+     * is how someone says "these are not the words".
+     */
+    fun syncLyrics(force: Boolean) = viewModelScope.launch {
+        LyricsWorker.enqueue(
+            ctx = getApplication(),
+            wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers,
+            force = force,
+        )
     }
 
     val wifiOnlyLargeTransfers = settings.settings

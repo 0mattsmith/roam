@@ -148,6 +148,19 @@ other — route between them through `:app`.
    `SourceProvider.overwrite` exists for the phase 4 tag writer and must not be
    reintroduced into an artwork path.
 
+6e. **Lyrics live beside the track, and the file wins.** A `.lrc` (timed) or
+   `.txt` (plain) sharing the audio file's basename, which is what Kodi, Plex,
+   Poweramp and Navidrome all read -- so words Roam finds are not trapped in
+   Roam, and words someone else put there cost no lookup at all. Precedence
+   mirrors 6c exactly: sidecar first, LRCLIB second, and LRCLIB's answer is
+   written back so the second lookup never happens. Room is a CACHE of this,
+   not the home. Never overwritten and never archived either -- unlike a cover,
+   this runs unattended, and a background pass has no business renaming files in
+   someone's music folder. Finding the file needs `fileName` and `folderPath` on
+   the track row, because an artist TAG and a folder NAME are allowed to
+   disagree; both are file facts that sync refreshes, so a moved file is
+   followed rather than lost.
+
 7. **IDs are content-derived** (`Ids.album`, `Ids.track` in `:core:model`), not
    autoincrement. A file that moves in Drive keeps its identity and its loved
    flag. Re-sync must be idempotent.
@@ -364,6 +377,10 @@ argued about mid-flight:
 | A chorus only appears once | One LRC line can carry several timestamps for repeats -- emit one entry per stamp, not per line |
 | Lyrics vanish after correcting a title | `TrackEditor.apply` wrote lyrics unconditionally, nulling `syncedLyrics` on every save. It must compare against the stored words first |
 | A track with no lyrics is looked up on every play | `lyricsAttemptedAt` not stamped on a miss. Same mistake as `artworkAttemptedAt` -- a miss is an answer |
+| Lyrics are looked up again on a track that has them | The sidecar read ran but Room was not stamped, or `folderPath`/`fileName` are still null on a row that predates schema 13. They fill in on the next crawl |
+| A lyrics sweep writes nothing to Drive | `saveLyricsToDrive` off, or the folder did not resolve. `LyricFiles` resolves with `create = false` like the photo pass -- a tag that does not match a folder must not conjure one |
+| "Sync lyrics" skips tracks that are plainly wrong | By design it only visits tracks with NO lyrics. Roam has nothing to compare words against, so it cannot detect a wrong one -- "Re-check all" is the manual answer |
+| A hand-written .lrc keeps getting replaced | It must not be. `LyricFiles.write` returns early when the name already exists, and the read path outranks LRCLIB |
 | Update never installs | Version compared as a string, or the signing key changed |
 | Two releases with the same versionCode | Updater ignores the newer one | `versionCode` is the commit count; never hand-edit it in CI |
 | Update invisible to devices | Release marked pre-release or draft — `/releases/latest` skips both |

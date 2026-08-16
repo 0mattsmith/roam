@@ -41,12 +41,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.text.KeyboardOptions
 import app.roam.core.database.TrackListItem
 import app.roam.data.catalog.TrackEdits
@@ -171,6 +173,8 @@ fun TrackEditDialog(
     canGoNext: Boolean,
     onDismiss: () -> Unit,
     onSave: (TrackEdits) -> Unit,
+    /** Looks the words up now, returning them, or null when nothing was found. */
+    onFetchLyrics: suspend () -> String?,
     onStep: (TrackEdits, Int) -> Unit,
     onCoverSave: () -> Unit,
     onCoverRemove: () -> Unit,
@@ -195,6 +199,9 @@ fun TrackEditDialog(
     var startAt by remember(trackId) { mutableStateOf(formatClip(initial.startMs)) }
     var endAt by remember(trackId) { mutableStateOf(formatClip(initial.endMs)) }
     var lyrics by remember(trackId) { mutableStateOf(initial.lyrics.orEmpty()) }
+    var fetchingLyrics by remember(trackId) { mutableStateOf(false) }
+    var lyricNote by remember(trackId) { mutableStateOf<String?>(null) }
+    val lyricScope = rememberCoroutineScope()
 
     fun collect() = TrackEdits(
         title = title,
@@ -284,9 +291,37 @@ fun TrackEditDialog(
                     maxLines = 10,
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        enabled = !fetchingLyrics,
+                        onClick = {
+                            fetchingLyrics = true
+                            lyricScope.launch {
+                                val found = onFetchLyrics()
+                                // Only replaces the box when something came
+                                // back. Blanking what someone typed because a
+                                // lookup missed would be its own bug.
+                                if (found != null) lyrics = found
+                                lyricNote = if (found != null) "Found" else "Nothing found"
+                                fetchingLyrics = false
+                            }
+                        },
+                    ) { Text(if (fetchingLyrics) "Looking..." else "Fetch lyrics") }
+
+                    lyricNote?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
                 Text(
-                    "Found automatically while a track plays. Typing here replaces " +
-                        "them, and nothing will overwrite what you wrote.",
+                    "Found automatically while a track plays, and saved beside the " +
+                        "track on Drive. Typing here replaces them, and nothing " +
+                        "will overwrite what you wrote.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

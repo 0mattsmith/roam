@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
@@ -60,6 +61,7 @@ fun AlbumHeaderSheet(
     onOpenAlbum: () -> Unit,
     onGoToArtist: () -> Unit,
     onBulkEdit: () -> Unit,
+    onFetchLyrics: () -> Unit,
     onRemoveAlbum: () -> Unit,
     onArtworkPicked: (Uri) -> Unit,
 ) {
@@ -124,6 +126,13 @@ fun AlbumHeaderSheet(
                 headlineContent = { Text("Edit details for all tracks") },
                 supportingContent = { Text("Pick which fields to change") },
                 leadingContent = { Icon(Icons.Filled.Edit, contentDescription = null) },
+            )
+
+            ListItem(
+                modifier = Modifier.clickable(onClick = onFetchLyrics),
+                headlineContent = { Text("Get lyrics for the album") },
+                supportingContent = { Text("Fills in every track that has none") },
+                leadingContent = { Icon(Icons.Filled.Lyrics, contentDescription = null) },
             )
 
             ListItem(

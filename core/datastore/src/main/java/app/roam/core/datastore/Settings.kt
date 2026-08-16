@@ -65,6 +65,16 @@ data class RoamSettings(
     val showLyrics: Boolean = true,
 
     /**
+     * Write found lyrics back beside the track as .lrc / .txt.
+     *
+     * Same bargain as saveArtistPhotosToDrive: it makes the words survive a
+     * reinstall and reach anything else reading the folder, but it IS Roam
+     * writing into the user's own library, so it stays visible and off-able.
+     * Never overwrites a file that is already there.
+     */
+    val saveLyricsToDrive: Boolean = true,
+
+    /**
      * Hold LARGE transfers until an unmetered network is available.
      *
      * Covers downloads, the tag pass (a 1 MB ranged read per new track) and
@@ -126,6 +136,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val UPDATE_AVAILABLE = stringPreferencesKey("update_available")
         val DISCOGS_TOKEN = stringPreferencesKey("discogs_token")
         val SHOW_LYRICS = booleanPreferencesKey("show_lyrics")
+        val SAVE_LYRICS = booleanPreferencesKey("save_lyrics_to_drive")
         val WIFI_ONLY_LARGE = booleanPreferencesKey("wifi_only_large_transfers")
 
         val ARTIST_VIEW = stringPreferencesKey("artist_view_mode")
@@ -158,6 +169,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             updateAvailable = p[K.UPDATE_AVAILABLE],
             discogsToken = p[K.DISCOGS_TOKEN],
             showLyrics = p[K.SHOW_LYRICS] ?: true,
+            saveLyricsToDrive = p[K.SAVE_LYRICS] ?: true,
             wifiOnlyForLargeTransfers = p[K.WIFI_ONLY_LARGE] ?: true,
             artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID_3),
             artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID_3),
@@ -230,6 +242,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
 
     suspend fun setShowLyrics(v: Boolean) {
         ctx.dataStore.edit { it[K.SHOW_LYRICS] = v }
+    }
+
+    suspend fun setSaveLyricsToDrive(v: Boolean) {
+        ctx.dataStore.edit { it[K.SAVE_LYRICS] = v }
     }
 
     suspend fun setDiscogsToken(token: String?) {

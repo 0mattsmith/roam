@@ -31,10 +31,18 @@ interface TrackDao {
      */
     @Query("""
         UPDATE tracks SET remoteRevision = :remoteRevision, mimeType = :mimeType,
-                          sizeBytes = :sizeBytes
+                          sizeBytes = :sizeBytes, fileName = :fileName,
+                          folderPath = :folderPath
         WHERE id = :id
     """)
-    suspend fun updateFileFacts(id: Long, remoteRevision: String?, mimeType: String, sizeBytes: Long)
+    suspend fun updateFileFacts(
+        id: Long,
+        remoteRevision: String?,
+        mimeType: String,
+        sizeBytes: Long,
+        fileName: String?,
+        folderPath: String?,
+    )
 
     /**
      * Re-applies what the path implies and queues a re-read of the tags.
@@ -257,13 +265,28 @@ interface TrackDao {
     /** Everything a lyric lookup needs to identify the track. */
     @Query("""
         SELECT t.id AS id, t.title AS title, ar.name AS artistName,
-               al.title AS albumTitle, t.durationMs AS durationMs
+               al.title AS albumTitle, t.durationMs AS durationMs,
+               t.fileName AS fileName, t.folderPath AS folderPath
         FROM tracks t
         JOIN artists ar ON ar.id = t.artistId
         JOIN albums  al ON al.id = t.albumId
         WHERE t.id = :id
     """)
     suspend fun lyricSubject(id: Long): LyricSubject?
+
+    /**
+     * Tracks with no lyrics yet. Hidden rows are excluded -- fetching words for
+     * something removed from the library is work nobody asked for.
+     */
+    @Query("SELECT id FROM tracks WHERE hidden = 0 AND lyricsAttemptedAt IS NULL")
+    suspend fun trackIdsWithoutLyrics(): List<Long>
+
+    /** Everything, for a re-check that ignores a previous miss. */
+    @Query("SELECT id FROM tracks WHERE hidden = 0")
+    suspend fun allTrackIds(): List<Long>
+
+    @Query("SELECT id FROM tracks WHERE albumId = :albumId AND hidden = 0")
+    suspend fun trackIdsForAlbum(albumId: Long): List<Long>
 
     @Query("UPDATE tracks SET hidden = :hidden WHERE id = :id")
     suspend fun setHidden(id: Long, hidden: Boolean)
@@ -374,6 +397,9 @@ data class LyricSubject(
     val artistName: String,
     val albumTitle: String,
     val durationMs: Long,
+    /** Null until a crawl has run since schema 13 filled these in. */
+    val fileName: String?,
+    val folderPath: String?,
 )
 
 /** A track removed from the library, as the restore list needs it. */

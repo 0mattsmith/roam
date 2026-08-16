@@ -401,6 +401,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             canGoNext = canNext,
             onDismiss = vm::closeTrackEditor,
             onSave = { edits -> vm.saveTrackEdits(track.id, edits) },
+            onFetchLyrics = { vm.fetchLyricsNow(track.id) },
             onStep = { edits, delta -> vm.stepTrackEditor(track, edits, delta) },
             onCoverSave = { vm.saveAlbumCoverFor(track) },
             onCoverRemove = { vm.removeAlbumCover(track) },
@@ -420,6 +421,10 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             onOpenAlbum = { headerSheetFor = null; vm.openAlbum(track.albumId, track.albumTitle) },
             onGoToArtist = { headerSheetFor = null; vm.openArtistByName(track.albumArtistName) },
             onBulkEdit = { headerSheetFor = null; vm.openAlbumBulkEditor(track) },
+            onFetchLyrics = {
+                headerSheetFor = null
+                vm.fetchLyricsForAlbum(track.albumId, track.albumTitle)
+            },
             onRemoveAlbum = {
                 headerSheetFor = null
                 vm.removeAlbum(track.albumId, track.albumTitle)

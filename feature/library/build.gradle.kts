@@ -39,6 +39,10 @@ dependencies {
     implementation(libs.hilt.navigation)
     implementation(libs.coil.compose)
     implementation(libs.paging.compose)
+    // LibraryViewModel enqueues LyricsWorker, and referencing that class means
+    // resolving its CoroutineWorker supertype -- without this the build fails
+    // with "Cannot access class", not with a missing symbol.
+    implementation(libs.work.runtime)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 }

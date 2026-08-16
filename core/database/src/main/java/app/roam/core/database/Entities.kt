@@ -42,6 +42,14 @@ data class ArtistEntity(
     val groupArtistId: Long? = null,
     val artworkId: String? = null,
     /**
+     * The file's own name, e.g. "03 Time - Pink Floyd.mp3". File facts, owned
+     * by sync -- a rename on the source must be followed here, or the sidecar
+     * lyric lookup goes hunting for a file that no longer exists.
+     */
+    val fileName: String? = null,
+    /** Folder segments below the root, joined with '/'. */
+    val folderPath: String? = null,
+    /**
      * When a photo lookup was last attempted, successful or not. Without it an
      * artist with no photo anywhere gets re-searched on every single run.
      */
