@@ -231,6 +231,40 @@ interface TrackDao {
     @Query("UPDATE tracks SET startMs = :startMs, endMs = :endMs WHERE id = :id")
     suspend fun setClip(id: Long, startMs: Long?, endMs: Long?)
 
+    /**
+     * Caches a lookup, hit or miss.
+     *
+     * Stamped unconditionally: a track LRCLIB has never heard of must record
+     * that it was asked, or every play repeats the request forever. Same
+     * mistake the artist photo pass made with artworkAttemptedAt.
+     */
+    @Query("""
+        UPDATE tracks
+        SET lyrics = :plain, syncedLyrics = :synced, lyricsAttemptedAt = :at
+        WHERE id = :id
+    """)
+    suspend fun setLyrics(id: Long, plain: String?, synced: String?, at: Long)
+
+    @Query("SELECT lyrics AS plain, syncedLyrics AS synced, lyricsAttemptedAt AS attemptedAt " +
+        "FROM tracks WHERE id = :id")
+    fun lyricsFor(id: Long): Flow<StoredLyrics?>
+
+    /** The same row read once, for the fetch path's "have we already asked?" check. */
+    @Query("SELECT lyrics AS plain, syncedLyrics AS synced, lyricsAttemptedAt AS attemptedAt " +
+        "FROM tracks WHERE id = :id")
+    suspend fun lyricsForOnce(id: Long): StoredLyrics?
+
+    /** Everything a lyric lookup needs to identify the track. */
+    @Query("""
+        SELECT t.id AS id, t.title AS title, ar.name AS artistName,
+               al.title AS albumTitle, t.durationMs AS durationMs
+        FROM tracks t
+        JOIN artists ar ON ar.id = t.artistId
+        JOIN albums  al ON al.id = t.albumId
+        WHERE t.id = :id
+    """)
+    suspend fun lyricSubject(id: Long): LyricSubject?
+
     @Query("UPDATE tracks SET hidden = :hidden WHERE id = :id")
     suspend fun setHidden(id: Long, hidden: Boolean)
 
@@ -320,6 +354,27 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks")
     fun count(): Flow<Int>
 }
+
+/**
+ * Cached lyrics for one track.
+ *
+ * [attemptedAt] separates "never looked" from "looked and found nothing",
+ * which are the same shape but need opposite behaviour.
+ */
+data class StoredLyrics(
+    val plain: String?,
+    val synced: String?,
+    val attemptedAt: Long?,
+)
+
+/** What identifies a track to a lyrics service. */
+data class LyricSubject(
+    val id: Long,
+    val title: String,
+    val artistName: String,
+    val albumTitle: String,
+    val durationMs: Long,
+)
 
 /** A track removed from the library, as the restore list needs it. */
 data class HiddenTrackRow(

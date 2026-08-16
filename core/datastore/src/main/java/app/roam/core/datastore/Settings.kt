@@ -59,6 +59,12 @@ data class RoamSettings(
     val discogsToken: String? = null,
 
     /**
+     * Show lyrics under the now playing screen. On by default, because the
+     * lookup only happens for the song being played and costs a few kilobytes.
+     */
+    val showLyrics: Boolean = true,
+
+    /**
      * Hold LARGE transfers until an unmetered network is available.
      *
      * Covers downloads, the tag pass (a 1 MB ranged read per new track) and
@@ -119,6 +125,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val SAVE_ARTIST_PHOTOS = booleanPreferencesKey("save_artist_photos_to_drive")
         val UPDATE_AVAILABLE = stringPreferencesKey("update_available")
         val DISCOGS_TOKEN = stringPreferencesKey("discogs_token")
+        val SHOW_LYRICS = booleanPreferencesKey("show_lyrics")
         val WIFI_ONLY_LARGE = booleanPreferencesKey("wifi_only_large_transfers")
 
         val ARTIST_VIEW = stringPreferencesKey("artist_view_mode")
@@ -150,6 +157,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             saveArtistPhotosToDrive = p[K.SAVE_ARTIST_PHOTOS] ?: true,
             updateAvailable = p[K.UPDATE_AVAILABLE],
             discogsToken = p[K.DISCOGS_TOKEN],
+            showLyrics = p[K.SHOW_LYRICS] ?: true,
             wifiOnlyForLargeTransfers = p[K.WIFI_ONLY_LARGE] ?: true,
             artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID_3),
             artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID_3),
@@ -218,6 +226,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
 
     suspend fun setWifiOnlyForLargeTransfers(v: Boolean) {
         ctx.dataStore.edit { it[K.WIFI_ONLY_LARGE] = v }
+    }
+
+    suspend fun setShowLyrics(v: Boolean) {
+        ctx.dataStore.edit { it[K.SHOW_LYRICS] = v }
     }
 
     suspend fun setDiscogsToken(token: String?) {

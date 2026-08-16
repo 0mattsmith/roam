@@ -358,6 +358,12 @@ argued about mid-flight:
 | Queued downloads never start and nothing says why | Not a network constraint — check for a job stuck in `retry`. Uncapped retry backs off to five hours and is indistinguishable from waiting. `MAX_ATTEMPTS` exists so it fails visibly instead |
 | One bad download stalls the whole queue | Downloads must be independent unique jobs, never an appended chain. A chain leaves everything behind a retrying job BLOCKED, and `APPEND_OR_REPLACE` resolves a failed chain by deleting the queue behind it |
 | Two downloads pick up each other's file | Shared staging directory. It is keyed on the WorkManager job id for exactly this reason |
+| Lyrics are a second late against the voice | Position is polled, and 500ms is too coarse to highlight a line. The Now Playing poll drops to 200ms while a SYNCED lyric is on screen and nowhere else |
+| Every line of an LRC lights up at once | `[ar:]`, `[ti:]` and `[al:]` look exactly like timestamps. The minutes field must be digits, which no metadata tag is |
+| Synced lyrics run half a second early | A two-digit fraction is CENTIseconds; three digits are milliseconds. Reading `.50` as 50ms puts every line 450ms out |
+| A chorus only appears once | One LRC line can carry several timestamps for repeats -- emit one entry per stamp, not per line |
+| Lyrics vanish after correcting a title | `TrackEditor.apply` wrote lyrics unconditionally, nulling `syncedLyrics` on every save. It must compare against the stored words first |
+| A track with no lyrics is looked up on every play | `lyricsAttemptedAt` not stamped on a miss. Same mistake as `artworkAttemptedAt` -- a miss is an answer |
 | Update never installs | Version compared as a string, or the signing key changed |
 | Two releases with the same versionCode | Updater ignores the newer one | `versionCode` is the commit count; never hand-edit it in CI |
 | Update invisible to devices | Release marked pre-release or draft — `/releases/latest` skips both |

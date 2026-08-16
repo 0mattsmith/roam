@@ -194,6 +194,7 @@ fun TrackEditDialog(
     var groupArtist by remember(trackId) { mutableStateOf(initial.groupArtist.orEmpty()) }
     var startAt by remember(trackId) { mutableStateOf(formatClip(initial.startMs)) }
     var endAt by remember(trackId) { mutableStateOf(formatClip(initial.endMs)) }
+    var lyrics by remember(trackId) { mutableStateOf(initial.lyrics.orEmpty()) }
 
     fun collect() = TrackEdits(
         title = title,
@@ -209,6 +210,7 @@ fun TrackEditDialog(
         groupArtist = groupArtist.ifBlank { null },
         startMs = parseClip(startAt),
         endMs = parseClip(endAt),
+        lyrics = lyrics,
     )
 
     AlertDialog(
@@ -267,6 +269,24 @@ fun TrackEditDialog(
                 }
                 Text(
                     "m:ss, for skipping silence or an intro. Leave blank for the whole track.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                // Multi-line and roomy: this field gets PASTED into far more
+                // often than typed, and a one-line box for a whole song is a
+                // reliable way to make someone think it did not take.
+                OutlinedTextField(
+                    value = lyrics,
+                    onValueChange = { lyrics = it },
+                    label = { Text("Lyrics") },
+                    minLines = 4,
+                    maxLines = 10,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Found automatically while a track plays. Typing here replaces " +
+                        "them, and nothing will overwrite what you wrote.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

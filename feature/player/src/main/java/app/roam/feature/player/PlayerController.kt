@@ -26,6 +26,14 @@ data class NowPlaying(
     val isPlaying: Boolean = false,
     val hasItem: Boolean = false,
     val positionMs: Long = 0,
+    /**
+     * Room id of what is playing, recovered from the MediaItem's id.
+     *
+     * Media3's metadata carries the title and artist but nothing that points
+     * back at the catalogue, and screens that want more than can fit in a
+     * MediaMetadata -- lyrics, the loved flag -- need the row, not the label.
+     */
+    val trackId: Long? = null,
     val durationMs: Long = 0,
     val shuffleEnabled: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
@@ -134,6 +142,9 @@ class PlayerController @Inject constructor(
             isPlaying = player.isPlaying,
             hasItem = player.currentMediaItem != null,
             positionMs = player.currentPosition.coerceAtLeast(0),
+            trackId = player.currentMediaItem?.mediaId
+                ?.let { runCatching { MediaId.parse(it) }.getOrNull() }
+                ?.let { (it as? MediaId.Track)?.id },
             // Duration is C.TIME_UNSET until the track is prepared.
             durationMs = player.duration.takeIf { it > 0 } ?: 0,
             shuffleEnabled = player.shuffleModeEnabled,

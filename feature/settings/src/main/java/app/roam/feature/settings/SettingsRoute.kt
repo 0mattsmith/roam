@@ -153,6 +153,19 @@ fun SettingsRoute(
             )
 
             Spacer(Modifier.height(24.dp))
+            SectionHeader("Now playing")
+
+            val showLyrics by vm.showLyrics.collectAsStateWithLifecycle()
+            SwitchRow(
+                title = "Show lyrics",
+                subtitle = "Looked up once per track from LRCLIB and kept, so a " +
+                    "song you have played before needs no connection. A few " +
+                    "kilobytes each, and only for what you actually play.",
+                checked = showLyrics,
+                onChange = vm::setShowLyrics,
+            )
+
+            Spacer(Modifier.height(24.dp))
             SectionHeader("Data usage")
 
             val wifiOnly by vm.wifiOnlyLargeTransfers.collectAsStateWithLifecycle()

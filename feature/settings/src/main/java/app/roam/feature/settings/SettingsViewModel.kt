@@ -89,6 +89,14 @@ class SettingsViewModel @Inject constructor(
     val hiddenCount = trackDao.hiddenCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    val showLyrics = settings.settings
+        .map { it.showLyrics }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    fun setShowLyrics(v: Boolean) = viewModelScope.launch {
+        settings.setShowLyrics(v)
+    }
+
     val wifiOnlyLargeTransfers = settings.settings
         .map { it.wifiOnlyForLargeTransfers }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)

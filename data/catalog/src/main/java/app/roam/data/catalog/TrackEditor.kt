@@ -61,6 +61,13 @@ data class TrackEdits(
      */
     val startMs: Long? = null,
     val endMs: Long? = null,
+    /**
+     * Words, typed or pasted by hand. Like the trim points these ride on the
+     * same form but are written separately -- lyrics say nothing about whether
+     * the TAGS are right, so setting them must not mark the track userEdited
+     * and stop the tag pass ever refreshing it.
+     */
+    val lyrics: String? = null,
 )
 
 /**
@@ -102,6 +109,7 @@ class TrackEditor @Inject constructor(
                 ?.let { artists.byId(it)?.name },
             startMs = track.startMs,
             endMs = track.endMs,
+            lyrics = track.lyrics,
         )
     }
 
@@ -112,6 +120,26 @@ class TrackEditor @Inject constructor(
             // right, and marking the track edited would stop the tag pass ever
             // refreshing it again.
             tracks.setClip(trackId, edits.startMs, edits.endMs)
+
+            // Same reasoning, same separation: lyrics are not tags. Stamping
+            // lyricsAttemptedAt is what stops the automatic lookup coming along
+            // later and replacing what was typed here.
+            //
+            // ONLY when they actually changed. The form is populated with the
+            // stored words, so writing unconditionally would drop syncedLyrics
+            // to null every time someone corrected a title -- the timings would
+            // silently vanish from a track whose lyrics nobody touched.
+            val typed = edits.lyrics?.trim()?.takeIf { it.isNotBlank() }
+            if (typed != tracks.lyricsForOnce(trackId)?.plain) {
+                tracks.setLyrics(
+                    id = trackId,
+                    plain = typed,
+                    // Hand-typed words and the old timings do not belong to each
+                    // other, so the LRC goes rather than drifting against them.
+                    synced = null,
+                    at = System.currentTimeMillis(),
+                )
+            }
 
             val artistName = edits.artist.trim().ifBlank { UNKNOWN_ARTIST }
             val albumName = edits.album.trim().ifBlank { UNKNOWN_ALBUM }

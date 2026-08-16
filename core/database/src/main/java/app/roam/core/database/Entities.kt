@@ -122,6 +122,17 @@ data class TrackEntity(
      */
     val userEdited: Boolean = false,
     /**
+     * Words, cached forever once found. Fetched for the track being PLAYED
+     * rather than swept over the library -- most people play a small fraction
+     * of what they own, and a bulk pass would be thousands of requests to a
+     * free service for lyrics nobody is reading.
+     */
+    val lyrics: String? = null,
+    /** The same words with LRC timestamps, when the source had them. */
+    val syncedLyrics: String? = null,
+    /** Stamped even on a miss, or a track with no lyrics is asked about forever. */
+    val lyricsAttemptedAt: Long? = null,
+    /**
      * Removed from the library WITHOUT touching the file.
      *
      * The row stays, so a re-sync finds the track already known and leaves it

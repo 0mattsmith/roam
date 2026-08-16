@@ -19,7 +19,7 @@ import javax.inject.Singleton
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
         TrackEntity::class, ArtworkEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -104,6 +104,24 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
     }
 }
 
+/**
+ * Lyrics, cached per track rather than fetched per play.
+ *
+ * Three columns because they answer three different questions. `lyrics` is the
+ * plain text; `syncedLyrics` is the LRC form WHEN the source had one, which is
+ * a different thing from having no lyrics at all; `lyricsAttemptedAt` is what
+ * stops a track LRCLIB has never heard of being asked about on every single
+ * play. It must be stamped on failure too -- the artist photo pass learned that
+ * one the hard way.
+ */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN lyrics TEXT")
+        db.execSQL("ALTER TABLE tracks ADD COLUMN syncedLyrics TEXT")
+        db.execSQL("ALTER TABLE tracks ADD COLUMN lyricsAttemptedAt INTEGER")
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -113,7 +131,7 @@ object DatabaseModule {
             .addMigrations(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                 MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                MIGRATION_9_10, MIGRATION_10_11,
+                MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
             )
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()

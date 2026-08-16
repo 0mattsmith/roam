@@ -58,13 +58,22 @@ fun NowPlayingRoute(
     vm: NowPlayingViewModel = hiltViewModel(),
 ) {
     val state by vm.nowPlaying.collectAsStateWithLifecycle()
+    val lyrics by vm.lyricsState.collectAsStateWithLifecycle()
+    val showLyrics by vm.showLyrics.collectAsStateWithLifecycle()
+
+    val syncedOnScreen = showLyrics && lyrics.synced
 
     // Position is not an event, so it has to be polled. Only while playing --
     // ticking a paused player is pure battery drain.
-    LaunchedEffect(state.isPlaying) {
+    //
+    // Faster while a synced lyric is on screen: at half a second the
+    // highlighted line lands visibly late against the voice, and this is the
+    // one part of the UI where being a beat behind is the whole point of it.
+    LaunchedEffect(state.isPlaying, syncedOnScreen) {
+        val interval = if (syncedOnScreen) 200L else 500L
         while (state.isPlaying) {
             vm.refreshPosition()
-            delay(500)
+            delay(interval)
         }
     }
 
@@ -248,6 +257,11 @@ fun NowPlayingRoute(
                                else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+
+            if (showLyrics) {
+                Spacer(Modifier.height(8.dp))
+                LyricsStrip(lyrics = lyrics, positionMs = state.positionMs)
             }
 
             Spacer(Modifier.weight(1f))
