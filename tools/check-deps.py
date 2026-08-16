@@ -104,48 +104,128 @@ def leaked_supertypes(module: str, imports: set[str], gradle: str) -> set[str]:
                             )
     return found
 
-SMART_CAST = re.compile(r"if\s*\(\s*(\w+)\.(\w+)\s*!=\s*null\s*\)")
+# Deliberately NOT anchored to "if (x.p != null)". The real cases are compound
+# -- `if (a != null && x.p != null && y.q != null)` -- and an anchored pattern
+# silently passes every one of them. That is exactly how a LyricsRepository
+# guard with four conditions reached CI.
+SMART_CAST = re.compile(r"(\w+)\.(\w+)\s*!=\s*null")
 NULLABLE_PROP = re.compile(r"\s*(?:val|var)\s+(\w+)\s*:\s*[\w<>, ]+\?")
 
 
-def cross_module_nullables() -> set[str]:
-    """Nullable properties declared in :core:* and :data:* modules."""
-    found: set[str] = set()
-    for pattern in ("core/*/src/**/*.kt", "data/*/src/**/*.kt"):
-        for kt in glob.glob(pattern, recursive=True):
-            with open(kt, encoding="utf-8", errors="ignore") as fh:
-                for line in fh:
-                    m = NULLABLE_PROP.match(line)
-                    if m:
-                        found.add(m.group(1))
+_SOURCE_CACHE: dict[str, list[str]] | None = None
+
+# Both checks walk the same trees. Reading them twice is pure waste, and on a
+# network or virtualised filesystem the walk dominates everything else.
+SOURCE_PATTERNS = (
+    "core/*/src/**/*.kt",
+    "data/*/src/**/*.kt",
+    "feature/*/src/**/*.kt",
+    "app/src/**/*.kt",
+)
+
+
+def sources() -> dict[str, list[str]]:
+    """path -> lines, read once per run."""
+    global _SOURCE_CACHE
+    if _SOURCE_CACHE is None:
+        _SOURCE_CACHE = {}
+        for pattern in SOURCE_PATTERNS:
+            for kt in glob.glob(pattern, recursive=True):
+                try:
+                    with open(kt, encoding="utf-8", errors="ignore") as fh:
+                        _SOURCE_CACHE[kt] = fh.read().split("\n")
+                except OSError:
+                    continue
+    return _SOURCE_CACHE
+
+
+def module_of(path: str) -> str:
+    """`data/catalog/src/...` -> `data/catalog`; `app/src/...` -> `app`."""
+    parts = path.replace("\\", "/").split("/")
+    if parts[0] in ("core", "data", "feature") and len(parts) > 1:
+        return f"{parts[0]}/{parts[1]}"
+    return parts[0]
+
+
+def cross_module_nullables() -> dict[str, set[str]]:
+    """Nullable property name -> the modules that DECLARE it.
+
+    Tracking the declaring module matters: smart-casting a property is fine
+    inside the module that owns it, so flagging by name alone would cry wolf on
+    every entity's own file and quickly get the whole check ignored.
+    """
+    found: dict[str, set[str]] = collections.defaultdict(set)
+    for kt, lines in sources().items():
+        if not kt.startswith(("core/", "data/")):
+            continue
+        for line in lines:
+            m = NULLABLE_PROP.match(line)
+            if m:
+                found[m.group(1)].add(module_of(kt))
     return found
 
 
-def smart_cast_problems(nullables: set[str]) -> dict[str, set[str]]:
+def smart_cast_problems(nullables: dict[str, set[str]]) -> dict[str, set[str]]:
     """
     Kotlin refuses to smart-cast a property declared in another module: it
     cannot prove the getter is stable. `if (x.p != null) use(x.p)` compiles
     inside the declaring module and fails outside it, with an error that reads
     like a type problem rather than a module-boundary one. Capture to a local.
+
+    Two things this has to get right, both learned the hard way:
+
+    * The condition is usually COMPOUND and spans lines, so the null check
+      cannot be anchored to `if (x.p != null)`. Parens are tracked instead.
+    * `enabled = x.p != null` is an ordinary boolean and needs no smart cast at
+      all. Only a use where non-null is REQUIRED counts, so a later
+      `x.p != null` does not make the first one a problem.
     """
     problems: dict[str, set[str]] = collections.defaultdict(set)
-    for pattern in ("feature/*/src/**/*.kt", "app/src/**/*.kt"):
-        for kt in glob.glob(pattern, recursive=True):
-            with open(kt, encoding="utf-8", errors="ignore") as fh:
-                lines = fh.read().split("\n")
-            for i, line in enumerate(lines):
-                m = SMART_CAST.search(line)
-                if not m:
+
+    # Every module. :data:catalog consumes :core:database and hits this exactly
+    # as hard -- scanning only the UI layers is why this missed a real one.
+    for kt, lines in sources().items():
+            here = module_of(kt)
+
+            i = 0
+            while i < len(lines):
+                opener = re.search(r"\b(?:if|while)\s*\(", lines[i])
+                if not opener:
+                    i += 1
                     continue
-                receiver, prop = m.groups()
-                if prop not in nullables:
-                    continue
-                body = "\n".join(lines[i + 1 : i + 15])
-                if re.search(rf"\b{receiver}\.{prop}\b", body):
-                    problems[kt].add(
-                        f"line {i + 1}: {receiver}.{prop} is smart-cast across a module "
-                        f"boundary -- capture it to a local val"
-                    )
+
+                # Walk to the end of the condition, however many lines it takes.
+                depth = 0
+                condition: list[str] = []
+                j = i
+                while j < len(lines):
+                    fragment = lines[j] if j > i else lines[j][opener.end() - 1:]
+                    condition.append(fragment)
+                    depth += fragment.count("(") - fragment.count(")")
+                    if depth <= 0:
+                        break
+                    j += 1
+
+                guarded = {
+                    (r, p)
+                    for r, p in SMART_CAST.findall(" ".join(condition))
+                    if nullables.get(p) and here not in nullables[p]
+                }
+
+                if guarded:
+                    body = "\n".join(lines[j + 1 : j + 16])
+                    for receiver, prop in guarded:
+                        use = rf"\b{re.escape(receiver)}\.{re.escape(prop)}\b(?!\s*[!=]=\s*null)"
+                        if re.search(use, body):
+                            problems[kt].add(
+                                f"line {i + 1}: {receiver}.{prop} is smart-cast across "
+                                f"a module boundary (declared in "
+                                f"{', '.join(sorted(nullables[prop]))}) -- "
+                                f"capture it to a local val"
+                            )
+
+                i = j + 1
+
     return problems
 
 

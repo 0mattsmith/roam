@@ -331,6 +331,7 @@ argued about mid-flight:
 | Searching produces an error while typing | Two yt-dlp processes at once. `execute` blocks rather than suspends and cancelling the coroutine does not kill it, so calls are serialised behind `runLock` |
 | A YouTube Music search returns nothing | The results are shelves, not videos — walk `entries` recursively, and treat any id that is not 11 characters as a browse id rather than a track |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
+| `Smart cast to 'X' is impossible` on a property that is plainly checked | Cross-module property, per the convention above. `tools/check-deps.py` finds these, but only where the null check sits in an `if`/`while` CONDITION -- it deliberately ignores `enabled = x.p != null`, which needs no cast |
 | `Cannot access class X. Check your module classpath` | A public signature in a dependency module exposes a type from one of ITS `implementation` deps — declare an explicit return type, or promote to `api` |
 | Artist photo saves to Photos do nothing | MediaStore `RELATIVE_PATH`/`IS_PENDING` are API 29+; the version check must *wrap* the call, not early-throw, or lint's NewApi fails `lintVitalRelease` |
 | A replaced cover wiped the previous image on Drive | Something called `overwrite` instead of `rename`-then-`write` — see invariant 6d |

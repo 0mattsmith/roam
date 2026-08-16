@@ -75,14 +75,21 @@ class LyricsRepository @Inject constructor(
         val provider = providers[SourceType.DRIVE]?.get()
         val root = saved.driveFolderId
 
+        // Captured locally, all four of them. LyricSubject lives in
+        // :core:database, and Kotlin will not smart-cast a property declared in
+        // another module -- it cannot prove the getter returns the same thing
+        // twice. Null-checking `subject.fileName` therefore buys nothing at the
+        // use site, and the error names smart-cast rather than nullability,
+        // which reads like a puzzle until you have hit it once.
+        val fileName = subject.fileName
+        val folderPath = subject.folderPath
+
         // The source first, and if it answers nothing else happens -- no
         // request, no upload, and it works with no signal at all.
         val fromFile = if (provider != null && root != null &&
-            subject.fileName != null && subject.folderPath != null
+            fileName != null && folderPath != null
         ) {
-            runCatching {
-                files.read(provider, root, subject.folderPath, subject.fileName)
-            }.getOrNull()
+            runCatching { files.read(provider, root, folderPath, fileName) }.getOrNull()
         } else null
 
         val found = fromFile ?: lrcLib.find(
@@ -96,14 +103,14 @@ class LyricsRepository @Inject constructor(
         // just read from that same folder would be a no-op at best.
         if (fromFile == null && found != null && saved.saveLyricsToDrive &&
             provider != null && root != null &&
-            subject.fileName != null && subject.folderPath != null
+            fileName != null && folderPath != null
         ) {
             runCatching {
                 files.write(
                     provider = provider,
                     root = root,
-                    folderPath = subject.folderPath,
-                    fileName = subject.fileName,
+                    folderPath = folderPath,
+                    fileName = fileName,
                     lyrics = found,
                     cacheDir = ctx.cacheDir,
                 )
