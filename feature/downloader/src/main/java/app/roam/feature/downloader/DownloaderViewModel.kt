@@ -118,6 +118,12 @@ data class DownloadStatus(
     val request: DownloadRequest?,
     val state: WorkInfo.State,
     val progress: Float,
+    /**
+     * Why it failed, when the worker knew. A refused duration match is not a
+     * network problem and retrying will not fix it, so saying so is the whole
+     * difference between a useful row and a mysterious one.
+     */
+    val error: String? = null,
 ) {
     val finished: Boolean get() = state.isFinished
     val running: Boolean get() = state == WorkInfo.State.RUNNING
@@ -185,6 +191,7 @@ class DownloaderViewModel @Inject constructor(
                         // Absent until the worker reports any, which for a
                         // queued job is never.
                         progress = info.progress.getFloat(DownloadWorker.KEY_PROGRESS, 0f),
+                        error = info.outputData.getString(DownloadWorker.KEY_ERROR),
                     )
                 }
             }
@@ -383,6 +390,16 @@ class DownloaderViewModel @Inject constructor(
                 // in the library sits inside an album folder, and a loose file
                 // in the artist folder would be the odd one out.
                 album = result.album?.ifBlank { null } ?: "Singles",
+                // No duration guard: this is a real video id the person picked
+                // off a result they could see, not a blind search.
+                //
+                // And no cover either. YouTube's thumbnail is a 16:9 video
+                // still, not album art, and "Singles" is a bucket that fills up
+                // with unrelated tracks -- so there is no one right cover for
+                // it. Roam cannot delete from Drive (invariant 6d), only
+                // archive, so a wrong cover.jpg is a mess that stays. The
+                // catalogue-backed album page is the only place art is known
+                // well enough to write.
             ),
         )
         _state.update { it.copy(message = "Queued ${result.title}") }
@@ -599,6 +616,11 @@ class DownloaderViewModel @Inject constructor(
                 artist = track.artist.ifBlank { album.artist },
                 album = album.title,
                 trackNo = track.position,
+                // The two things only the catalogue knows. Without the length
+                // a search takes whatever comes first, and without the cover
+                // the album lands on Drive with no art beside it.
+                durationMs = track.durationMs,
+                coverUrl = album.coverUrl,
             ),
         )
         _state.update { it.copy(message = "Queued ${track.title}") }

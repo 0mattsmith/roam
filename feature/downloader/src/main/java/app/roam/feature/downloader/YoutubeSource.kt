@@ -258,6 +258,37 @@ class YoutubeSource @Inject constructor(private val app: Application) {
      * audio into a container that carries tags -- is sometimes needed, and
      * that is a copy, not an encode.
      */
+    /**
+     * Turns a `ytsearch1:` query into a concrete video id whose length agrees
+     * with the catalogue, or null when nothing does.
+     *
+     * An album page queues a SEARCH, not a link -- there is no id to be had
+     * until something is picked. Taking the first hit on trust is how a
+     * three-minute song ends up as a nine-minute extended mix, a live version,
+     * or an hour-long "full album" upload with the whole record inside it. The
+     * catalogue already knows how long the track should be, so anything wildly
+     * off is the wrong recording whatever it is called.
+     *
+     * Deliberately returns null rather than falling back to the first result:
+     * the whole point is to refuse, and a download saved to Drive is not easily
+     * taken back.
+     */
+    suspend fun resolveByDuration(
+        query: String,
+        expectedMs: Long,
+        toleranceMs: Long = DURATION_TOLERANCE_MS,
+    ): Result<String?> = runCatching {
+        val ids = searchIds(query, limit = DURATION_CANDIDATES).getOrThrow()
+        if (ids.isEmpty()) return@runCatching null
+
+        enrich(ids.take(DURATION_CANDIDATES)).getOrThrow()
+            .firstOrNull { candidate ->
+                val seconds = candidate.durationSec ?: return@firstOrNull false
+                kotlin.math.abs(seconds * 1000L - expectedMs) <= toleranceMs
+            }
+            ?.videoId
+    }.rethrowCancellation()
+
     suspend fun download(
         url: String,
         into: File,
@@ -309,5 +340,19 @@ class YoutubeSource @Inject constructor(private val app: Application) {
          * from, not the amount of work done up front.
          */
         const val SEARCH_LIMIT = 60
+
+        /**
+         * Fifteen seconds. Wide enough for a fade, a count-in or a catalogue
+         * that rounded, narrow enough that a radio edit, an extended mix or a
+         * whole-album upload cannot slip through.
+         */
+        const val DURATION_TOLERANCE_MS = 15_000L
+
+        /**
+         * How many search hits to weigh before giving up. Enriching costs a
+         * full extraction each, so this stays small -- if the right recording
+         * is not in the first handful, the query itself is wrong.
+         */
+        const val DURATION_CANDIDATES = 5
     }
 }

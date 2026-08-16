@@ -13,11 +13,16 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.roam.core.datastore.SettingsRepository
 import app.roam.core.model.SourceType
+import app.roam.data.catalog.artwork.ArtworkFiles
 import app.roam.data.catalog.sync.SyncWorker
 import app.roam.data.source.SourceProvider
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import javax.inject.Provider
 
 /**
@@ -38,21 +43,40 @@ class DownloadWorker @AssistedInject constructor(
     private val providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>,
 ) : CoroutineWorker(ctx, params) {
 
+    private val http = OkHttpClient()
+
     override suspend fun doWork(): Result {
         val url = inputData.getString(KEY_URL) ?: return Result.failure()
         val artist = inputData.getString(KEY_ARTIST)?.sanitised().orEmpty().ifBlank { "Unknown Artist" }
         val album = inputData.getString(KEY_ALBUM)?.sanitised().orEmpty().ifBlank { "Singles" }
         val title = inputData.getString(KEY_TITLE)?.sanitised().orEmpty().ifBlank { "Unknown" }
         val trackNo = inputData.getInt(KEY_TRACK_NO, 0)
+        val expectedMs = inputData.getLong(KEY_DURATION_MS, 0L)
+        val coverUrl = inputData.getString(KEY_COVER_URL)
 
         val root = settings.settings.first().driveFolderId ?: return Result.failure()
         val provider = providers[SourceType.DRIVE]?.get() ?: return Result.failure()
+
+        // A search is resolved to one recording BEFORE anything is fetched, so
+        // the wrong take is never written to Drive in the first place. Failing
+        // is deliberate -- retrying would ask the same question and get the
+        // same answer, and the queue entry stays visible saying what happened.
+        val target = if (url.startsWith(SEARCH_PREFIX) && expectedMs > 0) {
+            val picked = youtube.resolveByDuration(url.removePrefix(SEARCH_PREFIX), expectedMs)
+                .getOrElse {
+                    return if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+                }
+                ?: return Result.failure(
+                    workDataOf(KEY_ERROR to "No result close enough to ${expectedMs / 1000}s")
+                )
+            "https://music.youtube.com/watch?v=$picked"
+        } else url
 
         // Per-job, because the queue can be appended to while one is running
         // and two downloads sharing a directory would each pick up the other's
         // file. `id` is WorkManager's, so it is unique and stable across a retry.
         val staging = applicationContext.cacheDir.resolve("downloads/$id")
-        val file = youtube.download(url, staging) { progress ->
+        val file = youtube.download(target, staging) { progress ->
             setProgressAsync(workDataOf(KEY_PROGRESS to progress))
         }.getOrElse {
             // Retried rather than failed while there is reason to hope -- the
@@ -78,6 +102,20 @@ class DownloadWorker @AssistedInject constructor(
             // point rather than an accident.
             provider.write(root, listOf(artist, album), name, file)
 
+            // Cover art goes in the FOLDER, not into every track.
+            //
+            // cover.jpg beside the music is the convention Roam already reads
+            // (invariant 6c) and the one its own cover editor writes, so a
+            // downloaded album ends up indistinguishable from one that was
+            // always there. It is also one upload per album instead of one per
+            // track, and it survives a re-tag -- an embedded picture would have
+            // to be rewritten into every file to change.
+            //
+            // Never overwrites: the first track to land supplies the cover and
+            // the rest find it already there. A cover the user put there by
+            // hand always wins (invariant 6d).
+            coverUrl?.let { runCatching { seedCover(provider, root, artist, album, it) } }
+
             // The catalogue learns about it the same way it learns about
             // anything else.
             SyncWorker.enqueue(applicationContext, root)
@@ -86,6 +124,41 @@ class DownloadWorker @AssistedInject constructor(
             if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
         } finally {
             staging.deleteRecursively()
+        }
+    }
+
+    /**
+     * Writes cover.jpg into the album folder, if and only if the folder has no
+     * album art at all yet.
+     *
+     * The folder is resolved WITHOUT create: the track upload just made it, so
+     * a missing folder here means something else went wrong and inventing one
+     * would leave a cover sitting on its own with no music beside it.
+     */
+    private suspend fun seedCover(
+        provider: SourceProvider,
+        root: String,
+        artist: String,
+        album: String,
+        coverUrl: String,
+    ) {
+        val folder = provider.resolveFolder(root, listOf(artist, album), create = false) ?: return
+        if (provider.findInFolder(folder, ArtworkFiles.ALBUM_NAMES) != null) return
+
+        val bytes = withContext(Dispatchers.IO) {
+            http.newCall(Request.Builder().url(coverUrl).build()).execute().use { response ->
+                if (!response.isSuccessful) null else response.body?.bytes()
+            }
+        } ?: return
+
+        val temp = applicationContext.cacheDir.resolve("covers/$id.jpg").apply {
+            parentFile?.mkdirs()
+            writeBytes(bytes)
+        }
+        try {
+            provider.write(root, listOf(artist, album), ArtworkFiles.ALBUM_UPLOAD_NAME, temp)
+        } finally {
+            temp.delete()
         }
     }
 
@@ -104,6 +177,14 @@ class DownloadWorker @AssistedInject constructor(
         const val KEY_TRACK_NO = "track_no"
         const val KEY_PROGRESS = "progress"
         const val KEY_SAVED_AS = "saved_as"
+        const val KEY_ERROR = "error"
+
+        /** What the catalogue says the track should be, for the duration guard. */
+        const val KEY_DURATION_MS = "duration_ms"
+        const val KEY_COVER_URL = "cover_url"
+
+        /** yt-dlp's "search and take the best one" form, which carries no id. */
+        const val SEARCH_PREFIX = "ytsearch1:"
 
         /**
          * The whole request rides along as a tag.
@@ -129,6 +210,11 @@ class DownloadWorker @AssistedInject constructor(
                 artist = parts[2],
                 album = parts[3],
                 trackNo = parts.getOrNull(4)?.toIntOrNull(),
+                // getOrNull throughout: a job queued by an older build has a
+                // shorter tag, and it must still be listable and retryable
+                // rather than vanishing from the manager.
+                durationMs = parts.getOrNull(5)?.toLongOrNull(),
+                coverUrl = parts.getOrNull(6)?.takeIf { it.isNotBlank() },
             )
         }
 
@@ -141,6 +227,8 @@ class DownloadWorker @AssistedInject constructor(
             val encoded = listOf(
                 request.url, request.title, request.artist, request.album,
                 request.trackNo?.toString().orEmpty(),
+                request.durationMs?.toString().orEmpty(),
+                request.coverUrl.orEmpty(),
             ).joinToString(SEP)
 
             val work = OneTimeWorkRequestBuilder<DownloadWorker>()
@@ -160,6 +248,8 @@ class DownloadWorker @AssistedInject constructor(
                         .putString(KEY_ARTIST, request.artist)
                         .putString(KEY_ALBUM, request.album)
                         .putInt(KEY_TRACK_NO, request.trackNo ?: 0)
+                        .putLong(KEY_DURATION_MS, request.durationMs ?: 0L)
+                        .putString(KEY_COVER_URL, request.coverUrl)
                         .build()
                 )
                 .build()
@@ -199,4 +289,8 @@ data class DownloadRequest(
     val artist: String,
     val album: String,
     val trackNo: Int? = null,
+    /** From the catalogue, so a search result of the wrong length is refused. */
+    val durationMs: Long? = null,
+    /** Seeds cover.jpg in the album folder; not embedded in the track. */
+    val coverUrl: String? = null,
 )

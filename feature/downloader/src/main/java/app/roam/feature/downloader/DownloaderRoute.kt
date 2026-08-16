@@ -431,6 +431,19 @@ private fun DownloadRow(
                     overflow = TextOverflow.Ellipsis,
                 )
 
+                // "Failed" on its own invites a retry that will fail the same
+                // way. A refused duration match is a statement about the search
+                // itself, so it is worth the second line.
+                download.error?.let { reason ->
+                    Text(
+                        reason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
                 // The bar is gone entirely once it is done -- a full bar and a
                 // tick say the same thing twice.
                 if (download.running) {
