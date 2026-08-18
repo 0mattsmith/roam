@@ -287,6 +287,17 @@ argued about mid-flight:
   types* -- the convention is the guard. Use a **block body**, not
   `: Unit = expr`: Kotlin requires an expression body to match the declared
   type, so that form is a compile error rather than a discard.
+- **"Add to library" and "Download" are different actions, and the UI must not
+  blur them.** Fetching a track you do not own is *adding it to your library*;
+  it lands on Drive and appears like anything else. **Download** is reserved for
+  the phase 5 feature that pins a track you ALREADY own to the device for
+  offline play. Both would have been called "download", and then neither name
+  would mean anything. The module, `DownloadWorker` and `DownloadRequest` keep
+  their names for now -- renaming a module is churn with no user-visible payoff
+  -- so the split lives in the STRINGS, and this note is what stops the two
+  being reunited by accident. When offline pinning lands, the acquire path
+  should be renamed to match its labels.
+
 - Comments explain *why*, not what. If the code needs a "what" comment, rewrite
   the code.
 - Versions are pinned in `gradle/libs.versions.toml` to a known-good set. Run

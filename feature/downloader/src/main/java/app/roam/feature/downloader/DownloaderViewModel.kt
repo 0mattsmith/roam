@@ -184,7 +184,7 @@ class DownloaderViewModel @Inject constructor(
                     val request = DownloadWorker.requestOf(info)
                     DownloadStatus(
                         id = info.id.toString(),
-                        title = request?.title ?: "Download",
+                        title = request?.title ?: "Track",
                         artist = request?.artist.orEmpty(),
                         request = request,
                         state = info.state,
@@ -402,7 +402,7 @@ class DownloaderViewModel @Inject constructor(
                 // well enough to write.
             ),
         )
-        _state.update { it.copy(message = "Queued ${result.title}") }
+        _state.update { it.copy(message = "Adding ${result.title}") }
     }
 
     // ---- the album page -----------------------------------------------------
@@ -623,7 +623,7 @@ class DownloaderViewModel @Inject constructor(
                 coverUrl = album.coverUrl,
             ),
         )
-        _state.update { it.copy(message = "Queued ${track.title}") }
+        _state.update { it.copy(message = "Adding ${track.title}") }
     }
 
     /**
@@ -642,7 +642,7 @@ class DownloaderViewModel @Inject constructor(
             return
         }
         missing.forEach { downloadTrack(it) }
-        _state.update { it.copy(message = "Queued ${missing.size} tracks") }
+        _state.update { it.copy(message = "Adding ${missing.size} tracks") }
     }
 
     /** yt-dlp goes stale and quietly stops returning results when it does. */

@@ -15,7 +15,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
@@ -126,7 +127,7 @@ fun DownloaderRoute(
                         BadgedBox(
                             badge = { if (active > 0) Badge { Text("$active") } }
                         ) {
-                            Icon(Icons.Filled.Download, contentDescription = "Downloads")
+                            Icon(Icons.Filled.LibraryAdd, contentDescription = "Adding to library")
                         }
                     }
 
@@ -355,7 +356,7 @@ private fun DownloadsSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Downloads",
+                    "Adding to library",
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -366,7 +367,7 @@ private fun DownloadsSheet(
 
             if (downloads.isEmpty()) {
                 Text(
-                    "Nothing downloading",
+                    "Nothing being added",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(24.dp),
@@ -419,8 +420,8 @@ private fun DownloadRow(
                         download.artist.ifBlank { null },
                         when (download.state) {
                             WorkInfo.State.ENQUEUED -> "Waiting"
-                            WorkInfo.State.RUNNING -> "Downloading"
-                            WorkInfo.State.SUCCEEDED -> "Saved to Drive"
+                            WorkInfo.State.RUNNING -> "Adding"
+                            WorkInfo.State.SUCCEEDED -> "Added to library"
                             WorkInfo.State.FAILED -> "Failed"
                             WorkInfo.State.BLOCKED -> "Queued"
                             WorkInfo.State.CANCELLED -> "Cancelled"
@@ -477,7 +478,7 @@ private fun DownloadRow(
                 }
             }
         },
-        leadingContent = { Icon(Icons.Filled.Download, contentDescription = null) },
+        leadingContent = { Icon(Icons.Filled.LibraryAdd, contentDescription = null) },
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when {
@@ -654,12 +655,12 @@ private fun YoutubeRow(
                 if (queued) {
                     Icon(
                         Icons.Filled.CheckCircle,
-                        contentDescription = "Queued",
+                        contentDescription = "In your library",
                         tint = DONE_GREEN,
                     )
                 } else {
                     IconButton(onClick = onDownload) {
-                        Icon(Icons.Filled.Download, contentDescription = "Download")
+                        Icon(Icons.Filled.Add, contentDescription = "Add to library")
                     }
                 }
                 Box {
@@ -681,10 +682,10 @@ private fun YoutubeRow(
                         )
                         if (!queued) {
                             DropdownMenuItem(
-                                text = { Text("Download") },
+                                text = { Text("Add to library") },
                                 onClick = { menuOpen = false; onDownload() },
                                 leadingIcon = {
-                                    Icon(Icons.Filled.Download, contentDescription = null)
+                                    Icon(Icons.Filled.Add, contentDescription = null)
                                 },
                             )
                         }

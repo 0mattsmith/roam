@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -187,11 +187,11 @@ fun AlbumSheet(
                     enabled = missing > 0,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                 ) {
-                    Icon(Icons.Filled.Download, contentDescription = null)
+                    Icon(Icons.Filled.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(
                         when {
-                            missing > 0 -> "Download $missing missing"
+                            missing > 0 -> "Add $missing missing"
                             album.missing.isNotEmpty() -> "All queued"
                             else -> "Nothing missing"
                         }
@@ -291,11 +291,11 @@ fun AlbumSheet(
                                 )
                                 queued -> Icon(
                                     Icons.Filled.CheckCircle,
-                                    contentDescription = "Queued",
+                                    contentDescription = "In your library",
                                     tint = QUEUED_GREEN,
                                 )
                                 else -> IconButton(onClick = { onDownloadTrack(track) }) {
-                                    Icon(Icons.Filled.Download, contentDescription = "Download track")
+                                    Icon(Icons.Filled.Add, contentDescription = "Add to library")
                                 }
                             }
                         },

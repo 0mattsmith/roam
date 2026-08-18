@@ -232,7 +232,7 @@ fun SettingsRoute(
             val wifiOnly by vm.wifiOnlyLargeTransfers.collectAsStateWithLifecycle()
             SwitchRow(
                 title = "Use Wi-Fi only for large transfers",
-                subtitle = "Downloads, reading tags and covers from your files, and " +
+                subtitle = "Adding music, reading tags and covers from your files, and " +
                     "fetching artist images all wait for an unmetered network. " +
                     "Looking for new music is not held back - that is a few " +
                     "folder listings, so your library still updates anywhere.",
