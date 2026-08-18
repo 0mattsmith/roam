@@ -86,12 +86,30 @@ class DownloadWorker @AssistedInject constructor(
         val file = youtube.download(target, staging) { progress ->
             setProgressAsync(workDataOf(KEY_PROGRESS to progress))
         }.getOrElse { cause ->
+            val why = cause.message ?: "Could not fetch the audio"
+
+            // A 403 is not a network problem, it is a STALE EXTRACTOR. YouTube
+            // changes how it signs stream URLs every few weeks and an old
+            // yt-dlp keeps asking the old way, so every download in the queue
+            // fails identically and retrying achieves nothing at all.
+            //
+            // Updating is the actual fix, and it is the one thing the app can
+            // do for itself. Once only, on the first attempt: if a fresh binary
+            // still gets a 403 then something else is wrong and hammering the
+            // updater will not find it.
+            if (runAttemptCount == 0 && why.looksStale()) {
+                youtube.update()
+                return Result.retry()
+            }
+
             // Retried rather than failed while there is reason to hope -- the
             // usual cause is a dead connection part way through. But NOT
             // forever: WorkManager's backoff doubles to five hours, so an
             // uncapped retry looks exactly like a job that is quietly waiting
             // for something, and there is no way to tell the difference.
-            return retryOrFail(cause.message ?: "Could not fetch the audio")
+            return retryOrFail(
+                if (why.looksStale()) "$why - yt-dlp may need updating" else why
+            )
         }
 
         return try {
@@ -145,6 +163,22 @@ class DownloadWorker @AssistedInject constructor(
         if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure(reason(why))
 
     private fun reason(why: String): Data = workDataOf(KEY_ERROR to why)
+
+    /**
+     * Whether the failure smells like yt-dlp having fallen behind YouTube.
+     *
+     * 403 is the usual face of it. The signature and nsig wording shows up when
+     * the extractor got far enough to try descrambling and could not, which is
+     * the same illness one stage earlier.
+     */
+    private fun String.looksStale(): Boolean {
+        val text = lowercase()
+        return "403" in text ||
+            "forbidden" in text ||
+            "nsig" in text ||
+            "signature" in text ||
+            "unable to download video data" in text
+    }
 
     private fun format(ms: Long): String =
         "%d:%02d".format(ms / 60_000, (ms % 60_000) / 1000)

@@ -64,6 +64,9 @@ fun DownloaderRoute(
     onPlay: (TrackListItem) -> Unit = {},
     /** Jumps to a downloaded track in the library, optionally opening its editor. */
     onOpenTrack: (Long, Boolean) -> Unit = { _, _ -> },
+    /** A YouTube video id shared in from another app, queued once on arrival. */
+    sharedVideoId: String? = null,
+    onSharedHandled: () -> Unit = {},
     vm: DownloaderViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -81,10 +84,26 @@ fun DownloaderRoute(
         state.message?.let { snackbars.showSnackbar(it); vm.clearMessage() }
     }
 
+    // Keyed on the id so a SECOND share while this screen is open is still
+    // acted on -- keyed on Unit it would run once per composition and silently
+    // ignore everything after the first.
+    LaunchedEffect(sharedVideoId) {
+        sharedVideoId?.let {
+            vm.addSharedVideo(it)
+            // Cleared immediately, or rotating the phone re-queues it.
+            onSharedHandled()
+        }
+    }
+
     // Opens with the keyboard up: nobody navigates here to look at an empty
     // screen, they came to type something.
+    //
+    // Except when a share brought us here: the queue is the thing to look at,
+    // and a keyboard covering it is just in the way.
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) {
+        if (sharedVideoId == null) runCatching { focus.requestFocus() }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbars) },
@@ -125,10 +144,24 @@ fun DownloaderRoute(
                     // matters is how many are still going, and it should be
                     // readable at a glance while something is downloading.
                     val active = downloads.count { !it.finished }
-                    IconButton(onClick = { showDownloads = true }) {
-                        BadgedBox(
-                            badge = { if (active > 0) Badge { Text("$active") } }
-                        ) {
+
+                    // BadgedBox wraps the BUTTON, not the icon inside it. Anchored
+                    // to the icon it is boxed in by the 48dp touch target, and a
+                    // three-digit count runs out of room and loses its last digit.
+                    // Out here the badge overflows into the app bar, which has space.
+                    BadgedBox(
+                        badge = {
+                            if (active > 0) {
+                                Badge {
+                                    // Capped: past a hundred the exact number is
+                                    // not information anyone acts on, and it is
+                                    // the width that causes the trouble.
+                                    Text(if (active > BADGE_MAX) "$BADGE_MAX+" else "$active")
+                                }
+                            }
+                        }
+                    ) {
+                        IconButton(onClick = { showDownloads = true }) {
                             Icon(Icons.Filled.LibraryAdd, contentDescription = "Adding to library")
                         }
                     }
@@ -756,3 +789,12 @@ private fun Hint(text: String) {
         )
     }
 }
+
+/**
+ * Highest count the badge prints before falling back to "99+".
+ *
+ * The badge sits over a 48dp button and grows with its text; three digits
+ * pushed it past the edge and the last one was clipped away, which is worse
+ * than rounding because it reads as a smaller number rather than as a big one.
+ */
+private const val BADGE_MAX = 99

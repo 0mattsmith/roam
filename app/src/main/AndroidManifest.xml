@@ -63,6 +63,26 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+                Share target. YouTube shares a link as plain text rather than
+                as a URI, so text/plain is what has to be claimed; a uri filter
+                never matches and Roam simply would not appear in the sheet.
+
+                DEFAULT is required, or the system will not offer this activity
+                for an implicit intent at all.
+
+                Roam is not a general text handler, so anything that is not a
+                recognisable video link is rejected once it arrives rather than
+                being filtered here. The alternative is a host by host data
+                filter that goes stale every time a new short link domain
+                appears.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- BOTH intent-filter actions are required. The legacy

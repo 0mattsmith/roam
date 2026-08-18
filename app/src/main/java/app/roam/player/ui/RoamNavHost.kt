@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,8 +43,20 @@ object Routes {
  * double-tapped, which would otherwise need two presses of Back to escape.
  */
 @Composable
-fun RoamNavHost() {
+fun RoamNavHost(
+    /** Set when another app shared a YouTube link into Roam. */
+    sharedVideoId: String? = null,
+    onSharedHandled: () -> Unit = {},
+) {
     val nav = rememberNavController()
+
+    // A share jumps straight to the downloader, wherever the app happened to
+    // be. launchSingleTop so sharing twice does not stack the screen on itself.
+    LaunchedEffect(sharedVideoId) {
+        if (sharedVideoId != null) {
+            nav.navigate(Routes.DOWNLOADER) { launchSingleTop = true }
+        }
+    }
 
     // Pop only if this destination is still the current one. Without the guard
     // a fast double-tap on a Back arrow pops twice and skips a screen.
@@ -101,6 +114,8 @@ fun RoamNavHost() {
             composable(Routes.DOWNLOADER) {
                 DownloaderRoute(
                     onBack = back,
+                    sharedVideoId = sharedVideoId,
+                    onSharedHandled = onSharedHandled,
                     // popUpTo so the library is not stacked twice: this is a
                     // jump back to where you already were, not a new screen.
                     onOpenTrack = { id, edit ->

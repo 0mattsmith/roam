@@ -645,6 +645,41 @@ class DownloaderViewModel @Inject constructor(
         _state.update { it.copy(message = "Adding ${missing.size} tracks") }
     }
 
+    /**
+     * Queues a video shared into Roam from another app.
+     *
+     * The id is looked up before queueing rather than after. YouTube's own
+     * title is often "Song (Official Video)" with the channel as the artist,
+     * and those two strings decide the FOLDER the file lands in on Drive --
+     * which Roam cannot rename afterwards without leaving a copy behind. One
+     * extraction up front is worth it.
+     *
+     * Refuses rather than guessing when the lookup fails: a track filed under
+     * "Unknown Artist / Singles" is worse than one that was never added, since
+     * the first has to be found and fixed by hand.
+     */
+    fun addSharedVideo(videoId: String) = viewModelScope.launch {
+        _state.update { it.copy(message = "Reading shared video…") }
+
+        val result = youtube.enrich(listOf(videoId)).getOrNull()?.firstOrNull()
+        if (result == null) {
+            _state.update { it.copy(message = "Could not read that video") }
+            return@launch
+        }
+
+        DownloadWorker.enqueue(
+            app,
+            wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers,
+            request = DownloadRequest(
+                url = result.url,
+                title = result.title,
+                artist = result.artist.ifBlank { "Unknown Artist" },
+                album = result.album?.ifBlank { null } ?: "Singles",
+            ),
+        )
+        _state.update { it.copy(message = "Adding ${result.title}") }
+    }
+
     /** yt-dlp goes stale and quietly stops returning results when it does. */
     fun updateYtDlp() = viewModelScope.launch {
         _state.update { it.copy(message = "Updating yt-dlp…") }
