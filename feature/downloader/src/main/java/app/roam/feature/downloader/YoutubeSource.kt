@@ -279,14 +279,21 @@ class YoutubeSource @Inject constructor(private val app: Application) {
         toleranceMs: Long = DURATION_TOLERANCE_MS,
     ): Result<String?> = runCatching {
         val ids = searchIds(query, limit = DURATION_CANDIDATES).getOrThrow()
-        if (ids.isEmpty()) return@runCatching null
 
-        enrich(ids.take(DURATION_CANDIDATES)).getOrThrow()
-            .firstOrNull { candidate ->
-                val seconds = candidate.durationSec ?: return@firstOrNull false
-                kotlin.math.abs(seconds * 1000L - expectedMs) <= toleranceMs
-            }
-            ?.videoId
+        // THROWN, not returned as null. "Nothing came back" is a failed search
+        // and deserves a retry; "these came back and none fits" is a verdict
+        // about the recording and must not be retried. Collapsing the two
+        // reports a bad connection as a duration mismatch, which sends anyone
+        // reading the queue looking in entirely the wrong place.
+        if (ids.isEmpty()) error("No search results for \"$query\"")
+
+        val candidates = enrich(ids.take(DURATION_CANDIDATES)).getOrThrow()
+        if (candidates.isEmpty()) error("Could not read details for \"$query\"")
+
+        candidates.firstOrNull { candidate ->
+            val seconds = candidate.durationSec ?: return@firstOrNull false
+            kotlin.math.abs(seconds * 1000L - expectedMs) <= toleranceMs
+        }?.videoId
     }.rethrowCancellation()
 
     suspend fun download(
@@ -296,24 +303,37 @@ class YoutubeSource @Inject constructor(private val app: Application) {
     ): Result<File> = runCatching {
         ensureStarted()
         withContext(Dispatchers.IO) {
-            // A directory of its own per download, emptied first.
+            // SERIALISED, exactly like searchIds and enrich.
             //
-            // The output used to be found by pulling the video id out of the
-            // URL, which breaks the moment the URL is a SEARCH -- an album
-            // page asks for "ytsearch1:artist title" and there is no id in it
-            // to parse. Whatever lands in an empty directory is the answer,
-            // whichever form the request took.
-            into.deleteRecursively()
-            into.mkdirs()
+            // This was the one yt-dlp entry point running outside the lock, and
+            // it did not matter while downloads were a chain. Independent jobs
+            // changed that: WorkManager happily runs several at once, so adding
+            // an album started four processes against one native binary with
+            // one working directory, and they killed each other. The symptom is
+            // a queue that waits and then fails for no stated reason.
+            //
+            // A download therefore blocks searching while it runs. That is the
+            // honest trade: yt-dlp is a single binary, and pretending otherwise
+            // is what broke.
+            runLock.withLock {
+                // A directory of its own per download, emptied first.
+                //
+                // The output used to be found by pulling the video id out of the
+                // URL, which breaks the moment the URL is a SEARCH -- an album
+                // page asks for "ytsearch1:artist title" and there is no id in it
+                // to parse. Whatever lands in an empty directory is the answer,
+                // whichever form the request took.
+                into.deleteRecursively()
+                into.mkdirs()
 
-            val request = YoutubeDLRequest(url)
-                .addOption("-f", "bestaudio[ext=m4a]/bestaudio")
-                .addOption("--no-playlist")
-                .addOption("--no-warnings")
-                .addOption("-o", "${into.absolutePath}/%(id)s.%(ext)s")
+                val request = YoutubeDLRequest(url)
+                    .addOption("-f", "bestaudio[ext=m4a]/bestaudio")
+                    .addOption("--no-playlist")
+                    .addOption("--no-warnings")
+                    .addOption("-o", "${into.absolutePath}/%(id)s.%(ext)s")
 
-            YoutubeDL.getInstance().execute(request) { progress, _, _ ->
-                onProgress(progress.coerceIn(0f, 100f) / 100f)
+                YoutubeDL.getInstance().execute(request) { progress, _, _ ->
+                    onProgress(progress.coerceIn(0f, 100f) / 100f)
             }
 
             into.listFiles()
@@ -321,6 +341,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
                 ?.filterNot { it.extension == "part" }
                 ?.maxByOrNull { it.length() }
                 ?: error("yt-dlp reported success but wrote no file")
+            }
         }
     }.rethrowCancellation()
 

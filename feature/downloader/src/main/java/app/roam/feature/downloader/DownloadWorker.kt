@@ -46,7 +46,10 @@ class DownloadWorker @AssistedInject constructor(
     private val http = OkHttpClient()
 
     override suspend fun doWork(): Result {
-        val url = inputData.getString(KEY_URL) ?: return Result.failure()
+        // Every failure carries a reason. "Failed" on its own is unactionable,
+        // and a queue full of it is impossible to tell apart from a bug.
+        val url = inputData.getString(KEY_URL)
+            ?: return Result.failure(reason("Nothing to fetch - the request was empty"))
         val artist = inputData.getString(KEY_ARTIST)?.sanitised().orEmpty().ifBlank { "Unknown Artist" }
         val album = inputData.getString(KEY_ALBUM)?.sanitised().orEmpty().ifBlank { "Singles" }
         val title = inputData.getString(KEY_TITLE)?.sanitised().orEmpty().ifBlank { "Unknown" }
@@ -54,8 +57,10 @@ class DownloadWorker @AssistedInject constructor(
         val expectedMs = inputData.getLong(KEY_DURATION_MS, 0L)
         val coverUrl = inputData.getString(KEY_COVER_URL)
 
-        val root = settings.settings.first().driveFolderId ?: return Result.failure()
-        val provider = providers[SourceType.DRIVE]?.get() ?: return Result.failure()
+        val root = settings.settings.first().driveFolderId
+            ?: return Result.failure(reason("No music folder chosen - set one in Settings"))
+        val provider = providers[SourceType.DRIVE]?.get()
+            ?: return Result.failure(reason("Google Drive is not connected"))
 
         // A search is resolved to one recording BEFORE anything is fetched, so
         // the wrong take is never written to Drive in the first place. Failing
@@ -63,11 +68,13 @@ class DownloadWorker @AssistedInject constructor(
         // same answer, and the queue entry stays visible saying what happened.
         val target = if (url.startsWith(SEARCH_PREFIX) && expectedMs > 0) {
             val picked = youtube.resolveByDuration(url.removePrefix(SEARCH_PREFIX), expectedMs)
-                .getOrElse {
-                    return if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+                .getOrElse { cause ->
+                    // The search itself broke, so this may well work next time.
+                    return retryOrFail(cause.message ?: "Search failed")
                 }
                 ?: return Result.failure(
-                    workDataOf(KEY_ERROR to "No result close enough to ${expectedMs / 1000}s")
+                    // Not a retry: asking again returns the same recordings.
+                    reason("No result within 15s of ${format(expectedMs)}")
                 )
             "https://music.youtube.com/watch?v=$picked"
         } else url
@@ -78,13 +85,13 @@ class DownloadWorker @AssistedInject constructor(
         val staging = applicationContext.cacheDir.resolve("downloads/$id")
         val file = youtube.download(target, staging) { progress ->
             setProgressAsync(workDataOf(KEY_PROGRESS to progress))
-        }.getOrElse {
+        }.getOrElse { cause ->
             // Retried rather than failed while there is reason to hope -- the
             // usual cause is a dead connection part way through. But NOT
             // forever: WorkManager's backoff doubles to five hours, so an
             // uncapped retry looks exactly like a job that is quietly waiting
             // for something, and there is no way to tell the difference.
-            return if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+            return retryOrFail(cause.message ?: "Could not fetch the audio")
         }
 
         return try {
@@ -121,11 +128,26 @@ class DownloadWorker @AssistedInject constructor(
             SyncWorker.enqueue(applicationContext, root)
             Result.success(workDataOf(KEY_SAVED_AS to name))
         } catch (e: Exception) {
-            if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+            retryOrFail(e.message ?: "Could not save to Drive")
         } finally {
             staging.deleteRecursively()
         }
     }
+
+    /**
+     * Fails with the reason attached, or retries while attempts remain.
+     *
+     * The message is carried on the FAILURE either way, so a job that gave up
+     * after six tries still says what went wrong on the last one rather than
+     * going quiet at exactly the point someone starts wondering.
+     */
+    private fun retryOrFail(why: String): Result =
+        if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure(reason(why))
+
+    private fun reason(why: String): Data = workDataOf(KEY_ERROR to why)
+
+    private fun format(ms: Long): String =
+        "%d:%02d".format(ms / 60_000, (ms % 60_000) / 1000)
 
     /**
      * Writes cover.jpg into the album folder, if and only if the folder has no

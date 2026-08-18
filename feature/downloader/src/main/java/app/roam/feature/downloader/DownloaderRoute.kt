@@ -9,6 +9,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
@@ -349,6 +351,29 @@ private fun DownloadsSheet(
     onRestart: (DownloadStatus) -> Unit,
     onOpenTrack: (DownloadStatus, Boolean) -> Unit,
 ) {
+    // Three lists, not three filters of one: which tab you want depends on why
+    // you opened the sheet. Watching progress, chasing what broke, and checking
+    // what landed are different errands, and a single list interleaves them
+    // exactly when there is most to read.
+    val queued = downloads.filterNot { it.finished }
+    val failed = downloads.filter { it.failed }
+    val complete = downloads.filter { it.succeeded }
+
+    // Failed and Complete are hidden while empty. A permanent "Failed 0" is an
+    // invitation to worry about nothing, and a tab you can never usefully open
+    // is just a smaller screen.
+    val tabs = buildList {
+        add(Triple("Queue", Icons.Filled.Schedule, queued))
+        if (failed.isNotEmpty()) add(Triple("Failed", Icons.Filled.Close, failed))
+        if (complete.isNotEmpty()) add(Triple("Complete", Icons.Filled.Check, complete))
+    }
+
+    var tab by remember { mutableIntStateOf(0) }
+    // Clamped, because a tab can VANISH under you -- retrying the last failure
+    // empties that list while you are looking at it, and an index left pointing
+    // past the end is a crash rather than a cosmetic problem.
+    val selected = tab.coerceIn(0, (tabs.size - 1).coerceAtLeast(0))
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.navigationBarsPadding()) {
             Row(
@@ -372,19 +397,44 @@ private fun DownloadsSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(24.dp),
                 )
-            }
+            } else {
+                // Only worth a tab row when there is somewhere else to go.
+                if (tabs.size > 1) {
+                    PrimaryTabRow(selectedTabIndex = selected) {
+                        tabs.forEachIndexed { index, (label, icon, rows) ->
+                            Tab(
+                                selected = index == selected,
+                                onClick = { tab = index },
+                                text = { Text("$label ${rows.size}") },
+                                icon = { Icon(icon, contentDescription = null) },
+                            )
+                        }
+                    }
+                }
 
-            LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                items(downloads.size, key = { downloads[it].id }) { index ->
-                    val download = downloads[index]
-                    DownloadRow(
-                        download = download,
-                        onRetry = { onRetry(download) },
-                        onCancel = { onCancel(download) },
-                        onRestart = { onRestart(download) },
-                        onOpenTrack = { onOpenTrack(download, false) },
-                        onEditTrack = { onOpenTrack(download, true) },
+                val rows = tabs.getOrNull(selected)?.third.orEmpty()
+
+                if (rows.isEmpty()) {
+                    Text(
+                        "Nothing waiting",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(24.dp),
                     )
+                }
+
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    items(rows.size, key = { rows[it].id }) { index ->
+                        val download = rows[index]
+                        DownloadRow(
+                            download = download,
+                            onRetry = { onRetry(download) },
+                            onCancel = { onCancel(download) },
+                            onRestart = { onRestart(download) },
+                            onOpenTrack = { onOpenTrack(download, false) },
+                            onEditTrack = { onOpenTrack(download, true) },
+                        )
+                    }
                 }
             }
 
