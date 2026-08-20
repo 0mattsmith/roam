@@ -74,6 +74,40 @@ if ($Variant -eq 'debug') {
 }
 
 # ----------------------------------------------------------------------------
+# Android SDK
+# ----------------------------------------------------------------------------
+# CI never hits this: the GitHub runner sets ANDROID_HOME for us. Locally the
+# path lives in local.properties, which is gitignored because it is an absolute
+# path on one machine -- so a fresh clone has no idea where the SDK is, and
+# Gradle's own error for it is easy to misread as a project problem.
+if (-not (Test-Path 'local.properties') -and
+    -not $env:ANDROID_HOME -and -not $env:ANDROID_SDK_ROOT) {
+
+    $guess = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+    if (Test-Path $guess) {
+        Write-Step 'Android SDK'
+        Write-Info "found at $guess"
+        # Backslashes and the drive colon are escaped: local.properties is a
+        # Java properties file, where both are otherwise special.
+        $escaped = $guess -replace '\\', '\\\\' -replace ':', '\:'
+        "sdk.dir=$escaped" | Set-Content -Path 'local.properties' -Encoding ASCII
+        Write-Ok 'local.properties written (gitignored, machine specific)'
+    } else {
+        Fail @'
+No Android SDK. Gradle needs to know where it is, and nothing here tells it.
+
+Either set ANDROID_HOME, or write local.properties with the path, escaping
+the backslashes and the colon:
+
+    sdk.dir=C\:\\Users\\Matt\\AppData\\Local\\Android\\Sdk
+
+Android Studio writes this file itself the first time it opens a project, so
+opening Roam in it once is the other way to fix this.
+'@
+    }
+}
+
+# ----------------------------------------------------------------------------
 # Wrapper
 # ----------------------------------------------------------------------------
 # CI generates this on the fly, so its absence goes unnoticed until someone
