@@ -126,8 +126,7 @@ fun LibraryRoute(
                     ViewModeButton(
                         state = state,
                         vm = vm,
-                        onArtistPage = artistPage != null &&
-                            state.drillTitle == artistPage?.first?.name,
+                        onArtistPage = artistPage != null && state.openAlbumId == null,
                     )
                     SortMenu(state, vm)
                     IconButton(onClick = onOpenDownloader) {
@@ -171,7 +170,11 @@ fun LibraryRoute(
                 // The artist's own page, shown until one of their albums is
                 // opened -- at which point the drill takes over and Back
                 // returns here rather than all the way out.
-                artistPage != null && state.drillTitle == artistPage?.first?.name ->
+                // openAlbumId, NOT a name comparison. Matching drillTitle
+                // against the artist's name made a self-titled album -- Royal
+                // Blood by Royal Blood -- take this branch and become
+                // impossible to open.
+                artistPage != null && state.openAlbumId == null ->
                     key(artistPage?.first?.id) {
                         val (detail, artistAlbums) = artistPage!!
                         ArtistPage(
@@ -194,7 +197,12 @@ fun LibraryRoute(
                 // opening an album should show its first track, not wherever
                 // the previously opened album happened to be scrolled to.
                 state.drillTitle != null ->
-                    key(state.drillTitle) { TrackList(vm, rememberLazyListState()) }
+                    // Keyed on identity too: two albums can share a title, and
+                    // keying on the title alone would hand the second one the
+                    // first one's scroll position.
+                    key(state.openAlbumId, state.drillTitle) {
+                        TrackList(vm, rememberLazyListState())
+                    }
                 state.tab == LibraryTab.TRACKS -> TrackList(vm, tracksState)
                 state.tab == LibraryTab.ARTISTS ->
                     ArtistList(vm, artistsState, artistsGridState, state.artistViewMode)
@@ -332,7 +340,12 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
 
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
-            tracks[index]?.let { track ->
+            val row = tracks[index]
+            // A row that has not loaded yet still takes up its space. Rendering
+            // nothing would collapse it to zero height, which is exactly the
+            // geometry problem placeholders exist to avoid.
+            if (row == null) PlaceholderRow()
+            row?.let { track ->
                 // Collapsed albums still have to be paged in -- the boundaries
                 // are only visible once the rows are loaded -- so this hides
                 // the tracks rather than skipping the query.
@@ -343,7 +356,13 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                     // accessor would tell Paging that row is in view and drag
                     // the load window backwards as you scroll.
                     val previous = if (index == 0) null else tracks.peek(index - 1)
-                    val newAlbum = previous?.albumId != track.albumId
+                    // At index 0 there is genuinely no previous row, so the
+                    // header belongs. Anywhere else a null previous means "not
+                    // loaded yet", NOT "different album" -- inventing a header
+                    // there would repeat one at every page boundary.
+                    val newAlbum =
+                        if (index == 0) true
+                        else previous != null && previous.albumId != track.albumId
                     if (newAlbum) {
                         LaunchedEffect(track.albumId, track.loved) {
                             albumLoved[track.albumId] = vm.isAlbumLoved(track.albumId)
@@ -525,7 +544,9 @@ private fun ArtistList(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
-                artists[index]?.let { artist ->
+                val cell = artists[index]
+                if (cell == null) PlaceholderCell()
+                cell?.let { artist ->
                     ArtistCell(
                         artist = artist,
                         dense = viewMode.columns >= 5,
@@ -538,7 +559,9 @@ private fun ArtistList(
     } else {
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
-                artists[index]?.let { artist ->
+                val row = artists[index]
+                if (row == null) PlaceholderRow()
+                row?.let { artist ->
                     ArtistRow(
                         artist = artist,
                         onClick = { vm.openArtist(artist.id, artist.name) },
@@ -579,7 +602,9 @@ private fun AlbumList(vm: LibraryViewModel, listState: LazyListState) {
 
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = albums.itemCount, key = albums.itemKey { it.id }) { index ->
-            albums[index]?.let { album ->
+            val row = albums[index]
+            if (row == null) PlaceholderRow()
+            row?.let { album ->
                 AlbumRow(
                     album = album,
                     onClick = { vm.openAlbum(album.id, album.title) },
@@ -891,3 +916,24 @@ private fun EmptyState(message: String) {
         )
     }
 }
+
+/**
+ * Stands in for a row Paging has not fetched yet.
+ *
+ * Deliberately blank rather than a shimmer: these sit well outside the
+ * viewport almost always -- prefetchDistance pulls the real rows in thirty
+ * ahead -- so the only job here is to occupy the right amount of space so the
+ * scrollbar and the scroll position stay honest.
+ */
+@Composable
+private fun PlaceholderRow() {
+    Spacer(Modifier.fillMaxWidth().height(PLACEHOLDER_ROW_HEIGHT))
+}
+
+@Composable
+private fun PlaceholderCell() {
+    Spacer(Modifier.fillMaxWidth().aspectRatio(1f))
+}
+
+/** Matches a ListItem with two lines of text, which is what every row here is. */
+private val PLACEHOLDER_ROW_HEIGHT = 72.dp

@@ -54,6 +54,16 @@ data class LibraryUiState(
     val artistAlbumViewMode: ViewMode = ViewMode.GRID_3,
     /** Non-null when viewing one artist's or album's tracks, or the loved list. */
     val drillTitle: String? = null,
+    /**
+     * The album currently open, if any.
+     *
+     * Exists because the route used to decide between the artist page and a
+     * track list by comparing drillTitle against the artist's NAME. An album
+     * called the same thing as its artist -- Royal Blood by Royal Blood, and
+     * every other self-titled debut ever made -- then matched the artist page
+     * branch and could not be opened at all. Identity, never a display string.
+     */
+    val openAlbumId: Long? = null,
     val showingLoved: Boolean = false,
     /**
      * Whether a discography this long reads better as an index of albums.
@@ -163,18 +173,37 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    /**
+     * PLACEHOLDERS ON, and this is load-bearing.
+     *
+     * Any write to tracks invalidates the PagingSource -- hearting a track,
+     * saving an edit -- and Paging answers by reloading. Without placeholders
+     * the presented list collapses from everything scrolled through to the one
+     * page around the anchor, so a scroll index of 250 suddenly exceeds a
+     * 60-item list, gets clamped, and lands the reader somewhere else entirely.
+     * That is the "it jumped to the top after I hearted something" bug.
+     *
+     * With placeholders the count is the FULL count from the start, unloaded
+     * rows are null, indices never move, and a refresh leaves the scroll
+     * position exactly where it was. The cost is that every list has to render
+     * something for a null row, which is why they all have a placeholder branch
+     * rather than skipping nulls -- skipping gives a zero-height row and hands
+     * the geometry problem straight back.
+     */
     private fun pagingConfig() =
-        PagingConfig(pageSize = 60, prefetchDistance = 30, enablePlaceholders = false)
+        PagingConfig(pageSize = 60, prefetchDistance = 30, enablePlaceholders = true)
 
     // ---- navigation ---------------------------------------------------------
 
     fun selectTab(tab: LibraryTab) {
+        closeOpenForms()
         _artistPage.value = null
         drill.value = null
         _state.update {
             it.copy(
                 tab = tab,
                 drillTitle = null,
+                openAlbumId = null,
                 showingLoved = false,
                 collapseAlbumsByDefault = false,
                 toggledAlbums = emptySet(),
@@ -213,6 +242,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun openArtist(id: Long, name: String) {
+        closeOpenForms()
         loadArtistPage(id)
         drill.value = Drill.Artist(id, name)
         // Album order, so the drill-down groups by album the way a discography
@@ -220,6 +250,7 @@ class LibraryViewModel @Inject constructor(
         _state.update {
             it.copy(
                 drillTitle = name,
+                openAlbumId = null,
                 showingLoved = false,
                 trackSort = TrackSort.ALBUM,
                 toggledAlbums = emptySet(),
@@ -227,14 +258,31 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Shuts every open sheet and dialog.
+     *
+     * Navigating away has to do this explicitly. The editor is a dialog held in
+     * ViewModel state, not in the composition of the screen behind it, so
+     * leaving a drill-down does not dismiss it -- open an album, edit a track,
+     * go back, open a DIFFERENT album, and the previous track's form is still
+     * sitting there over the top of it, ready to save changes to a track you
+     * are no longer looking at.
+     */
+    private fun closeOpenForms() {
+        _editing.value = null
+        _bulkEditing.value = null
+    }
+
     fun openAlbum(id: Long, title: String) {
         // Leaves the artist page loaded: opening one of their albums and
         // pressing Back should land you where you were, not at the top level.
+        closeOpenForms()
         drill.value = Drill.Album(id, title)
         // One album is never an index of itself.
         _state.update {
             it.copy(
                 drillTitle = title,
+                openAlbumId = id,
                 showingLoved = false,
                 collapseAlbumsByDefault = false,
                 toggledAlbums = emptySet(),
@@ -266,10 +314,12 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun openLoved() {
+        closeOpenForms()
         drill.value = Drill.Loved
         _state.update {
             it.copy(
                 drillTitle = "Loved",
+                openAlbumId = null,
                 showingLoved = true,
                 collapseAlbumsByDefault = false,
                 toggledAlbums = emptySet(),
@@ -311,20 +361,23 @@ class LibraryViewModel @Inject constructor(
      * and only then does a further press leave for the list.
      */
     fun closeDrill(): Boolean {
+        closeOpenForms()
         val current = drill.value
         if (current is Drill.Album && _artistPage.value != null) {
             drill.value = null
-            _state.update { it.copy(drillTitle = _artistPage.value?.first?.name) }
+            _state.update {
+                it.copy(drillTitle = _artistPage.value?.first?.name, openAlbumId = null)
+            }
             return true
         }
         if (current == null && _artistPage.value != null) {
             _artistPage.value = null
-            _state.update { it.copy(drillTitle = null, showingLoved = false) }
+            _state.update { it.copy(drillTitle = null, openAlbumId = null, showingLoved = false) }
             return true
         }
         if (current == null) return false
         drill.value = null
-        _state.update { it.copy(drillTitle = null, showingLoved = false) }
+        _state.update { it.copy(drillTitle = null, openAlbumId = null, showingLoved = false) }
         return true
     }
 
