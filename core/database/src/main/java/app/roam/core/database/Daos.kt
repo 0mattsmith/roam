@@ -340,6 +340,11 @@ interface TrackDao {
           discNo = COALESCE(:discNo, discNo),
           discTotal = COALESCE(:discTotal, discTotal),
           artworkId = COALESCE(:artworkId, artworkId),
+          -- File fact rather than a tag, but the tag pass is the only thing
+          -- that ever learns it. Left out, every track's duration stays 0 and
+          -- anything measuring against it -- the play threshold, the times
+          -- shown in the car -- silently has nothing to work with.
+          durationMs = COALESCE(:durationMs, durationMs),
           tagState = :tagState
         WHERE id = :id AND userEdited = 0
     """)
@@ -353,6 +358,7 @@ interface TrackDao {
         discNo: Int?,
         discTotal: Int?,
         artworkId: String?,
+        durationMs: Long?,
         tagState: TagState,
     )
 

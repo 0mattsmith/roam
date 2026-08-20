@@ -155,6 +155,27 @@ class PlayerController @Inject constructor(
     private companion object { const val RESTART_THRESHOLD_MS = 3_000L }
 }
 
+/**
+ * The playable length, or null when it is not known.
+ *
+ * Media3 REJECTS a negative duration outright -- setDurationMs asserts, and the
+ * result is an IllegalArgumentException thrown while the saved queue is being
+ * rebuilt, which crashes the app on launch before anything is on screen.
+ *
+ * Two ways it could go negative. `durationMs` is 0 on any track whose tags have
+ * not been read, so a track with a start trim computed 0 minus the trim. And
+ * nothing stops an end trim being edited to sit before the start. Neither is
+ * exotic, and neither is worth crashing over: an unknown duration is a fine
+ * thing for a media item to have, so this returns null and the field is simply
+ * left unset.
+ */
+private val TrackListItem.playableDurationMs: Long?
+    get() {
+        val end = endMs ?: durationMs.takeIf { it > 0 } ?: return null
+        val span = end - (startMs ?: 0L)
+        return span.takeIf { it > 0 }
+    }
+
 fun TrackListItem.toMediaItem(ctx: Context): MediaItem = MediaItem.Builder()
     // MediaId.Track, not a bare number: the car parses this id back to find
     // the current track for the love button, and the two surfaces share a queue.
@@ -175,16 +196,16 @@ fun TrackListItem.toMediaItem(ctx: Context): MediaItem = MediaItem.Builder()
     )
     .setMediaMetadata(
         MediaMetadata.Builder()
-            .setTitle(title)
-            .setArtist(artistName)
-            .setAlbumTitle(albumTitle)
-            .setTrackNumber(trackNo ?: 0)
             // Carried on the item because the play counter needs the duration
             // of the track being LEFT, and by then the player has moved on and
             // reports the duration of the next one. Measured against the
             // CLIPPED length: if someone trimmed a track to thirty seconds,
             // thirty seconds is the whole of it as far as they are concerned.
-            .setDurationMs((endMs ?: durationMs) - (startMs ?: 0L))
+            .apply { playableDurationMs?.let { setDurationMs(it) } }
+            .setTitle(title)
+            .setArtist(artistName)
+            .setAlbumTitle(albumTitle)
+            .setTrackNumber(trackNo ?: 0)
             // content:// rather than a bitmap: Android Auto refuses bitmaps and
             // they blow the Binder limit, so both surfaces use the same URI.
             .setArtworkUri(artworkId?.let { ArtworkProvider.uri(ctx, it, size = 640) })

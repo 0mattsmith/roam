@@ -275,7 +275,14 @@ class BrowseTree @Inject constructor(
                     .setArtist(artistName)
                     .setAlbumTitle(albumTitle)
                     .setTrackNumber(trackNo ?: 0)
-                    .setDurationMs((endMs ?: durationMs) - (startMs ?: 0L))
+                    // Same guard as the queue builder: Media3 asserts on a
+                    // negative duration, and an untagged track with a start
+                    // trim produces exactly that.
+                    .apply {
+                        val end = endMs ?: durationMs.takeIf { it > 0 }
+                        val span = end?.minus(startMs ?: 0L)
+                        span?.takeIf { it > 0 }?.let { setDurationMs(it) }
+                    }
                     .setArtworkUri(
                         artworkId
                             ?.takeIf { withArtwork }

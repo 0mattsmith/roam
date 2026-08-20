@@ -114,6 +114,9 @@ class TagWorker @AssistedInject constructor(
                 discNo = tags.discNo,
                 discTotal = tags.discTotal,
                 artworkId = artworkId,
+                // Only when the container actually told us. A null leaves
+                // whatever is stored alone rather than zeroing it.
+                durationMs = tags.durationMs?.takeIf { it > 0 },
                 tagState = TagState.OK,
             )
 

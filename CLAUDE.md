@@ -321,6 +321,8 @@ argued about mid-flight:
 | Resumption resumes nothing and the log says the app misbehaved | `onPlaybackResumption` returned an empty list. The contract is to FAIL the future when there is nothing to resume |
 | Roam resumes a few tracks off after a sync | The stored index was trusted. Re-find the row by `currentTrackId` |
 | The saved queue is empty every launch | A snapshot taken while the player was still starting got written. `snapshot` returns null on an empty player and `save` refuses an empty list -- keep both |
+| The app dies on launch with IllegalArgumentException from Assertions | Media3 REFUSES a negative `setDurationMs`. `durationMs` is 0 until the tag pass reads it, so a track with a start trim computed a negative span while the saved queue was being rebuilt. An unknown duration must be left UNSET, never computed defensively |
+| Every track's duration is 0 | `updateTags` did not write `durationMs`, so the value `TagParser` had already worked out was thrown away. Nothing measuring against a duration -- the play threshold, times in the car -- had anything to work with |
 | Most played and recently played are always empty | Nothing called `markPlayed`. `CountPlays` in the service does it, and it needs `durationMs` ON THE MEDIA ITEM -- the player has already moved on by the time a track is left, so it reports the NEXT track's duration |
 | Skipping through an album racks up play counts | A play is half the track or four minutes, whichever comes first; under 30s counts as nothing at all. `PlayThreshold` decides, and it is tested |
 | Scrubbing backwards counts a play every time | A seek WITHIN the same item is not leaving it. `onPositionDiscontinuity` must compare the old and new mediaItemIndex before counting anything |
