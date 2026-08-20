@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.UnfoldLess
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -225,6 +227,30 @@ private fun SortMenu(state: LibraryUiState, vm: LibraryViewModel) {
             state.tab == LibraryTab.ALBUMS -> AlbumSort.entries.forEach { sort ->
                 SortItem(sort.label, state.albumSort == sort) { vm.setAlbumSort(sort); open = false }
             }
+        }
+
+        // Only inside a drill-down, where the album headers are and where the
+        // whole thing is a few hundred tracks.
+        //
+        // Deliberately NOT offered on the full Tracks tab. Collapsed rows still
+        // have to be paged in to know where the album boundaries are, so a
+        // collapsed library would render thousands of empty items and fetch
+        // page after page to fill one screen. The Albums tab is the album index
+        // for the whole library, and it is a query over albums rather than a
+        // track list with most of it hidden.
+        if (state.drillTitle != null) {
+            HorizontalDivider()
+            val collapsed = state.collapseAlbumsByDefault
+            DropdownMenuItem(
+                text = { Text(if (collapsed) "Expand all albums" else "Collapse all albums") },
+                onClick = { vm.setAllAlbumsCollapsed(!collapsed); open = false },
+                leadingIcon = {
+                    Icon(
+                        if (collapsed) Icons.Filled.UnfoldMore else Icons.Filled.UnfoldLess,
+                        contentDescription = null,
+                    )
+                },
+            )
         }
     }
 }

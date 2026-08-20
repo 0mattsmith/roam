@@ -37,7 +37,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -102,8 +104,20 @@ class LibraryViewModel @Inject constructor(
      * Re-queries whenever the sort or the drill-down changes. flatMapLatest
      * cancels the previous Pager, so flicking between sort orders does not
      * leave stale pages loading behind the new one.
+     *
+     * distinctUntilChanged IS THE WHOLE POINT and must not be dropped.
+     *
+     * Without it every emission of `_state` builds a brand new Pager, and a
+     * new Pager is a new PagingSource, which reloads from the first page and
+     * throws the reader back to the top of the list. `_state` carries the
+     * collapsed-album set, the view modes and the tab, so collapsing one album
+     * -- or anything else that touches state -- silently reset the scroll
+     * position of a list the person was reading. Only the sort and the drill
+     * target actually change what is being QUERIED; everything else is
+     * presentation and must not disturb the pages already loaded.
      */
     val pagedTracks = combine(_state, drill) { s, d -> s.trackSort to d }
+        .distinctUntilChanged()
         .flatMapLatest { (sort, current) ->
             Pager(pagingConfig()) {
                 tracks.pagedListItemsRaw(
@@ -117,13 +131,17 @@ class LibraryViewModel @Inject constructor(
             }.flow
         }.cachedIn(viewModelScope)
 
-    val pagedArtists = _state.flatMapLatest { s ->
-        Pager(pagingConfig()) { artists.pagedListItemsRaw(LibraryQueries.artists(s.artistSort)) }.flow
-    }.cachedIn(viewModelScope)
+    val pagedArtists = _state.map { it.artistSort }
+        .distinctUntilChanged()
+        .flatMapLatest { sort ->
+            Pager(pagingConfig()) { artists.pagedListItemsRaw(LibraryQueries.artists(sort)) }.flow
+        }.cachedIn(viewModelScope)
 
-    val pagedAlbums = _state.flatMapLatest { s ->
-        Pager(pagingConfig()) { albums.pagedListItemsRaw(LibraryQueries.albums(s.albumSort)) }.flow
-    }.cachedIn(viewModelScope)
+    val pagedAlbums = _state.map { it.albumSort }
+        .distinctUntilChanged()
+        .flatMapLatest { sort ->
+            Pager(pagingConfig()) { albums.pagedListItemsRaw(LibraryQueries.albums(sort)) }.flow
+        }.cachedIn(viewModelScope)
 
     init {
         player.connect()
@@ -386,6 +404,29 @@ class LibraryViewModel @Inject constructor(
                 else it.toggledAlbums + albumId,
         )
     }
+
+    /**
+     * Collapses or expands every album at once.
+     *
+     * Flips the DEFAULT and clears the exceptions, rather than walking the list
+     * and collapsing each album in turn. That matters because the list is
+     * paged: only the albums scrolled past are loaded, so "collapse each one I
+     * can see" would leave everything below it expanded and the button would
+     * appear not to have worked properly. Flipping the default applies to
+     * albums that have not been fetched yet and costs one boolean.
+     */
+    fun setAllAlbumsCollapsed(collapsed: Boolean) = _state.update {
+        it.copy(collapseAlbumsByDefault = collapsed, toggledAlbums = emptySet())
+    }
+
+    /**
+     * True when collapsing all would actually change something.
+     *
+     * With no exceptions set this is just the default inverted; with some, the
+     * button should still offer to tidy them up, so the label follows the
+     * default rather than trying to guess a majority.
+     */
+    val allAlbumsCollapsed: Boolean get() = _state.value.collapseAlbumsByDefault
 
     // ---- playback -----------------------------------------------------------
 
