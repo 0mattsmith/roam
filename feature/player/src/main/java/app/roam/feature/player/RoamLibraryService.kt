@@ -109,6 +109,7 @@ class RoamLibraryService : MediaLibraryService() {
         // straight away, so both the phone and the car open on the last track
         // rather than an empty Now Playing screen.
         player.addListener(SaveOnChange())
+        player.addListener(CountPlays())
         startSaveLoop(player)
         scope.launch { restoreQueue(player) }
 
@@ -416,6 +417,66 @@ class RoamLibraryService : MediaLibraryService() {
         private fun request() {
             saveRequests.tryEmit(Unit)
         }
+    }
+
+    /**
+     * Records what was actually listened to.
+     *
+     * Everything is decided about the track being LEFT, not the one arriving,
+     * because how far someone got is only known at the moment they move on.
+     * onPositionDiscontinuity is the one callback that carries both: the old
+     * item and the position it was left at.
+     *
+     * Nothing here writes anything but playCount, skipCount and lastPlayedAt --
+     * user state, which sync must never touch (invariant 3).
+     */
+    private inner class CountPlays : Player.Listener {
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            // A SEEK inside the same track is not leaving it. Without this,
+            // scrubbing backwards past the halfway mark and forwards again
+            // would count a play every time.
+            if (oldPosition.mediaItemIndex == newPosition.mediaItemIndex &&
+                reason == Player.DISCONTINUITY_REASON_SEEK
+            ) return
+
+            val item = oldPosition.mediaItem ?: return
+            val trackId = trackIdOf(item) ?: return
+            val duration = item.mediaMetadata.durationMs ?: return
+
+            // A track that ran to its end counts however long it was: the
+            // person heard all of it, which is the strongest evidence there is.
+            val ended = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION
+            val position = oldPosition.positionMs.coerceAtLeast(0)
+
+            when {
+                ended || PlayThreshold.countsAsPlay(position, duration) ->
+                    scope.launch { tracks.markPlayed(trackId, System.currentTimeMillis()) }
+                PlayThreshold.countsAsSkip(position, duration) ->
+                    scope.launch { tracks.markSkipped(trackId) }
+            }
+        }
+
+        /**
+         * The last track in a queue never transitions anywhere, so without this
+         * it would be the one song that never counted -- and on an album that
+         * is the closing track, every time.
+         */
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState != Player.STATE_ENDED) return
+            val player = session?.player ?: return
+            val item = player.currentMediaItem ?: return
+            val trackId = trackIdOf(item) ?: return
+            scope.launch { tracks.markPlayed(trackId, System.currentTimeMillis()) }
+        }
+
+        private fun trackIdOf(item: MediaItem): Long? =
+            runCatching { MediaId.parse(item.mediaId) }.getOrNull()
+                ?.let { (it as? MediaId.Track)?.id }
     }
 
     /** The heart reflects the current track, so it is rebuilt as tracks change. */

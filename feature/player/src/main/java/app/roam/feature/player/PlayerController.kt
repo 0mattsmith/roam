@@ -179,6 +179,12 @@ fun TrackListItem.toMediaItem(ctx: Context): MediaItem = MediaItem.Builder()
             .setArtist(artistName)
             .setAlbumTitle(albumTitle)
             .setTrackNumber(trackNo ?: 0)
+            // Carried on the item because the play counter needs the duration
+            // of the track being LEFT, and by then the player has moved on and
+            // reports the duration of the next one. Measured against the
+            // CLIPPED length: if someone trimmed a track to thirty seconds,
+            // thirty seconds is the whole of it as far as they are concerned.
+            .setDurationMs((endMs ?: durationMs) - (startMs ?: 0L))
             // content:// rather than a bitmap: Android Auto refuses bitmaps and
             // they blow the Binder limit, so both surfaces use the same URI.
             .setArtworkUri(artworkId?.let { ArtworkProvider.uri(ctx, it, size = 640) })

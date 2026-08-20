@@ -275,6 +275,7 @@ class BrowseTree @Inject constructor(
                     .setArtist(artistName)
                     .setAlbumTitle(albumTitle)
                     .setTrackNumber(trackNo ?: 0)
+                    .setDurationMs((endMs ?: durationMs) - (startMs ?: 0L))
                     .setArtworkUri(
                         artworkId
                             ?.takeIf { withArtwork }

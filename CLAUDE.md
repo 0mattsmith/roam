@@ -321,6 +321,9 @@ argued about mid-flight:
 | Resumption resumes nothing and the log says the app misbehaved | `onPlaybackResumption` returned an empty list. The contract is to FAIL the future when there is nothing to resume |
 | Roam resumes a few tracks off after a sync | The stored index was trusted. Re-find the row by `currentTrackId` |
 | The saved queue is empty every launch | A snapshot taken while the player was still starting got written. `snapshot` returns null on an empty player and `save` refuses an empty list -- keep both |
+| Most played and recently played are always empty | Nothing called `markPlayed`. `CountPlays` in the service does it, and it needs `durationMs` ON THE MEDIA ITEM -- the player has already moved on by the time a track is left, so it reports the NEXT track's duration |
+| Skipping through an album racks up play counts | A play is half the track or four minutes, whichever comes first; under 30s counts as nothing at all. `PlayThreshold` decides, and it is tested |
+| Scrubbing backwards counts a play every time | A seek WITHIN the same item is not leaving it. `onPositionDiscontinuity` must compare the old and new mediaItemIndex before counting anything |
 | Position always resumes up to ten seconds early | By design: position emits no events, so it is polled. Pausing writes exactly |
 | "Shuffle all" is not the first row in a list | The `page == 0` guard was dropped or reordered. It must be first in Library, Artists, Albums and each album, and only on the first page or it repeats down the list |
 | A tab is missing in the car | Expected below a 4-tab limit -- `rootTabs` is taken from the front, so Loved goes first, then Albums |

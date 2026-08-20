@@ -46,4 +46,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // PlayThreshold is pure arithmetic, so it is provable on the JVM.
+    testImplementation(libs.junit)
 }
