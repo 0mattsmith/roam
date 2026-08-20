@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import app.roam.core.database.TrackListItem
 import app.roam.data.catalog.AlbumBulkEdits
 
@@ -187,25 +189,28 @@ fun AlbumBulkEditDialog(
     onSavePastCover: (LibraryViewModel.PastCover) -> Unit,
     onRestorePastCover: (LibraryViewModel.PastCover) -> Unit,
 ) {
-    var artistOn by remember(albumId) { mutableStateOf(false) }
-    var albumOn by remember(albumId) { mutableStateOf(false) }
-    var albumArtistOn by remember(albumId) { mutableStateOf(false) }
-    var yearOn by remember(albumId) { mutableStateOf(false) }
-    var genreOn by remember(albumId) { mutableStateOf(false) }
-    var discOn by remember(albumId) { mutableStateOf(false) }
-    var compilationOn by remember(albumId) { mutableStateOf(false) }
-    var sortArtistOn by remember(albumId) { mutableStateOf(false) }
-    var groupArtistOn by remember(albumId) { mutableStateOf(false) }
+    // rememberSaveable throughout: a bulk edit is a form of ticked fields and
+    // typed values, and losing it to a rotation is more annoying here than in
+    // the single-track editor, not less.
+    var artistOn by rememberSaveable(albumId) { mutableStateOf(false) }
+    var albumOn by rememberSaveable(albumId) { mutableStateOf(false) }
+    var albumArtistOn by rememberSaveable(albumId) { mutableStateOf(false) }
+    var yearOn by rememberSaveable(albumId) { mutableStateOf(false) }
+    var genreOn by rememberSaveable(albumId) { mutableStateOf(false) }
+    var discOn by rememberSaveable(albumId) { mutableStateOf(false) }
+    var compilationOn by rememberSaveable(albumId) { mutableStateOf(false) }
+    var sortArtistOn by rememberSaveable(albumId) { mutableStateOf(false) }
+    var groupArtistOn by rememberSaveable(albumId) { mutableStateOf(false) }
 
-    var artist by remember(albumId) { mutableStateOf(initialArtist) }
-    var album by remember(albumId) { mutableStateOf(albumTitle) }
-    var albumArtist by remember(albumId) { mutableStateOf(initialArtist) }
-    var year by remember(albumId) { mutableStateOf("") }
-    var genre by remember(albumId) { mutableStateOf("") }
-    var disc by remember(albumId) { mutableStateOf("") }
-    var compilation by remember(albumId) { mutableStateOf(true) }
-    var sortArtist by remember(albumId) { mutableStateOf("") }
-    var groupArtist by remember(albumId) { mutableStateOf("") }
+    var artist by rememberSaveable(albumId) { mutableStateOf(initialArtist) }
+    var album by rememberSaveable(albumId) { mutableStateOf(albumTitle) }
+    var albumArtist by rememberSaveable(albumId) { mutableStateOf(initialArtist) }
+    var year by rememberSaveable(albumId) { mutableStateOf("") }
+    var genre by rememberSaveable(albumId) { mutableStateOf("") }
+    var disc by rememberSaveable(albumId) { mutableStateOf("") }
+    var compilation by rememberSaveable(albumId) { mutableStateOf(true) }
+    var sortArtist by rememberSaveable(albumId) { mutableStateOf("") }
+    var groupArtist by rememberSaveable(albumId) { mutableStateOf("") }
 
     val anyChecked = artistOn || albumOn || albumArtistOn || yearOn ||
         genreOn || discOn || compilationOn || sortArtistOn || groupArtistOn
@@ -223,6 +228,9 @@ fun AlbumBulkEditDialog(
     )
 
     AlertDialog(
+        // Same as the track editor: a stray tap outside must not discard the
+        // ticked fields. Back still cancels.
+        properties = DialogProperties(dismissOnClickOutside = false),
         onDismissRequest = onDismiss,
         title = { Text("Edit $trackCount tracks") },
         text = {

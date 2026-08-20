@@ -42,12 +42,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.text.KeyboardOptions
 import app.roam.core.database.TrackListItem
@@ -185,22 +187,28 @@ fun TrackEditDialog(
     onSavePastCover: (LibraryViewModel.PastCover) -> Unit,
     onRestorePastCover: (LibraryViewModel.PastCover) -> Unit,
 ) {
-    var title by remember(trackId) { mutableStateOf(initial.title) }
-    var artist by remember(trackId) { mutableStateOf(initial.artist) }
-    var album by remember(trackId) { mutableStateOf(initial.album) }
-    var albumArtist by remember(trackId) { mutableStateOf(initial.albumArtist.orEmpty()) }
-    var trackNo by remember(trackId) { mutableStateOf(initial.trackNo?.toString().orEmpty()) }
-    var discNo by remember(trackId) { mutableStateOf(initial.discNo?.toString().orEmpty()) }
-    var year by remember(trackId) { mutableStateOf(initial.year?.toString().orEmpty()) }
-    var genre by remember(trackId) { mutableStateOf(initial.genre.orEmpty()) }
-    var compilation by remember(trackId) { mutableStateOf(initial.compilation) }
-    var sortArtist by remember(trackId) { mutableStateOf(initial.sortArtist.orEmpty()) }
-    var groupArtist by remember(trackId) { mutableStateOf(initial.groupArtist.orEmpty()) }
-    var startAt by remember(trackId) { mutableStateOf(formatClip(initial.startMs)) }
-    var endAt by remember(trackId) { mutableStateOf(formatClip(initial.endMs)) }
-    var lyrics by remember(trackId) { mutableStateOf(initial.lyrics.orEmpty()) }
+    // rememberSaveable, not remember. Rotating the phone RECREATES the activity,
+    // and plain remember is scoped to the composition -- so every field emptied
+    // back to the stored values and whatever had been typed was gone. The
+    // ViewModel keeps the dialog OPEN across the rotation, which made the loss
+    // worse: the form came back looking untouched rather than closing, so there
+    // was nothing to suggest anything had been lost.
+    var title by rememberSaveable(trackId) { mutableStateOf(initial.title) }
+    var artist by rememberSaveable(trackId) { mutableStateOf(initial.artist) }
+    var album by rememberSaveable(trackId) { mutableStateOf(initial.album) }
+    var albumArtist by rememberSaveable(trackId) { mutableStateOf(initial.albumArtist.orEmpty()) }
+    var trackNo by rememberSaveable(trackId) { mutableStateOf(initial.trackNo?.toString().orEmpty()) }
+    var discNo by rememberSaveable(trackId) { mutableStateOf(initial.discNo?.toString().orEmpty()) }
+    var year by rememberSaveable(trackId) { mutableStateOf(initial.year?.toString().orEmpty()) }
+    var genre by rememberSaveable(trackId) { mutableStateOf(initial.genre.orEmpty()) }
+    var compilation by rememberSaveable(trackId) { mutableStateOf(initial.compilation) }
+    var sortArtist by rememberSaveable(trackId) { mutableStateOf(initial.sortArtist.orEmpty()) }
+    var groupArtist by rememberSaveable(trackId) { mutableStateOf(initial.groupArtist.orEmpty()) }
+    var startAt by rememberSaveable(trackId) { mutableStateOf(formatClip(initial.startMs)) }
+    var endAt by rememberSaveable(trackId) { mutableStateOf(formatClip(initial.endMs)) }
+    var lyrics by rememberSaveable(trackId) { mutableStateOf(initial.lyrics.orEmpty()) }
     var fetchingLyrics by remember(trackId) { mutableStateOf(false) }
-    var lyricNote by remember(trackId) { mutableStateOf<String?>(null) }
+    var lyricNote by rememberSaveable(trackId) { mutableStateOf<String?>(null) }
     val lyricScope = rememberCoroutineScope()
 
     fun collect() = TrackEdits(
@@ -221,6 +229,10 @@ fun TrackEditDialog(
     )
 
     AlertDialog(
+        // A tap outside must NOT discard a form full of typing. Back still
+        // works and still means cancel -- that is a deliberate gesture, and
+        // trapping someone in a dialog is worse than the thing being fixed.
+        properties = DialogProperties(dismissOnClickOutside = false),
         onDismissRequest = onDismiss,
         title = { Text("Edit track") },
         text = {

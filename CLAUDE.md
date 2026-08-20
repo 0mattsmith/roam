@@ -298,6 +298,13 @@ argued about mid-flight:
   being reunited by accident. When offline pinning lands, the acquire path
   should be renamed to match its labels.
 
+- **Anything a person can type into uses `rememberSaveable`, not `remember`.**
+  A rotation recreates the activity, and `remember` does not survive it. The
+  ViewModel keeps a dialog OPEN across the rotation, which makes plain
+  `remember` worse than it sounds: the form returns looking untouched rather
+  than closing, so nothing suggests the work was lost. Transient state that
+  SHOULD reset -- an in-flight spinner flag -- deliberately stays on `remember`.
+
 - Comments explain *why*, not what. If the code needs a "what" comment, rewrite
   the code.
 - Versions are pinned in `gradle/libs.versions.toml` to a known-good set. Run
@@ -333,6 +340,8 @@ argued about mid-flight:
 | A collapsed list reveals five albums per scroll | Collapse is only offered inside an artist. Album boundaries are only visible once the rows are paged in, so collapsing the whole library hides everything Paging has not fetched yet |
 | The album header opens the album instead of collapsing | Tap toggles; "Open album" is in the long-press sheet |
 | A self-titled album cannot be opened | The route chose between the artist page and a track list by comparing `drillTitle` to the artist's NAME, so Royal Blood by Royal Blood matched the artist branch forever. Branch on `openAlbumId`; identity, never a display string |
+| Rotating the phone empties the edit form | `remember` is scoped to the COMPOSITION and a rotation recreates the activity. Every field someone can type into uses `rememberSaveable`; only transient work state like a spinner flag stays on `remember` |
+| A tap beside the edit form throws the typing away | `DialogProperties(dismissOnClickOutside = false)`. Back is left working and still means cancel -- that is deliberate, and trapping someone in a dialog is worse than the accident being prevented |
 | An edit form is still open over a different album | Nothing closed it. The editor lives in ViewModel state, not in the composition of the screen behind it, so `closeOpenForms()` has to run on every drill change and tab change |
 | A list still jumps after hearting, despite distinctUntilChanged | Different cause: Room invalidates on any write, and WITHOUT placeholders the presented list collapses to the one page around the anchor, so a scroll index past 60 is clamped. `enablePlaceholders = true`, and every list renders a fixed-height row for a null item |
 | An album header repeats every 60 rows | `peek(index - 1)` returned null for an unloaded neighbour and that was read as "different album". Only index 0 genuinely has no previous row |
