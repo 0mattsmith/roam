@@ -376,7 +376,13 @@ class LibraryViewModel @Inject constructor(
             return true
         }
         if (current == null) return false
+
+        // Leaving the drill entirely, so the loaded artist page goes with it.
+        // Left behind it is state describing a screen nobody is on, and the
+        // route would happily keep rendering it -- which is what made Back
+        // appear to do nothing here and then quit the app on the second press.
         drill.value = null
+        _artistPage.value = null
         _state.update { it.copy(drillTitle = null, openAlbumId = null, showingLoved = false) }
         return true
     }

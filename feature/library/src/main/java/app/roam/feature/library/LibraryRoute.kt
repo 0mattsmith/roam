@@ -126,7 +126,8 @@ fun LibraryRoute(
                     ViewModeButton(
                         state = state,
                         vm = vm,
-                        onArtistPage = artistPage != null && state.openAlbumId == null,
+                        onArtistPage = artistPage != null && state.openAlbumId == null &&
+                            state.drillTitle != null,
                     )
                     SortMenu(state, vm)
                     IconButton(onClick = onOpenDownloader) {
@@ -174,7 +175,11 @@ fun LibraryRoute(
                 // against the artist's name made a self-titled album -- Royal
                 // Blood by Royal Blood -- take this branch and become
                 // impossible to open.
-                artistPage != null && state.openAlbumId == null ->
+                // drillTitle as well as openAlbumId. The artist page is only
+                // ever on screen INSIDE a drill, and requiring that stops a
+                // stale artistPage from outliving the drill it belonged to.
+                artistPage != null && state.openAlbumId == null &&
+                    state.drillTitle != null ->
                     key(artistPage?.first?.id) {
                         val (detail, artistAlbums) = artistPage!!
                         ArtistPage(
