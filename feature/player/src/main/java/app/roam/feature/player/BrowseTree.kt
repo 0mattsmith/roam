@@ -252,8 +252,8 @@ class BrowseTree @Inject constructor(
                     // Year in the title, same as the phone. The car gives a
                     // browse row one line, so a separate field would be dropped.
                     .setTitle(year?.takeIf { it > 0 }?.let { "$title ($it)" } ?: title)
-                    .setSubtitle(artistName)
-                    .setArtist(artistName)
+                    .setSubtitle(creditLine(artistName, albumArtistName))
+                    .setArtist(creditLine(artistName, albumArtistName))
                     .setArtworkUri(artworkId?.let { ArtworkProvider.uri(ctx, it, size = 320) })
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
@@ -271,8 +271,8 @@ class BrowseTree @Inject constructor(
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(title)
-                    .setSubtitle(artistName)
-                    .setArtist(artistName)
+                    .setSubtitle(creditLine(artistName, albumArtistName))
+                    .setArtist(creditLine(artistName, albumArtistName))
                     .setAlbumTitle(albumTitle)
                     .setTrackNumber(trackNo ?: 0)
                     // Same guard as the queue builder: Media3 asserts on a

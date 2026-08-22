@@ -176,6 +176,26 @@ private val TrackListItem.playableDurationMs: Long?
         return span.takeIf { it > 0 }
     }
 
+/**
+ * Who to credit, when the track's artist and the album's are not the same.
+ *
+ * On a compilation those two carry different information and both matter: the
+ * album says Now That's What I Call Music, the track says Pulp, and showing
+ * only one of them makes the car display either useless or wrong. On an
+ * ordinary album they are identical and the second is noise, so it is dropped.
+ *
+ * Not restricted to albums flagged as compilations. A guest feature on a
+ * regular record has exactly the same shape, and the test that actually
+ * matters is whether the two strings differ.
+ */
+fun creditLine(artistName: String, albumArtistName: String?): String {
+    val album = albumArtistName?.trim().orEmpty()
+    if (album.isEmpty() || album.equals(artistName.trim(), ignoreCase = true)) {
+        return artistName
+    }
+    return "$artistName \u2022 $album"
+}
+
 fun TrackListItem.toMediaItem(ctx: Context): MediaItem = MediaItem.Builder()
     // MediaId.Track, not a bare number: the car parses this id back to find
     // the current track for the love button, and the two surfaces share a queue.
@@ -203,7 +223,7 @@ fun TrackListItem.toMediaItem(ctx: Context): MediaItem = MediaItem.Builder()
             // thirty seconds is the whole of it as far as they are concerned.
             .apply { playableDurationMs?.let { setDurationMs(it) } }
             .setTitle(title)
-            .setArtist(artistName)
+            .setArtist(creditLine(artistName, albumArtistName))
             .setAlbumTitle(albumTitle)
             .setTrackNumber(trackNo ?: 0)
             // content:// rather than a bitmap: Android Auto refuses bitmaps and
