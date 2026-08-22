@@ -308,6 +308,82 @@ def private_leaks() -> dict[str, set[str]]:
     return problems
 
 
+FUN_START = re.compile(
+    r"^(\s*)((?:(?:private|internal|public|protected|override|open|abstract|suspend|inline|operator|tailrec)\s+)*)"
+    r"fun\s+(?:<[^>]*>\s+)?(\w+)\s*\("
+)
+TOP_LEVEL_TYPE = re.compile(r"^(?:@\w+\s*)*(?:\w+\s+)*?(?:object|class|interface)\s+(\w+)")
+
+
+def duplicate_declarations() -> dict[str, set[str]]:
+    """
+    The same function declared twice in one type.
+
+    Kotlin calls it "Conflicting overloads" and points at both, which is clear
+    enough -- but only after a push and a CI run. The mistake behind it is
+    adding a helper without checking whether one already exists, and on a
+    900-line ViewModel that is an easy thing to do twice.
+
+    Signatures are compared as text after collapsing whitespace, so genuine
+    overloads differing by parameter type are left alone, and the enclosing
+    top-level type is part of the key so two nested classes in one file may
+    each have their own.
+    """
+    problems: dict[str, set[str]] = collections.defaultdict(set)
+
+    for kt, lines in sources().items():
+        seen: dict[tuple[str, str], int] = {}
+        enclosing = ""
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if line and not line[0].isspace():
+                m = TOP_LEVEL_TYPE.match(line)
+                if m:
+                    enclosing = m.group(1)
+
+            start = FUN_START.match(line)
+            if not start:
+                i += 1
+                continue
+
+            # Overrides are skipped, and that is what makes this usable rather
+            # than noisy. A file holds several anonymous `object : Listener`
+            # blocks -- twelve Migrations in RoamDatabase, two player listeners
+            # in RoamLibraryService -- each legitimately implementing the same
+            # method, and tracking those scopes properly would mean parsing
+            # braces. The mistake being hunted here is adding a helper that
+            # already exists, which is never an override.
+            if "override" in start.group(2):
+                i += 1
+                continue
+
+            # Parameter lists wrap, so gather until the parens balance.
+            chunk, depth, j = "", 0, i
+            while j < len(lines):
+                chunk += lines[j]
+                depth += lines[j].count("(") - lines[j].count(")")
+                if depth <= 0 and "(" in chunk:
+                    break
+                j += 1
+
+            signature = re.sub(r"\s+", " ", chunk[chunk.index("fun "):]).strip()
+            # Bodies and defaults are not part of what makes two declarations
+            # conflict; the parameter list is.
+            signature = signature.split(")", 1)[0] + ")"
+            key = (enclosing, signature)
+            if key in seen:
+                problems[kt].add(
+                    f"{signature} is declared twice in {enclosing or 'this file'} "
+                    f"(lines {seen[key] + 1} and {i + 1})"
+                )
+            else:
+                seen[key] = i
+            i = j + 1
+
+    return problems
+
+
 def main() -> int:
     problems: dict[str, set[str]] = collections.defaultdict(set)
 
@@ -330,10 +406,13 @@ def main() -> int:
     for path, issues in private_leaks().items():
         problems[path] |= issues
 
+    for path, issues in duplicate_declarations().items():
+        problems[path] |= issues
+
     problems = {m: v for m, v in problems.items() if v}
 
     if not problems:
-        print("check-deps: no dependency, supertype, smart-cast or visibility problems detected")
+        print("check-deps: no dependency, supertype, smart-cast, visibility or duplicate problems detected")
         return 0
 
     print("check-deps: possible problems\n")

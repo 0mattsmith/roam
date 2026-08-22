@@ -656,10 +656,6 @@ class LibraryViewModel @Inject constructor(
         _photoMessage.value = writeMetadataFiles(albumId)
     }
 
-    /** How many files ticking "Create album.json" would write. */
-    suspend fun albumTrackCount(albumId: Long): Int =
-        tracks.listItemsRaw(LibraryQueries.tracksForAlbum(albumId)).size
-
     /**
      * Lyrics for every track on an album that has none.
      *
@@ -862,7 +858,12 @@ class LibraryViewModel @Inject constructor(
         _photoMessage.value = message
     }
 
-    /** How many tracks a bulk edit would touch, for the dialog's title. */
+    /**
+     * How many tracks an album holds.
+     *
+     * Two callers, one question: what a bulk edit would touch, and how many
+     * files "Create album.json" would write.
+     */
     suspend fun albumTrackCount(albumId: Long): Int =
         tracks.listItemsRaw(LibraryQueries.tracksForAlbum(albumId)).size
 
