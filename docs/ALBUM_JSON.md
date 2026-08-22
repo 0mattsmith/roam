@@ -121,7 +121,7 @@ conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
   "album_title": "Definitely Maybe (Deluxe Version)",
   "year": 1994,
   "original_year": 1994,
-  "genre": "Britpop",
+  "genres": ["Britpop"],
   "is_compilation": false,
   "total_discs": 3,
   "total_tracks": 44,
@@ -147,7 +147,7 @@ conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
 | `album_title` | string | yes | Without the year; that lives in its own field and the folder name. |
 | `year` | integer | no | Year of THIS release. |
 | `original_year` | integer | no | First release of the material. See "Two years". |
-| `genre` | string | no | |
+| `genres` | array of strings | no | See "Genres". A singular `genre` string is still read. |
 | `is_compilation` | boolean | no | Defaults `false`. Decides which name the folder takes — see "Uploading". |
 | `total_discs` / `total_tracks` | integer | no | Derived from `tracks` when absent. |
 | `cover_art` | string | no | Relative to the album folder. Defaults `cover.jpg`. |
@@ -189,7 +189,7 @@ by `01 Rock 'n' Roll Star.json`.
   "album_artist": "Oasis",
   "year": 1994,
   "original_year": 1994,
-  "genre": "Britpop",
+  "genres": ["Britpop", "Alternative Rock"],
   "composer": "Noel Gallagher",
   "duration_seconds": 323,
   "audio_file": "01 Rock 'n' Roll Star.mp3",
@@ -257,6 +257,33 @@ to record length; leave the trim points out unless you mean them.
 // RIGHT - a real trim
 { "title": "Champagne Supernova", "start_at": "00:00", "end_at": "07:27" }
 ```
+
+---
+
+## Genres
+
+An array, because a track has several and a rule asking for one of them should
+find it:
+
+```json
+"genres": ["Britpop", "Alternative Rock", "Indie"]
+```
+
+Crammed into one string they can only be matched by guessing at separators,
+which is what makes genre rules unreliable. The array is what smart playlists
+read.
+
+A singular `"genre"` string is still accepted, because embedded tags only ever
+carry one and hand-written files often do. A packed string is split on `;`, `,`
+and `/`, so `"Britpop; Indie Rock"` from an old tag becomes two. Duplicates
+collapse case-insensitively, keeping the first spelling seen.
+
+In the editor these are chips. Typing offers matches from the **MusicBrainz
+genre list** — about two thousand names, free, no key, fetched once and cached,
+so suggestions are instant and work offline. Backspace at the start of the
+input removes the last chip, which is the behaviour every email To: field
+already taught everybody; each chip also has a small remove control for touch.
+No edit mode, because a mode is a thing to be in and get out of.
 
 ---
 
@@ -524,7 +551,15 @@ Order:
 **User state** — loved, play counts, skips, last played, hidden. Those are
 yours rather than the album's and change constantly while the metadata sits
 still; mixing them in would mean rewriting `album.json` every time a song ends.
-They belong in `.roam/state.json`, with its own lifecycle.
+Tapping the heart in the car would become a Drive write. They also need merge
+rules metadata does not: per-field timestamps, and play counts that SUM across
+devices rather than overwrite. They belong in `.roam/state.json`, with its own
+lifecycle.
+
+**Playlist membership** — a track does not list the playlists it is in. The
+playlist owns its membership, in its own file. Both directions would mean
+adding one track to one playlist rewrites the track file, its album index and
+the playlist: three copies of one fact, and eventually three answers.
 
 **Lyrics themselves** — a `.lrc` or `.txt` beside the audio file, which is what
 every other player reads. These files only point at them.

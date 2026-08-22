@@ -268,6 +268,49 @@ class LibraryDocsTest {
         assertTrue(doc.knownToHaveNoLyrics)
     }
 
+    // ---- genres --------------------------------------------------------------
+
+    private fun genresOf(json: String) =
+        LibraryDocs.track("""{ "schema": 1, "title": "T", $json }""")!!.genres
+
+    @Test
+    fun `an array of genres reads as a list`() {
+        assertEquals(
+            listOf("Britpop", "Hard Rock", "Alternative Rock"),
+            genresOf(""""genres": ["Britpop", "Hard Rock", "Alternative Rock"]"""),
+        )
+    }
+
+    @Test
+    fun `the singular genre is still read`() {
+        // Embedded tags only ever carry one, and a hand-written file may too.
+        assertEquals(listOf("Britpop"), genresOf(""""genre": "Britpop""""))
+    }
+
+    @Test
+    fun `a packed string is split on its separators`() {
+        // What an old tag actually looks like. One string that cannot be
+        // matched without guessing at separators is the reason for the array.
+        assertEquals(listOf("Britpop", "Indie Rock"), genresOf(""""genre": "Britpop; Indie Rock""""))
+        assertEquals(listOf("Rock", "Pop"), genresOf(""""genre": "Rock/Pop""""))
+    }
+
+    @Test
+    fun `duplicates collapse regardless of case`() {
+        assertEquals(
+            listOf("Britpop"),
+            genresOf(""""genres": ["Britpop", "britpop", "BRITPOP"]"""),
+        )
+    }
+
+    @Test
+    fun `no genre at all is an empty list, not a list containing nothing`() {
+        assertTrue(genresOf(""""year": 1994""").isEmpty())
+        assertTrue(genresOf(""""genre": null""").isEmpty())
+        assertTrue(genresOf(""""genres": []""").isEmpty())
+        assertTrue(genresOf(""""genre": "  """").isEmpty())
+    }
+
     // ---- schema -------------------------------------------------------------
 
     @Test

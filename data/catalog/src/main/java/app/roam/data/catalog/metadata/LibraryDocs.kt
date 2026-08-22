@@ -63,7 +63,7 @@ data class AlbumDoc(
     val albumTitle: String,
     val year: Int?,
     val originalYear: Int?,
-    val genre: String?,
+    val genres: List<String>,
     val isCompilation: Boolean,
     val totalDiscs: Int?,
     val totalTracks: Int?,
@@ -85,7 +85,7 @@ data class TrackDoc(
     val albumArtist: String?,
     val year: Int?,
     val originalYear: Int?,
-    val genre: String?,
+    val genres: List<String>,
     val composer: String?,
     val durationMs: Long?,
     val audioFile: String?,
@@ -140,7 +140,7 @@ object LibraryDocs {
             albumTitle = albumTitle,
             year = o.intOrNull("year"),
             originalYear = o.intOrNull("original_year"),
-            genre = o.stringOrNull("genre"),
+            genres = o.genres(),
             isCompilation = o.optBoolean("is_compilation", false),
             totalDiscs = o.intOrNull("total_discs"),
             totalTracks = o.intOrNull("total_tracks"),
@@ -159,7 +159,7 @@ object LibraryDocs {
             albumArtist = o.stringOrNull("album_artist"),
             year = o.intOrNull("year"),
             originalYear = o.intOrNull("original_year"),
-            genre = o.stringOrNull("genre"),
+            genres = o.genres(),
             composer = o.stringOrNull("composer"),
             durationMs = o.intOrNull("duration_seconds")?.let { it * 1000L },
             audioFile = o.stringOrNull("audio_file"),
@@ -273,6 +273,34 @@ private fun JSONObject.intOrNull(key: String): Int? {
         is String -> value.trim().toIntOrNull()
         else -> null
     }
+}
+
+/**
+ * Genres, as a list, however they were written.
+ *
+ * A track has several: Britpop AND Alternative Rock AND Indie, and a smart
+ * playlist asking for one of them should find it. Crammed into a single string
+ * they can only be matched by guessing at separators, which is what made genre
+ * rules unreliable in the first place.
+ *
+ * The singular "genre" is still read, because embedded tags only ever carry one
+ * and a hand-written file may too. A string containing separators is split, so
+ * "Britpop; Indie Rock" from an old tag becomes two.
+ */
+private fun JSONObject.genres(): List<String> {
+    val fromArray = optJSONArray("genres")
+        ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } } }
+        .orEmpty()
+
+    val fromString = stringOrNull("genre")
+        ?.split(';', ',', '/')
+        .orEmpty()
+
+    return (fromArray + fromString)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && it != "null" }
+        // Case-insensitively distinct, keeping the first spelling seen.
+        .distinctBy { it.lowercase() }
 }
 
 private fun JSONArray?.objects(): List<JSONObject> {
