@@ -432,9 +432,29 @@ cheerful summary would leave out:
 >
 > Nothing is written into your audio files, and nothing is deleted.
 >
-> One thing to know: once the file exists, Roam trusts it over the tags. So if
-> anything on this screen is wrong, correct it before creating the file —
-> otherwise the wrong value becomes the one Roam believes.
+> Once the file exists, Roam trusts it over the tags — and you edit it here,
+> the same as now.
+
+### The one case worth guarding
+
+Roam already prefers embedded tags over the folder path, so json cannot usually
+freeze a worse answer than the one already on screen — and if it does, the
+editor corrects it exactly as it always did.
+
+The exception is a track whose **tags have not been read yet**. Until the tag
+pass reaches it, Roam is showing values inferred from the filename. Creating
+the file at that moment records the guess, and because json then outranks tags,
+the real ones are never consulted again. Nothing looks wrong, so nobody goes
+looking.
+
+So the app handles it rather than warning about it:
+
+- The dialog says **"Tags for this track have not been read yet"** beside the
+  checkbox when `tagState` is not `OK`. That is a fact about this track, not a
+  rule the reader has to know.
+- The bulk sweep **skips tracks whose tags are still pending**, and says how
+  many it left. Across ten thousand tracks nobody is going to catch this by
+  eye, so it cannot be the person's job.
 
 A library-wide **Write metadata files** action lives in Settings for seeding in
 bulk, and the same action is on an album's long-press sheet. Ten thousand
