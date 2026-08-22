@@ -31,6 +31,11 @@ smbj               = "0.13.0"
 youtubedl          = "0.17.3"
 junit              = "4.13.2"
 androidxTest       = "1.2.1"
+# Test only. org.json ships INSIDE android.jar as stubs that throw "Stub!", so a
+# JVM unit test over anything that parses json fails at the first call with an
+# error that says nothing about json. The real implementation on the test
+# classpath is what makes those tests runnable without a device.
+orgJson            = "20240303"
 
 [libraries]
 androidx-core-ktx            = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -94,6 +99,7 @@ youtubedl-aria2c  = { module = "io.github.junkfood02.youtubedl-android:aria2c", 
 
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTest" }
+org-json = { module = "org.json:json", version.ref = "orgJson" }
 
 [plugins]
 android-application  = { id = "com.android.application", version.ref = "agp" }

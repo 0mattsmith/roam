@@ -104,6 +104,19 @@ class TagWorker @AssistedInject constructor(
                 runCatching { artwork.put(it, ArtworkSource.EMBEDDED) }.getOrNull()
             }
 
+            // Two writes, because they answer to different owners. What only
+            // the file knows lands unconditionally; what a person or an
+            // album.json may have corrected is refused if either of them has.
+            // One statement for both meant an edited track never learned its
+            // own duration, and the play threshold had nothing to measure.
+            tracks.updateTagFacts(
+                id = trackId,
+                artworkId = artworkId,
+                // Only when the container actually told us. A null leaves
+                // whatever is stored alone rather than zeroing it.
+                durationMs = tags.durationMs?.takeIf { it > 0 },
+                tagState = TagState.OK,
+            )
             tracks.updateTags(
                 id = trackId,
                 title = tags.title,
@@ -113,11 +126,6 @@ class TagWorker @AssistedInject constructor(
                 trackTotal = tags.trackTotal,
                 discNo = tags.discNo,
                 discTotal = tags.discTotal,
-                artworkId = artworkId,
-                // Only when the container actually told us. A null leaves
-                // whatever is stored alone rather than zeroing it.
-                durationMs = tags.durationMs?.takeIf { it > 0 },
-                tagState = TagState.OK,
             )
 
             // One cover per album is enough: the first track to yield artwork

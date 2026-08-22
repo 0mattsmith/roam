@@ -546,6 +546,132 @@ Order:
 
 ---
 
+## `playlist.json`
+
+Playlists live in `MUSIC/PLAYLISTS/`, one file each, away from the music so a
+crawl of the library never trips over them.
+
+```
+MUSIC/
+├── PLAYLISTS/
+│   ├── 90s Grunge.json
+│   ├── 80s Mix.json
+│   └── Driving.json
+└── Oasis/
+    └── ...
+```
+
+Two kinds, one file format. A **manual** playlist lists its tracks. A **smart**
+playlist states a rule and Roam works out the answer.
+
+```json
+{
+  "schema": 1,
+  "name": "90s Grunge",
+  "kind": "smart",
+  "description": "Seattle, mostly",
+  "artwork": "90s Grunge.jpg",
+  "pinned": true,
+  "rules": {
+    "genres": ["Grunge", "Alternative Rock"],
+    "year_from": 1989,
+    "year_to": 1999
+  },
+  "sort": "random",
+  "limit": 100,
+  "cached_tracks": [
+    { "artist": "Nirvana", "album": "Nevermind", "title": "In Bloom",
+      "path": "Nirvana/Nevermind (1991)/02 In Bloom.mp3" }
+  ]
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `schema` | integer | `1` |
+| `name` | string | What the tab shows. The filename is not read for this. |
+| `kind` | string | `"manual"` or `"smart"`. |
+| `description` | string | Optional line under the title. |
+| `artwork` | string | Beside the json. Absent means a mosaic of the covers. |
+| `pinned` | boolean | Pinned playlists take the car's home tiles first. |
+| `rules` | object | Smart only. See below. |
+| `sort` | string | See "Sort and limit". |
+| `limit` | integer | Cap on how many tracks the playlist yields. |
+| `tracks` | array | Manual only. The membership, in order. |
+| `cached_tracks` | array | Smart only. The last resolution. See below. |
+
+### `cached_tracks` is a convenience, not the truth
+
+For a smart playlist the **rules are authoritative**. `cached_tracks` is what
+the rules resolved to last time somebody asked, written back so the playlist has
+something to show before it has been evaluated.
+
+It exists for one situation: opening Roam with no signal, on a fresh install, or
+before the first sync finishes. Without it a smart playlist is an empty screen
+and a spinner. With it, the songs are there and get quietly replaced the moment
+the rules can run.
+
+That means nothing may depend on it being right. A track listed in it that no
+longer matches the rules drops out on the next evaluation, and one that started
+matching appears — neither is a conflict to resolve, because the cache never had
+a vote. This is the opposite of a manual playlist's `tracks`, which IS the
+membership and is never regenerated from anything.
+
+Entries carry `artist`, `album`, `title` and `path` rather than an id, for the
+same reason every other path in these files does: an id is meaningless on
+another machine, and the four fields together survive a file being moved.
+
+Playlist files are **cached on the device like `album.json` and `<track>.json`**
+— which in practice means Room, exactly as described under "Local copies". The
+point is the same one: an app opened offline should show a library, not a blank
+screen apologising for the network.
+
+### Rules
+
+Every key present must match. An absent key does not constrain anything.
+
+| Key | Type | Matches |
+| --- | --- | --- |
+| `genres` | array | Track carries ANY of these. See "Genres". |
+| `artists` | array | Track or album artist is one of these. |
+| `year_from` / `year_to` | integer | Inclusive. Reads `original_year` when set. |
+| `loved` | boolean | Only loved tracks. |
+| `added_within_days` | integer | Recently added. |
+
+`genres` is any-of and the rest are all-of, which is what people mean: "90s
+Indie" is Indie **or** Indie Rock **or** Britpop, released in the nineties.
+
+Reading `original_year` rather than `year` is what stops a 2011 remaster of a
+1994 record falling out of a nineties playlist — the case the two-year split
+exists for.
+
+### Sort and limit
+
+```json
+"sort": "random",
+"limit": 100
+```
+
+| `sort` | Order |
+| --- | --- |
+| `random` | Shuffled. Reshuffled on each evaluation, not once. |
+| `added` | Most recently added first. |
+| `year` | Oldest first. |
+| `played` | Most played first. |
+| `artist` | Artist, then album, then track number. |
+
+`limit` caps the result. Applied **after** the sort, which is the whole reason
+both exist: `random` + `limit: 100` is a different playlist every time and the
+only sensible way to have a "90s Indie" that does not run to two thousand
+tracks. `year` + `limit: 50` is the fifty oldest, which it could not be if the
+cap came first.
+
+Absent `sort` means the app's default ordering; absent `limit` means everything
+that matches. Neither applies to a manual playlist — its order is the file's
+order and its length is its length.
+
+---
+
 ## What does NOT go in these files
 
 **User state** — loved, play counts, skips, last played, hidden. Those are

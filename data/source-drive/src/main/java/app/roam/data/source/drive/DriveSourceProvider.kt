@@ -4,6 +4,8 @@ import androidx.media3.datasource.DataSource
 import app.roam.core.model.SourceType
 import app.roam.data.source.Capability
 import app.roam.data.source.ChangeSet
+import app.roam.data.source.DocNames
+import app.roam.data.source.FileKind
 import app.roam.data.source.RemoteFile
 import app.roam.data.source.SourceProvider
 import app.roam.data.source.SourceTypeKey
@@ -80,6 +82,11 @@ class DriveSourceProvider @Inject constructor(
                         subfolders += f.id to (path + f.name)
                     } else if (f.name.substringAfterLast('.', "").lowercase() in AUDIO) {
                         send(f.toRemoteFile(path))
+                    } else if (f.name.equals(DocNames.ALBUM, ignoreCase = true)) {
+                        // Free: this page already contains it. Asking for it
+                        // later would be one more round-trip per album, and
+                        // round-trips are the entire cost of this crawl.
+                        send(f.toRemoteFile(path, FileKind.DOCUMENT))
                     }
                 }
                 pageToken = page.nextPageToken

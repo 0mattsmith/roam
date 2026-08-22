@@ -17,9 +17,9 @@ import javax.inject.Singleton
 @Database(
     entities = [
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
-        TrackEntity::class, ArtworkEntity::class,
+        TrackEntity::class, ArtworkEntity::class, DocRevisionEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -29,6 +29,7 @@ abstract class RoamDatabase : RoomDatabase() {
     abstract fun artists(): ArtistDao
     abstract fun sources(): SourceDao
     abstract fun artwork(): ArtworkDao
+    abstract fun docs(): DocRevisionDao
 }
 
 /**
@@ -141,6 +142,40 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
     }
 }
 
+/**
+ * The metadata files become readable.
+ *
+ * `fromDoc` starts 0 for every existing row, which is correct rather than
+ * merely convenient: nothing HAS been read from a document yet, so every track
+ * keeps behaving exactly as it did until the next crawl finds an `album.json`
+ * that mentions it.
+ *
+ * `originalYear` was in the spec before it was in the schema. Nullable, because
+ * "same as the release year" and "1994" are different claims.
+ *
+ * `doc_revisions` is a cache and nothing else -- losing it costs one re-read
+ * per album, never a correction.
+ */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN fromDoc INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE tracks ADD COLUMN originalYear INTEGER")
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `doc_revisions` (
+              `sourceId` TEXT NOT NULL,
+              `remoteId` TEXT NOT NULL,
+              `revision` TEXT,
+              `folderPath` TEXT NOT NULL,
+              `trackCount` INTEGER NOT NULL,
+              `appliedAt` INTEGER NOT NULL,
+              PRIMARY KEY(`sourceId`, `remoteId`)
+            )
+            """.trimIndent()
+        )
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -151,7 +186,7 @@ object DatabaseModule {
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                 MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
-                MIGRATION_12_13,
+                MIGRATION_12_13, MIGRATION_13_14,
             )
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
@@ -161,4 +196,5 @@ object DatabaseModule {
     @Provides fun artists(db: RoamDatabase) = db.artists()
     @Provides fun sources(db: RoamDatabase) = db.sources()
     @Provides fun artwork(db: RoamDatabase) = db.artwork()
+    @Provides fun docs(db: RoamDatabase) = db.docs()
 }

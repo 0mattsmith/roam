@@ -12,11 +12,15 @@ import androidx.work.workDataOf
 import app.roam.core.datastore.SettingsRepository
 import app.roam.core.model.SourceType
 import app.roam.data.catalog.artwork.ArtistPhotoWorker
+import app.roam.data.catalog.metadata.DocApplier
+import app.roam.data.catalog.metadata.DocReport
 import app.roam.data.catalog.tags.TagWorker
 import app.roam.data.source.SourceProvider
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import app.roam.data.source.FileKind
 import app.roam.data.source.RemoteFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import javax.inject.Provider
@@ -37,6 +41,7 @@ class SyncWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>,
     private val catalog: CatalogWriter,
+    private val docApplier: DocApplier,
     private val settings: SettingsRepository,
 ) : CoroutineWorker(ctx, params) {
 
@@ -58,6 +63,12 @@ class SyncWorker @AssistedInject constructor(
         var written = 0
         val seen = HashSet<String>(known.size.coerceAtLeast(64))
         val batch = ArrayList<RemoteFile>(BATCH)
+        // The album indexes, collected as they go past. Kept rather than
+        // applied inline because a folder's album.json can arrive after some of
+        // its tracks have already been written -- the crawl fans out across
+        // folders and a page's order is nobody's promise. One per album, so a
+        // ten-thousand-track library holds a few hundred of these.
+        val documents = ArrayList<RemoteFile>()
         var failure: Throwable? = null
 
         suspend fun flush() {
@@ -69,6 +80,10 @@ class SyncWorker @AssistedInject constructor(
         provider.listAll(root)
             .catch { failure = it }
             .collect { file ->
+                if (file.kind == FileKind.DOCUMENT) {
+                    documents += file
+                    return@collect
+                }
                 found++
                 seen += file.remoteId
                 batch += file
@@ -102,6 +117,26 @@ class SyncWorker @AssistedInject constructor(
 
         catalog.finish(provider.sourceId, seen, known)
 
+        // The metadata files, before the tag pass rather than after it. Both
+        // write the same columns and the document is meant to win, so the order
+        // is not a preference: applied afterwards, every album would show its
+        // corrected titles for as long as the tag pass took to undo them.
+        //
+        // Only ever reached on a clean crawl -- the failure path above returns
+        // before this. This pass concludes things from absence, and a partial
+        // listing is not evidence of anything.
+        val docs = try {
+            docApplier.apply(provider, documents)
+        } catch (cancelled: CancellationException) {
+            // Not swallowed: a stopped worker must stop, not carry on into the
+            // tag pass looking like the documents simply failed.
+            throw cancelled
+        } catch (t: Throwable) {
+            // Everything the crawl wrote is already committed and correct. A
+            // failed document pass costs corrections, not the library.
+            DocReport(found = documents.size)
+        }
+
         // Second pass: real tags and embedded covers. Separate job so the
         // catalogue is browsable now rather than after every ranged read.
         //
@@ -112,7 +147,14 @@ class SyncWorker @AssistedInject constructor(
         TagWorker.enqueue(applicationContext, wifiOnly)
         ArtistPhotoWorker.enqueue(applicationContext, wifiOnly)
 
-        return Result.success(workDataOf(KEY_FOUND to found, KEY_WRITTEN to written))
+        return Result.success(
+            workDataOf(
+                KEY_FOUND to found,
+                KEY_WRITTEN to written,
+                KEY_DOCS to docs.read,
+                KEY_DOC_TRACKS to docs.applied,
+            )
+        )
     }
 
     private fun errorData(message: String): Data = workDataOf(KEY_ERROR to message)
@@ -123,6 +165,9 @@ class SyncWorker @AssistedInject constructor(
         const val KEY_ROOT_ID = "root_id"
         const val KEY_FOUND = "found"
         const val KEY_WRITTEN = "written"
+        /** album.json files read this pass, and the tracks they described. */
+        const val KEY_DOCS = "docs"
+        const val KEY_DOC_TRACKS = "doc_tracks"
         /** Rows per transaction. Large enough to amortise, small enough to stream. */
         const val BATCH = 250
         const val KEY_ERROR = "error"

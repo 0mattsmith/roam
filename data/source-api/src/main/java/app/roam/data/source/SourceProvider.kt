@@ -4,6 +4,23 @@ import androidx.media3.datasource.DataSource
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 
+/**
+ * What a crawled file is FOR, so one flow can carry both without either being
+ * mistaken for the other.
+ *
+ * The crawl already lists every file in every folder and throws away everything
+ * that is not audio -- which is how `album.json` gets discovered for free, in
+ * the same response as the tracks it describes. Fetching it separately would be
+ * one extra request per album for information already in hand.
+ */
+enum class FileKind {
+    /** A track. The only kind that becomes a row in `tracks`. */
+    AUDIO,
+
+    /** A metadata document sitting beside the music. See docs/ALBUM_JSON.md. */
+    DOCUMENT,
+}
+
 /** A file discovered on a remote source. Cheap -- no tags read yet. */
 data class RemoteFile(
     val remoteId: String,
@@ -15,7 +32,29 @@ data class RemoteFile(
     /** md5 / etag / mtime+size. Unchanged => nothing to re-read. */
     val revision: String?,
     val modifiedAt: Long,
-)
+    /**
+     * Defaulted to AUDIO because that is what every existing caller means, and
+     * a forgotten argument should keep today's behaviour rather than quietly
+     * turning a track into something that is never played.
+     */
+    val kind: FileKind = FileKind.AUDIO,
+) {
+    /** Path below the root, forward slashes. What a document's entries name. */
+    val path: String get() = (pathSegments + name).joinToString("/")
+
+    /** The folder this file sits in, below the root. Empty at the top level. */
+    val folderPath: String get() = pathSegments.joinToString("/")
+}
+
+/** The document names the crawl carries out. */
+object DocNames {
+    /**
+     * The album index -- the only document read to browse, so the only one
+     * worth streaming out of the crawl. `artist.json` and the per-track files
+     * are read on demand by whatever needs them.
+     */
+    const val ALBUM = "album.json"
+}
 
 data class ChangeSet(
     val upserted: List<RemoteFile>,

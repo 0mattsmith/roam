@@ -107,6 +107,14 @@ data class TrackEntity(
     val discNo: Int? = null,
     val discTotal: Int? = null,
     val year: Int? = null,
+    /**
+     * When the material first came out, where that differs from [year].
+     *
+     * A 2011 remaster of a 1994 record is a 1994 record, and a nineties smart
+     * playlist that misses it is wrong in the way people notice. Null means
+     * nobody has claimed a difference, and [year] answers for both.
+     */
+    val originalYear: Int? = null,
     val genre: String? = null,
     val durationMs: Long = 0,
     val bitrate: Int? = null,
@@ -166,7 +174,39 @@ data class TrackEntity(
     val lastPlayedAt: Long? = null,
 
     val addedAt: Long = 0,
+    /**
+     * This row's metadata came from `album.json`, not from the file's tags.
+     *
+     * Not user state -- sync writes it -- but it protects the same thing
+     * userEdited does, one rank lower. Without it the tag pass would run along
+     * behind the reader and put the embedded tags back, which is exactly the
+     * mess the metadata files exist to end.
+     *
+     * It guards the METADATA columns only. Duration, bitrate and the embedded
+     * cover are still read from the file, because no document carries them.
+     */
+    val fromDoc: Boolean = false,
     val tagState: TagState = TagState.PENDING,
+)
+
+/**
+ * The `album.json` files already applied, so a re-sync reads only what changed.
+ *
+ * Same trick as [TrackEntity.remoteRevision]: an unchanged document costs one
+ * map lookup instead of an HTTP request. [trackCount] is here because the
+ * revision alone is not enough -- dropping a new file into a folder leaves the
+ * index byte-identical while genuinely needing another pass.
+ */
+@Entity(tableName = "doc_revisions", primaryKeys = ["sourceId", "remoteId"])
+data class DocRevisionEntity(
+    val sourceId: String,
+    val remoteId: String,
+    val revision: String?,
+    /** Folder segments below the root, joined with '/'. The album this indexes. */
+    val folderPath: String,
+    /** How many tracks that folder held when this was applied. */
+    val trackCount: Int,
+    val appliedAt: Long,
 )
 
 @Entity(tableName = "artwork")

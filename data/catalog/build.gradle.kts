@@ -55,4 +55,8 @@ dependencies {
     // device and no Robolectric. It is the only part of Roam that can be
     // proved before a build reaches a phone -- worth keeping that way.
     testImplementation(libs.junit)
+    // The parser's real implementation, for the same reason. android.jar's
+    // org.json is a set of stubs that throw, so LibraryDocsTest would fail on
+    // its first JSONObject with an error that mentions neither json nor stubs.
+    testImplementation(libs.org.json)
 }

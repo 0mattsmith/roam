@@ -199,18 +199,25 @@ object LibraryDocs {
     }
 
     /**
-     * Compares paths the way a filesystem someone typed into behaves.
+     * Tidies a path without deciding anything about it.
      *
-     * Backslashes become slashes because an editor on Windows will write them;
-     * a leading "./" is noise; case is ignored because Drive is not consistent
-     * about it and neither are people.
+     * Backslashes become slashes because an editor on Windows will write them,
+     * and a leading "./" is noise. Case is left alone: this is the form handed
+     * to a query, where the stored path has its real case.
      */
-    fun normalisePath(path: String): String =
+    fun tidyPath(path: String): String =
         path.replace('\\', '/')
             .removePrefix("./")
             .trim()
             .trimEnd('/')
-            .lowercase()
+
+    /**
+     * Compares paths the way a filesystem someone typed into behaves.
+     *
+     * As [tidyPath], plus case folding -- Drive is not consistent about case
+     * and neither are people. Only ever for COMPARING; never store this.
+     */
+    fun normalisePath(path: String): String = tidyPath(path).lowercase()
 
     /**
      * "m:ss", "mm:ss" or "hh:mm:ss" to milliseconds.

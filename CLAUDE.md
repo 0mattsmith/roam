@@ -161,6 +161,19 @@ other — route between them through `:app`.
    disagree; both are file facts that sync refreshes, so a moved file is
    followed rather than lost.
 
+6f. **`album.json` outranks tags, and `fromDoc` is what makes that hold.**
+   Precedence is user edit, then document, then tags, then path -- so
+   `refreshFromPath` and `updateTags` both carry `AND fromDoc = 0`, and the doc
+   pass runs BEFORE `TagWorker` rather than after it. Get the order wrong and
+   every corrected album shows the right titles for as long as the tag pass
+   takes to undo them. What those flags guard is METADATA only: duration, the
+   embedded cover and `tagState` come from nowhere but the file, so they went
+   into `updateTagFacts`, which is unconditional. One statement for both is why
+   a hand-edited track used to sit at `durationMs = 0` for good. The crawl
+   carries `album.json` out for free -- `listAll` already lists every file in
+   every folder and threw the json away -- so this costs one request per album
+   whose index CHANGED, and none at all for a library that has not moved.
+
 7. **IDs are content-derived** (`Ids.album`, `Ids.track` in `:core:model`), not
    autoincrement. A file that moves in Drive keeps its identity and its loved
    flag. Re-sync must be idempotent.
@@ -412,6 +425,13 @@ argued about mid-flight:
 | A chorus only appears once | One LRC line can carry several timestamps for repeats -- emit one entry per stamp, not per line |
 | Lyrics vanish after correcting a title | `TrackEditor.apply` wrote lyrics unconditionally, nulling `syncedLyrics` on every save. It must compare against the stored words first |
 | A track with no lyrics is looked up on every play | `lyricsAttemptedAt` not stamped on a miss. Same mistake as `artworkAttemptedAt` -- a miss is an answer |
+| An album.json is ignored | Its entries name files that are not there. Matching is on the `file` locator, never a title or a track number -- those are what an edit changes. `DocMatcher` is pure and tested; check the locator a disc subfolder produces (`Disc 1/01 x.mp3`, not `01 x.mp3`) |
+| Corrected titles revert a minute after a sync | The doc pass ran after `TagWorker` instead of before it, or `fromDoc` is not being set — see invariant 6f |
+| A whole album's metadata reverts to its tags | Its tracks were released. `clearFromDoc` only ever runs for a folder whose `album.json` was READ successfully; a failed read must never look like a deletion |
+| A neighbouring album loses its metadata | `tracksUnderFolder` uses LIKE, where `_` in a folder name is a single-character wildcard. `DocMatcher` re-tests every row against the real prefix and skips what is not genuinely below -- the SQL narrows, Kotlin decides |
+| album.json parses as null but looks perfect | A UTF-8 byte order mark. Notepad writes one and org.json calls it a syntax error; `DocApplier.decode` strips it |
+| Every sync re-downloads every album.json | `doc_revisions` not being stamped. A malformed document is stamped too, or a file nobody can parse is fetched forever |
+| A JVM unit test dies on its first `JSONObject` | org.json ships inside `android.jar` as stubs that throw "Stub!". `testImplementation(libs.org.json)` puts the real one on the test classpath |
 | KSP says `no such column` for a column you just added | It landed on the wrong entity -- `artworkId` appears in three of them and a search-and-replace takes the first. `tools/check-schema.py` compares every `ALTER TABLE` against the entity for that table and names where the field actually went |
 | Lyrics are looked up again on a track that has them | The sidecar read ran but Room was not stamped, or `folderPath`/`fileName` are still null on a row that predates schema 13. They fill in on the next crawl |
 | A lyrics sweep writes nothing to Drive | `saveLyricsToDrive` off, or the folder did not resolve. `LyricFiles` resolves with `create = false` like the photo pass -- a tag that does not match a folder must not conjure one |

@@ -9,6 +9,7 @@ import app.roam.core.database.TrackDao
 import app.roam.core.database.TrackEntity
 import app.roam.core.model.Ids
 import app.roam.core.model.TagState
+import app.roam.data.source.FileKind
 import app.roam.data.source.RemoteFile
 import javax.inject.Inject
 
@@ -43,7 +44,12 @@ class CatalogWriter @Inject constructor(
         known: Map<String, RevisionRow>,
         now: Long = System.currentTimeMillis(),
     ): Int {
+        // The kind filter lives here rather than at the call site, for the same
+        // reason the hidden filter lives in TRACK_COLUMNS: a caller that forgets
+        // it would turn album.json into a track that browses and cannot play,
+        // and nothing about the row would say why.
         val changed = batch.filter { file ->
+            if (file.kind != FileKind.AUDIO) return@filter false
             val existing = known[file.remoteId]
             existing == null || existing.remoteRevision != file.revision
         }
@@ -125,6 +131,10 @@ class CatalogWriter @Inject constructor(
                 sizeBytes = row.sizeBytes,
                 fileName = row.fileName,
                 folderPath = row.folderPath,
+                // The bytes changed, so the file has to be read again whoever
+                // owns the metadata -- the duration and the embedded cover come
+                // from nowhere else.
+                tagState = row.tagState,
             )
             tracks.refreshFromPath(
                 id = row.id,
@@ -133,7 +143,6 @@ class CatalogWriter @Inject constructor(
                 albumId = row.albumId,
                 albumArtist = row.albumArtist,
                 trackNo = row.trackNo,
-                tagState = row.tagState,
             )
         }
         return trackRows.size

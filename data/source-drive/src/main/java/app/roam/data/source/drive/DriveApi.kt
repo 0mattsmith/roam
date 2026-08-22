@@ -1,5 +1,6 @@
 package app.roam.data.source.drive
 
+import app.roam.data.source.FileKind
 import app.roam.data.source.RemoteFile
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -22,7 +23,7 @@ data class DriveFile(
     val md5Checksum: String? = null,
     val modifiedTime: String? = null,
 ) {
-    fun toRemoteFile(path: List<String>) = RemoteFile(
+    fun toRemoteFile(path: List<String>, kind: FileKind = FileKind.AUDIO) = RemoteFile(
         remoteId = id,
         name = name,
         pathSegments = path,
@@ -30,6 +31,7 @@ data class DriveFile(
         mimeType = mimeType,
         revision = md5Checksum,
         modifiedAt = 0L,
+        kind = kind,
     )
 }
 

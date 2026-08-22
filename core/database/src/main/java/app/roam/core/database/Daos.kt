@@ -28,11 +28,18 @@ interface TrackDao {
      * Bookkeeping for a file whose bytes changed. Runs even for an edited
      * track -- without stamping the new revision the crawl would treat it as
      * changed on every single sync.
+     *
+     * [tagState] rides here rather than with the path-inferred columns because
+     * it means "this file needs re-reading", which is a fact about the FILE.
+     * Left in refreshFromPath it inherited that query's `userEdited = 0`, so a
+     * track someone had renamed was never re-tagged again -- and since the tag
+     * pass is the only thing that ever learns a duration, a corrected file's
+     * duration stayed 0 forever.
      */
     @Query("""
         UPDATE tracks SET remoteRevision = :remoteRevision, mimeType = :mimeType,
                           sizeBytes = :sizeBytes, fileName = :fileName,
-                          folderPath = :folderPath
+                          folderPath = :folderPath, tagState = :tagState
         WHERE id = :id
     """)
     suspend fun updateFileFacts(
@@ -42,19 +49,23 @@ interface TrackDao {
         sizeBytes: Long,
         fileName: String?,
         folderPath: String?,
+        tagState: TagState,
     )
 
     /**
-     * Re-applies what the path implies and queues a re-read of the tags.
-     * Skipped for a track the user edited by hand: their titling beats
-     * whatever the filename says, and silently reverting it would be worse
-     * than never having offered the edit.
+     * Re-applies what the path implies.
+     *
+     * Skipped for a track the user edited by hand: their titling beats whatever
+     * the filename says, and silently reverting it would be worse than never
+     * having offered the edit. Skipped for a track described by `album.json`
+     * for the same reason one rank down -- a folder name is the weakest claim
+     * there is, and it must not beat a document that names the track outright.
      */
     @Query("""
         UPDATE tracks SET
           title = :title, artistId = :artistId, albumId = :albumId,
-          albumArtist = :albumArtist, trackNo = :trackNo, tagState = :tagState
-        WHERE id = :id AND userEdited = 0
+          albumArtist = :albumArtist, trackNo = :trackNo
+        WHERE id = :id AND userEdited = 0 AND fromDoc = 0
     """)
     suspend fun refreshFromPath(
         id: Long,
@@ -63,8 +74,82 @@ interface TrackDao {
         albumId: Long,
         albumArtist: String?,
         trackNo: Int?,
-        tagState: TagState,
     )
+
+    /**
+     * What `album.json` says, written for one track.
+     *
+     * Shaped like applyUserEdit and deliberately one rank below it: a
+     * correction typed into Roam survives a re-read of the file that has not
+     * caught up with it yet. Once the editor WRITES the document, it clears
+     * userEdited in the same breath, and this becomes the authority.
+     *
+     * tagState is untouched. The document carries no duration and no embedded
+     * cover, so the tag pass still has work to do on this row.
+     *
+     * Returns rows written, which is not always one: a hand-edited track is
+     * refused here, and a count that assumed otherwise would report work that
+     * did not happen.
+     */
+    @Query("""
+        UPDATE tracks SET
+          title = :title, artistId = :artistId, albumId = :albumId,
+          albumArtist = :albumArtist, trackNo = :trackNo, discNo = :discNo,
+          year = :year, originalYear = :originalYear, genre = :genre,
+          fromDoc = 1
+        WHERE id = :id AND userEdited = 0
+    """)
+    suspend fun applyFromDoc(
+        id: Long,
+        title: String,
+        artistId: Long,
+        albumId: Long,
+        albumArtist: String?,
+        trackNo: Int?,
+        discNo: Int?,
+        year: Int?,
+        originalYear: Int?,
+        genre: String?,
+    ): Int
+
+    /**
+     * The document stopped claiming these tracks, so the file's own tags win
+     * again.
+     *
+     * Only ever called for a folder whose `album.json` was read successfully:
+     * absence proves nothing, and a failed read must not look like a deletion.
+     */
+    @Query("UPDATE tracks SET fromDoc = 0 WHERE id IN (:ids)")
+    suspend fun clearFromDoc(ids: List<Long>)
+
+    /**
+     * Every track at or below a folder, with what it needs to be matched
+     * against a document entry.
+     *
+     * Below, not just in: a deluxe edition keeps its discs in subfolders and
+     * the index names them `Disc 1/01 Track.mp3`. The trailing slash on the
+     * LIKE is what stops "Oasis/Definitely Maybe" also matching
+     * "Oasis/Definitely Maybe Remastered".
+     */
+    @Query("""
+        SELECT id, fileName, folderPath, fromDoc FROM tracks
+        WHERE sourceId = :sourceId
+          AND (folderPath = :folderPath OR folderPath LIKE :folderPath || '/%')
+    """)
+    suspend fun tracksUnderFolder(sourceId: String, folderPath: String): List<FolderTrackRow>
+
+    /** Which album a track belongs to right now, before a document moves it. */
+    @Query("SELECT albumId FROM tracks WHERE id = :id")
+    suspend fun albumIdOf(id: Long): Long?
+
+    /** By full path below the root, for entries that point outside their album. */
+    @Query("""
+        SELECT id, fileName, folderPath, fromDoc FROM tracks
+        WHERE sourceId = :sourceId
+          AND (CASE WHEN folderPath = '' THEN fileName
+                    ELSE folderPath || '/' || fileName END) COLLATE NOCASE IN (:paths)
+    """)
+    suspend fun tracksByPath(sourceId: String, paths: List<String>): List<FolderTrackRow>
 
     /** Everything the edit form writes, in one go. */
     @Query("""
@@ -313,22 +398,53 @@ interface TrackDao {
 
     // ---- tag pass ----
 
-    /** Tracks still carrying path-derived metadata, oldest first. */
+    /**
+     * Tracks whose file has not been read yet, oldest first.
+     *
+     * Deliberately NOT filtered on userEdited or fromDoc. Whoever owns the
+     * words, the duration and the embedded cover live only in the file and
+     * nothing else ever learns them -- excluding these rows left an edited
+     * track at duration 0 for good, which quietly broke play counting and the
+     * times in the car for exactly the tracks someone had cared enough to fix.
+     * What those flags protect is the METADATA, and updateTags is where that
+     * is decided.
+     */
     @Query("""
         SELECT t.id AS id, t.remoteId AS remoteId, t.albumId AS albumId,
                t.title AS name, t.sizeBytes AS sizeBytes
         FROM tracks t
         WHERE t.sourceId = :sourceId AND t.tagState != 'OK' AND t.tagState != 'FAILED'
-          AND t.userEdited = 0
         ORDER BY t.addedAt
         LIMIT :limit
     """)
     suspend fun pendingTags(sourceId: String, limit: Int): List<PendingTagRow>
 
     /**
-     * Writes only tag-derived columns. loved, playCount, skipCount and
+     * What only the file knows, written whoever owns the metadata.
+     *
+     * Duration, the embedded cover and the outcome of the read itself. No
+     * document carries these and no edit form offers them, so there is nothing
+     * here for a flag to protect -- and gating them behind one is what left
+     * every track measuring against a duration of zero.
+     */
+    @Query("""
+        UPDATE tracks SET
+          artworkId = COALESCE(:artworkId, artworkId),
+          durationMs = COALESCE(:durationMs, durationMs),
+          tagState = :tagState
+        WHERE id = :id
+    """)
+    suspend fun updateTagFacts(id: Long, artworkId: String?, durationMs: Long?, tagState: TagState)
+
+    /**
+     * Writes only tag-derived metadata. loved, playCount, skipCount and
      * lastPlayedAt are the user's and must never be touched here.
      * COALESCE keeps the path-inferred value when a tag is absent.
+     *
+     * Refused for a hand-edited track, and refused for one described by
+     * `album.json` -- otherwise the tag pass runs along behind the reader and
+     * puts the file's own tags back, which is the whole thing those documents
+     * exist to stop.
      */
     @Query("""
         UPDATE tracks SET
@@ -338,15 +454,8 @@ interface TrackDao {
           trackNo = COALESCE(:trackNo, trackNo),
           trackTotal = COALESCE(:trackTotal, trackTotal),
           discNo = COALESCE(:discNo, discNo),
-          discTotal = COALESCE(:discTotal, discTotal),
-          artworkId = COALESCE(:artworkId, artworkId),
-          -- File fact rather than a tag, but the tag pass is the only thing
-          -- that ever learns it. Left out, every track's duration stays 0 and
-          -- anything measuring against it -- the play threshold, the times
-          -- shown in the car -- silently has nothing to work with.
-          durationMs = COALESCE(:durationMs, durationMs),
-          tagState = :tagState
-        WHERE id = :id AND userEdited = 0
+          discTotal = COALESCE(:discTotal, discTotal)
+        WHERE id = :id AND userEdited = 0 AND fromDoc = 0
     """)
     suspend fun updateTags(
         id: Long,
@@ -357,9 +466,6 @@ interface TrackDao {
         trackTotal: Int?,
         discNo: Int?,
         discTotal: Int?,
-        artworkId: String?,
-        durationMs: Long?,
-        tagState: TagState,
     )
 
     /** Stops a file with no tags being re-read on every pass. */
@@ -458,6 +564,20 @@ data class TrackListItem(
 data class ShuffleRow(val id: Long, val loved: Boolean, val skipCount: Int, val lastPlayedAt: Long?)
 data class RevisionRow(val id: Long, val remoteId: String, val remoteRevision: String?)
 
+/**
+ * Enough of a track to match it against a document entry.
+ *
+ * Both path columns are nullable: they arrived in schema 13 and fill in on the
+ * next crawl, so a library that has not been re-crawled since simply matches
+ * nothing rather than matching wrongly.
+ */
+data class FolderTrackRow(
+    val id: Long,
+    val fileName: String?,
+    val folderPath: String?,
+    val fromDoc: Boolean,
+)
+
 data class ArtistPhotoRow(val id: Long, val name: String)
 
 data class ArtistListItem(
@@ -532,6 +652,17 @@ interface AlbumDao {
 
     @Query("UPDATE albums SET compilation = :compilation WHERE id = :albumId")
     suspend fun setCompilation(albumId: Long, compilation: Boolean)
+
+    /**
+     * The release year, when a document states one.
+     *
+     * Sync leaves this null -- a folder name is not a claim about the album --
+     * so for most libraries the Albums list has never had a year to show. An
+     * `album.json` is a claim, which is why this is unconditional rather than
+     * an IF MISSING variant.
+     */
+    @Query("UPDATE albums SET year = :year WHERE id = :albumId")
+    suspend fun setYear(albumId: Long, year: Int)
 
     /**
      * Forgets Roam's cover. Does NOT delete cover.jpg from the source -- that
@@ -712,4 +843,23 @@ interface ArtworkDao {
     @Upsert suspend fun upsert(art: ArtworkEntity)
     @Query("SELECT * FROM artwork WHERE id = :id") suspend fun byId(id: String): ArtworkEntity?
     @Query("SELECT EXISTS(SELECT 1 FROM artwork WHERE id = :id)") suspend fun exists(id: String): Boolean
+}
+
+/**
+ * Which `album.json` files have already been applied.
+ *
+ * Upsert is safe here in a way it is not for tracks (invariant 3a): every
+ * column of this entity is written by the same pass that reads it, and there is
+ * no user state anywhere near it.
+ */
+@Dao
+interface DocRevisionDao {
+    @Upsert suspend fun upsert(rows: List<DocRevisionEntity>)
+
+    @Query("SELECT * FROM doc_revisions WHERE sourceId = :sourceId")
+    suspend fun all(sourceId: String): List<DocRevisionEntity>
+
+    /** A document that is no longer on the source has nothing left to cache. */
+    @Query("DELETE FROM doc_revisions WHERE sourceId = :sourceId AND remoteId IN (:remoteIds)")
+    suspend fun forget(sourceId: String, remoteIds: List<String>)
 }
