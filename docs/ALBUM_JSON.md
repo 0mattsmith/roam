@@ -386,6 +386,62 @@ so a diff between saves shows what actually changed.
 
 ---
 
+## Creating the files from the app
+
+The editor says where the values on screen came from, in a line above the
+fields:
+
+```
+Reading from: album.json
+Reading from: file tags
+Reading from: folder names
+```
+
+That matters beyond curiosity. A title that looks wrong is a different problem
+depending on which of those three produced it, and the line says which without
+anyone having to know the precedence rules.
+
+When nothing has supplied the values but tags or the path — meaning this album
+has no index, or has one with no entry for this track — a checkbox appears:
+
+> **☐ Create album.json**  (?)
+
+It is absent when the values already came from json, so its presence is itself
+the answer to "is this album described yet". Ticking it enables **Apply** even
+with no other change, and writes `album.json` and the track's own `.json`
+together.
+
+**Apply is otherwise disabled until something actually changes.** Comparison is
+against trimmed values, or a trailing newline pasted into the lyrics box leaves
+Apply lit on a form nobody edited — which is the false positive the disabling
+exists to prevent.
+
+### The help text behind the (?)
+
+Verbatim, because the last line is the part that matters and is the part a
+cheerful summary would leave out:
+
+> **Why create album.json?**
+>
+> Roam keeps your corrections in its own database, which is deleted if you ever
+> reinstall the app. An album.json file sits beside the music on your Drive, so
+> your edits survive a reinstall and any other player or device can read them.
+>
+> It is also faster. Roam reads one small file per album instead of opening
+> every track to check its tags.
+>
+> Nothing is written into your audio files, and nothing is deleted.
+>
+> One thing to know: once the file exists, Roam trusts it over the tags. So if
+> anything on this screen is wrong, correct it before creating the file —
+> otherwise the wrong value becomes the one Roam believes.
+
+A library-wide **Write metadata files** action lives in Settings for seeding in
+bulk, and the same action is on an album's long-press sheet. Ten thousand
+tracks is not a job for one dialog at a time.
+
+---
+
 ## Uploading
 
 Nothing reaches Drive until its metadata is settled. The folder names come FROM
