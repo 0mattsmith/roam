@@ -253,6 +253,61 @@ def imports_of(module: str) -> set[str]:
     return result
 
 
+PRIVATE_MEMBER = re.compile(
+    r"^\s{4}private\s+(?:const\s+)?(?:val|var|fun|suspend\s+fun)\s+(\w+)\b"
+)
+DECLARING_TYPE = re.compile(r"^(?:@\w+(?:\([^)]*\))?\s*)*(?:\w+\s+)*?(?:object|class|interface)\s+(\w+)")
+
+
+def private_leaks() -> dict[str, set[str]]:
+    """
+    A private member of an object, read from somewhere else as `Type.member`.
+
+    Kotlin catches this instantly and the message is perfectly clear -- the
+    problem is that catching it costs a push and a CI run, and it is the exact
+    shape of mistake a search-and-replace makes: `ALBUM_KEYS` was left private
+    while `ARTIST_KEYS` beside it was made public, and nothing in the diff
+    looked wrong.
+
+    Deliberately narrow. Only top-level `object` declarations, only members
+    indented exactly one level, and only qualified `Type.member` reads -- so a
+    private helper called from inside its own object, which is the overwhelming
+    majority of them, is never mentioned.
+    """
+    # Type name -> its private members, for objects only. Anything nested or
+    # unusually formatted simply does not match and is skipped.
+    privates: dict[str, dict[str, str]] = {}
+    for kt, lines in sources().items():
+        current: str | None = None
+        for line in lines:
+            if line.startswith("object "):
+                m = DECLARING_TYPE.match(line)
+                current = m.group(1) if m else None
+                continue
+            if line and not line[0].isspace():
+                current = None
+                continue
+            if current:
+                m = PRIVATE_MEMBER.match(line)
+                if m:
+                    privates.setdefault(current, {})[m.group(1)] = kt
+    if not privates:
+        return {}
+
+    problems: dict[str, set[str]] = collections.defaultdict(set)
+    for kt, lines in sources().items():
+        body = "\n".join(lines)
+        for type_name, members in privates.items():
+            for member, declared_in in members.items():
+                if kt == declared_in:
+                    continue
+                if re.search(rf"\b{type_name}\.{member}\b", body):
+                    problems[kt].add(
+                        f"reads {type_name}.{member}, which is private in {declared_in}"
+                    )
+    return problems
+
+
 def main() -> int:
     problems: dict[str, set[str]] = collections.defaultdict(set)
 
@@ -272,10 +327,13 @@ def main() -> int:
     for path, issues in smart_cast_problems(cross_module_nullables()).items():
         problems[path] |= issues
 
+    for path, issues in private_leaks().items():
+        problems[path] |= issues
+
     problems = {m: v for m, v in problems.items() if v}
 
     if not problems:
-        print("check-deps: no dependency, supertype or smart-cast problems detected")
+        print("check-deps: no dependency, supertype, smart-cast or visibility problems detected")
         return 0
 
     print("check-deps: possible problems\n")

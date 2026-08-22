@@ -20,8 +20,14 @@ import java.time.format.DateTimeFormatter
  */
 object DocBuilder {
 
-    /** Key order for `album.json`, and what counts as recognised. */
-    private val ALBUM_KEYS = listOf(
+    /**
+     * Key order for `album.json`, and what counts as recognised.
+     *
+     * Public alongside [ARTIST_KEYS] because [withRetiredArtwork] is handed one
+     * of the two by its caller -- a patch has to know the order to re-emit in,
+     * and the two documents do not share one.
+     */
+    val ALBUM_KEYS = listOf(
         "schema", "album_artist", "album_title", "year", "original_year",
         "genres", "is_compilation", "total_discs", "total_tracks", "cover_art",
         "previous_artwork", "tracks",
