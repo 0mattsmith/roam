@@ -252,8 +252,12 @@ class BrowseTree @Inject constructor(
                     // Year in the title, same as the phone. The car gives a
                     // browse row one line, so a separate field would be dropped.
                     .setTitle(year?.takeIf { it > 0 }?.let { "$title ($it)" } ?: title)
-                    .setSubtitle(creditLine(artistName, albumArtistName))
-                    .setArtist(creditLine(artistName, albumArtistName))
+                    // No credit line here, and there is nothing to build one
+                    // from: albums.artistId IS the album artist, so an album
+                    // row has exactly one name. The two only diverge per
+                    // TRACK, which is where the compilation credit belongs.
+                    .setSubtitle(artistName)
+                    .setArtist(artistName)
                     .setArtworkUri(artworkId?.let { ArtworkProvider.uri(ctx, it, size = 320) })
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
