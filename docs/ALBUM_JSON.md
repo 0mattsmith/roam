@@ -73,6 +73,7 @@ arise — Roam always does.
   "artist_image": "artist.jpg",
   "artist_logo": "logo.jpg",
   "artist_banner": "banner.jpg",
+  "previous_artwork": ["artist1.jpg", "logo1.png"],
   "sort_as": "Oasis"
 }
 ```
@@ -88,6 +89,7 @@ arise — Roam always does.
 | `artist_image` | string | Square photo. |
 | `artist_logo` | string | Transparent PNG usually. |
 | `artist_banner` | string | Wide background. |
+| `previous_artwork` | array of strings | Images this artist has had before. See "Previous artwork". |
 | `sort_as` | string | Files the artist under another name — The Beatles under B. |
 
 All of it is shown on the artist page, beside the photo: the biography as a
@@ -126,6 +128,7 @@ conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
   "total_discs": 3,
   "total_tracks": 44,
   "cover_art": "cover.jpg",
+  "previous_artwork": ["cover1.jpg", "cover2.jpg"],
   "tracks": [
     {
       "disc": 1,
@@ -151,6 +154,7 @@ conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
 | `is_compilation` | boolean | no | Defaults `false`. Decides which name the folder takes — see "Uploading". |
 | `total_discs` / `total_tracks` | integer | no | Derived from `tracks` when absent. |
 | `cover_art` | string | no | Relative to the album folder. Defaults `cover.jpg`. |
+| `previous_artwork` | array | no | Covers this album has had before. See "Previous artwork". |
 | `tracks` | array | yes | May be empty. |
 
 ### Each entry
@@ -284,6 +288,48 @@ so suggestions are instant and work offline. Backspace at the start of the
 input removes the last chip, which is the behaviour every email To: field
 already taught everybody; each chip also has a small remove control for touch.
 No edit mode, because a mode is a thing to be in and get out of.
+
+---
+
+## Previous artwork
+
+Roam never deletes an image and never overwrites one. Replacing a cover
+**numbers the outgoing file aside** — `cover.jpg` becomes `cover1.jpg`, then
+`cover2.jpg` — and writes the new one as plain `cover.jpg`. The live image
+therefore always has the same name, so nothing pointing at it ever has to
+change, and every version the folder has held is still there.
+
+`previous_artwork` is the record of that:
+
+```json
+"cover_art": "cover.jpg",
+"previous_artwork": ["cover1.jpg", "cover2.jpg"]
+```
+
+**Oldest first**, which is the order they were retired in and the order the
+numbers already run. Appending rather than reordering is what keeps a diff
+between saves down to one line.
+
+It sits directly beneath the artwork it is the history of. `artist.json` has one
+list covering all three of its images, because the numbered names say which is
+which — `artist1.jpg` was an artist photo, `logo1.png` was a logo.
+
+**The folder is the truth; this list points at it.** Same rule as `lyrics` and
+everything else here:
+
+- An entry naming a file that is not there is skipped, not an error.
+- A numbered image the list does not mention is still found — Roam lists the
+  folder and matches the numbering, exactly as it did before this field existed.
+
+So the list is worth having but never load-bearing. It saves a folder listing,
+it survives being read offline, and it gives an external editor the history
+without it having to know Roam's numbering convention. What it must not become
+is a second opinion about which files exist.
+
+**Roam appends to it when it retires an image, and only when the document
+already exists.** Changing a cover does not create an `album.json` — that is a
+deliberate act with its own checkbox, and a side effect that writes new files to
+someone's Drive because they picked a different picture would be a surprise.
 
 ---
 

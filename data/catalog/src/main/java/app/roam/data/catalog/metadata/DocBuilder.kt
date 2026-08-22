@@ -23,8 +23,18 @@ object DocBuilder {
     /** Key order for `album.json`, and what counts as recognised. */
     private val ALBUM_KEYS = listOf(
         "schema", "album_artist", "album_title", "year", "original_year",
-        "genres", "is_compilation", "total_discs", "total_tracks", "cover_art", "tracks",
+        "genres", "is_compilation", "total_discs", "total_tracks", "cover_art",
+        "previous_artwork", "tracks",
     )
+
+    /** Key order for `artist.json`. Roam does not build these yet; it patches them. */
+    val ARTIST_KEYS = listOf(
+        "schema", "artist_name", "active_from", "active_to", "debut_album",
+        "debut_album_year", "total_studio_albums", "artist_info", "artist_image",
+        "artist_logo", "artist_banner", "previous_artwork", "sort_as",
+    )
+
+    const val PREVIOUS_ARTWORK = "previous_artwork"
 
     private val ENTRY_KEYS = listOf(
         "disc", "track", "title", "artist", "file", "track_meta", "lyrics", "external",
@@ -145,6 +155,12 @@ object DocBuilder {
                 ))
                 add("total_tracks" to Json.Num(rows.size.toLong()))
                 add("cover_art" to Json.Str(existing.stringOr("cover_art", "cover.jpg")))
+                // Carried straight across. The retired covers are a fact about
+                // the FOLDER, and nothing in the catalogue knows them -- they
+                // are appended by whatever retires an image, not rebuilt here.
+                existing?.optJSONArray(PREVIOUS_ARTWORK)
+                    ?.takeIf { it.length() > 0 }
+                    ?.let { add(PREVIOUS_ARTWORK to fromJson(it)) }
                 add("tracks" to Json.Arr(entries))
                 existing?.let { addAll(it.preserving(ALBUM_KEYS.toSet())) }
             }
@@ -185,6 +201,43 @@ object DocBuilder {
             }
         )
         return document.render()
+    }
+
+    /**
+     * The same document with one more retired image named in it.
+     *
+     * A patch rather than a rebuild, and that distinction matters: replacing a
+     * cover must not have the side effect of rewriting an album's metadata from
+     * the catalogue. It re-emits what is already there in the documented key
+     * order, so the diff is the one line that changed.
+     *
+     * Returns null when there is nothing to do -- no document, or this image is
+     * already listed -- so the caller can skip the upload entirely.
+     */
+    fun withRetiredArtwork(existing: JSONObject?, retired: String, keyOrder: List<String>): String? {
+        if (existing == null) return null
+        val name = retired.trim().takeIf { it.isNotEmpty() } ?: return null
+
+        val already = existing.optJSONArray(PREVIOUS_ARTWORK)
+            ?.let { arr -> (0 until arr.length()).map { arr.optString(it).trim() } }
+            .orEmpty()
+        if (already.any { it.equals(name, ignoreCase = true) }) return null
+
+        // Appended, never sorted: the order IS the history, and reordering
+        // would make every save show the whole list as changed.
+        val updated = (already.filter { it.isNotEmpty() } + name).jsonArray()
+
+        val known = keyOrder.toSet()
+        val entries = buildList<Pair<String, Json>> {
+            for (key in keyOrder) {
+                when {
+                    key == PREVIOUS_ARTWORK -> add(key to updated)
+                    existing.has(key) -> add(key to fromJson(existing.opt(key)))
+                }
+            }
+            addAll(existing.preserving(known))
+        }
+        return Json.Obj(entries).render()
     }
 
     /**

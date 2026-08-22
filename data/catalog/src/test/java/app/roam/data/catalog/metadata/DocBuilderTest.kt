@@ -218,6 +218,98 @@ class DocBuilderTest {
         assertTrue(!out.has("start_at"))
     }
 
+    // ---- previous artwork ---------------------------------------------------
+
+    private val withHistory = JSONObject(
+        """
+        {
+          "schema": 1, "album_artist": "Oasis", "album_title": "Definitely Maybe",
+          "cover_art": "cover.jpg",
+          "previous_artwork": ["cover1.jpg", "cover2.jpg"],
+          "tracks": []
+        }
+        """
+    )
+
+    @Test
+    fun `the artwork history is carried across a rewrite, not rebuilt`() {
+        // Nothing in the catalogue knows which covers a folder has held, so
+        // rebuilding this from Roam's own tables would silently empty it.
+        val out = JSONObject(DocBuilder.albumDocument(withHistory, listOf(row())))
+        val history = out.getJSONArray("previous_artwork")
+        assertEquals(2, history.length())
+        assertEquals("cover1.jpg", history.getString(0))
+        assertEquals("cover2.jpg", history.getString(1))
+    }
+
+    @Test
+    fun `retiring a cover appends it, keeping the order it happened in`() {
+        val json = DocBuilder.withRetiredArtwork(withHistory, "cover3.jpg", DocBuilder.ALBUM_KEYS)!!
+        val history = JSONObject(json).getJSONArray("previous_artwork")
+        assertEquals(3, history.length())
+        // Appended, never sorted. The order IS the history, and reordering
+        // would make every save show the whole list as changed.
+        assertEquals("cover3.jpg", history.getString(2))
+
+        // ...in the documented position, so the diff is the one line.
+        val order = Regex("^  \"(\\w+)\"", RegexOption.MULTILINE).findAll(json).map { it.groupValues[1] }.toList()
+        assertEquals(order.indexOf("cover_art") + 1, order.indexOf("previous_artwork"))
+    }
+
+    @Test
+    fun `a document with no history yet gains one`() {
+        val bare = JSONObject("""{ "schema": 1, "album_artist": "A", "album_title": "B" }""")
+        val out = JSONObject(DocBuilder.withRetiredArtwork(bare, "cover1.jpg", DocBuilder.ALBUM_KEYS)!!)
+        assertEquals(1, out.getJSONArray("previous_artwork").length())
+    }
+
+    @Test
+    fun `nothing to record means nothing is written`() {
+        // No document: replacing a cover must not CREATE one. New files
+        // appearing on someone's Drive because they picked a different picture
+        // is a surprise, and surprises on their own storage cost trust.
+        assertNull(DocBuilder.withRetiredArtwork(null, "cover1.jpg", DocBuilder.ALBUM_KEYS))
+        // Already listed: an upload with no change is still an upload.
+        assertNull(DocBuilder.withRetiredArtwork(withHistory, "COVER1.JPG", DocBuilder.ALBUM_KEYS))
+        assertNull(DocBuilder.withRetiredArtwork(withHistory, "  ", DocBuilder.ALBUM_KEYS))
+    }
+
+    @Test
+    fun `patching the history leaves everything else exactly as it was`() {
+        val rich = JSONObject(
+            """
+            {
+              "schema": 1, "album_artist": "Oasis", "album_title": "Definitely Maybe",
+              "mood": "swaggering",
+              "tracks": [ { "file": "01 Rock.mp3", "title": "Rock 'n' Roll Star" } ]
+            }
+            """
+        )
+        val out = JSONObject(DocBuilder.withRetiredArtwork(rich, "cover1.jpg", DocBuilder.ALBUM_KEYS)!!)
+        assertEquals("Oasis", out.getString("album_artist"))
+        assertEquals("swaggering", out.getString("mood"))
+        assertEquals("Rock 'n' Roll Star", out.getJSONArray("tracks").getJSONObject(0).getString("title"))
+        // Not invented: this document never claimed a cover name, and a patch
+        // is not the place to start.
+        assertTrue(!out.has("cover_art"))
+    }
+
+    @Test
+    fun `the parser reads the history and shrugs off rubbish in it`() {
+        val doc = LibraryDocs.album(
+            """
+            {
+              "schema": 1, "album_artist": "A", "album_title": "B",
+              "previous_artwork": ["cover1.jpg", "", null, "  ", "cover2.jpg"],
+              "tracks": []
+            }
+            """
+        )!!
+        assertEquals(listOf("cover1.jpg", "cover2.jpg"), doc.previousArtwork)
+        assertTrue(LibraryDocs.album("""{ "schema": 1, "album_artist": "A", "album_title": "B" }""")!!
+            .previousArtwork.isEmpty())
+    }
+
     // ---- the small pieces ---------------------------------------------------
 
     @Test

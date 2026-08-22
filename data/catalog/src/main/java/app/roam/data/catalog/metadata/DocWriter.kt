@@ -155,6 +155,46 @@ class DocWriter @Inject constructor(
         }
     }
 
+    /**
+     * Names a retired image in the document that describes its folder.
+     *
+     * Called after an image has been numbered aside. Does nothing when there is
+     * no document there: changing a cover must not CREATE an album.json, which
+     * is a deliberate act with its own checkbox -- new files appearing on
+     * someone's Drive because they picked a different picture would be a
+     * surprise, and surprises on someone's own storage are how an app stops
+     * being trusted.
+     *
+     * Failure is swallowed. The image has already been retired safely and the
+     * folder listing still finds it; this list is a convenience, and losing it
+     * is not worth failing an operation that has otherwise succeeded.
+     */
+    suspend fun recordRetiredArtwork(
+        provider: SourceProvider,
+        root: String,
+        folderSegments: List<String>,
+        docName: String,
+        retiredName: String,
+    ): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val folderId = provider.resolveFolder(root, folderSegments, create = false)
+                ?: return@runCatching false
+            val existing = readJson(provider, folderId, docName) ?: return@runCatching false
+
+            val keys = if (docName == DocNames.ALBUM) DocBuilder.ALBUM_KEYS else DocBuilder.ARTIST_KEYS
+            val body = DocBuilder.withRetiredArtwork(existing, retiredName, keys)
+                ?: return@runCatching false
+
+            val staging = File(ctx.cacheDir, "docs/artwork").apply { mkdirs() }
+            try {
+                upload(provider, root, folderSegments, docName, body, staging, folderId)
+            } finally {
+                staging.deleteRecursively()
+            }
+            true
+        }.getOrDefault(false)
+    }
+
     private suspend fun writeTrack(
         provider: SourceProvider,
         root: String,

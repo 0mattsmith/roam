@@ -26,6 +26,8 @@ data class ArtistDoc(
     val artistImage: String?,
     val artistLogo: String?,
     val artistBanner: String?,
+    /** Images this artist has had before, oldest first. See [AlbumDoc.previousArtwork]. */
+    val previousArtwork: List<String>,
     val sortAs: String?,
 )
 
@@ -68,6 +70,19 @@ data class AlbumDoc(
     val totalDiscs: Int?,
     val totalTracks: Int?,
     val coverArt: String,
+    /**
+     * Covers this album has had before, oldest retired first.
+     *
+     * A record of the numbering Roam already does -- cover.jpg becomes
+     * cover1.jpg when it is replaced -- so an external editor gets the
+     * history without having to know the convention, and a reader gets it
+     * without listing the folder.
+     *
+     * Never load-bearing. The FOLDER says which images exist; this only
+     * points at them, so an entry naming a missing file is skipped and a
+     * numbered image it does not mention is still found.
+     */
+    val previousArtwork: List<String>,
     val tracks: List<AlbumTrackEntry>,
 ) {
     /** Entries by locator, lower-cased, for matching against what the crawl found. */
@@ -125,6 +140,7 @@ object LibraryDocs {
             artistImage = o.stringOrNull("artist_image"),
             artistLogo = o.stringOrNull("artist_logo"),
             artistBanner = o.stringOrNull("artist_banner"),
+            previousArtwork = o.strings("previous_artwork"),
             sortAs = o.stringOrNull("sort_as"),
         )
     }
@@ -145,6 +161,7 @@ object LibraryDocs {
             totalDiscs = o.intOrNull("total_discs"),
             totalTracks = o.intOrNull("total_tracks"),
             coverArt = o.stringOrNull("cover_art") ?: "cover.jpg",
+            previousArtwork = o.strings("previous_artwork"),
             tracks = o.optJSONArray("tracks").objects().mapNotNull { entry(it) },
         )
     }
@@ -309,6 +326,14 @@ private fun JSONObject.genres(): List<String> {
         // Case-insensitively distinct, keeping the first spelling seen.
         .distinctBy { it.lowercase() }
 }
+
+/** A string array, minus the blanks and the org.json "null" trap. */
+private fun JSONObject.strings(key: String): List<String> =
+    optJSONArray(key)
+        ?.let { arr -> (0 until arr.length()).map { arr.optString(it) } }
+        .orEmpty()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && it != "null" }
 
 private fun JSONArray?.objects(): List<JSONObject> {
     if (this == null) return emptyList()

@@ -429,6 +429,8 @@ argued about mid-flight:
 | A chorus only appears once | One LRC line can carry several timestamps for repeats -- emit one entry per stamp, not per line |
 | Lyrics vanish after correcting a title | `TrackEditor.apply` wrote lyrics unconditionally, nulling `syncedLyrics` on every save. It must compare against the stored words first |
 | A track with no lyrics is looked up on every play | `lyricsAttemptedAt` not stamped on a miss. Same mistake as `artworkAttemptedAt` -- a miss is an answer |
+| Retired covers vanish from album.json | `previous_artwork` was rebuilt from the catalogue, which does not know them. It is carried across a rewrite and appended to by whatever retires an image — never regenerated |
+| Changing a cover created an album.json | `recordRetiredArtwork` must do nothing when there is no document. Picking a picture is not a request to write metadata files |
 | Saving album.json shows a diff on every line | Key order came from org.json, which is a HashMap on the JVM and a LinkedHashMap on Android. `Json.kt` emits an ordered tree for exactly this; never `JSONObject.toString(2)` |
 | An edit to album.json deleted a field Roam does not know about | The writer must go THROUGH what is on the source — `preserving()` at every level, including per entry. These files are shared with an external editor |
 | Roam created a folder while writing metadata files | `resolveFolder(create = false)`, same as the artwork and lyric passes. The album folder is the tracks' shared path prefix; no prefix means no index |

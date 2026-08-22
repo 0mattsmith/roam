@@ -12,6 +12,8 @@ import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
 import app.roam.core.model.ArtworkSource
 import app.roam.core.model.SourceType
+import app.roam.data.catalog.metadata.DocWriter
+import app.roam.data.source.DocNames
 import app.roam.data.source.SourceProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +42,7 @@ class ArtworkEditor @Inject constructor(
     private val tracks: TrackDao,
     private val settings: SettingsRepository,
     private val providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>,
+    private val docs: DocWriter,
 ) {
 
     /**
@@ -346,9 +349,20 @@ class ArtworkEditor @Inject constructor(
             // plain cover.jpg. Nothing that points at it ever has to change,
             // and every version the folder has held is still sitting there.
             if (existing != null) {
-                provider.rename(
-                    existing.remoteId,
-                    ArtworkFiles.nextArchiveName(existing.name, images.map { it.name }),
+                val retired = ArtworkFiles.nextArchiveName(existing.name, images.map { it.name })
+                provider.rename(existing.remoteId, retired)
+
+                // Named in the document too, when there is one. The folder
+                // listing already finds it -- this is the record an external
+                // editor can read without knowing Roam's numbering, and it is
+                // deliberately not allowed to CREATE a document: picking a new
+                // picture should not put new files on someone's Drive.
+                docs.recordRetiredArtwork(
+                    provider = provider,
+                    root = root,
+                    folderSegments = pathSegments,
+                    docName = if (pathSegments.size > 1) DocNames.ALBUM else DocNames.ARTIST,
+                    retiredName = retired,
                 )
             }
             provider.write(root, pathSegments, fileName, tmp)

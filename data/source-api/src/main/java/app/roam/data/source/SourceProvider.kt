@@ -54,6 +54,13 @@ object DocNames {
      * are read on demand by whatever needs them.
      */
     const val ALBUM = "album.json"
+
+    /**
+     * The artist index. NOT carried out of the crawl -- nothing reads it while
+     * browsing, so streaming one per artist would be listings nobody uses. It
+     * is named here because the writer patches it in place.
+     */
+    const val ARTIST = "artist.json"
 }
 
 data class ChangeSet(
