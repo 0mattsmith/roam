@@ -69,6 +69,7 @@ arise — Roam always does.
   "debut_album": "Definitely Maybe",
   "debut_album_year": 1994,
   "total_studio_albums": 7,
+  "artist_info": "Oasis were an English rock band formed in Manchester in 1991...",
   "artist_image": "artist.jpg",
   "artist_logo": "logo.jpg",
   "artist_banner": "banner.jpg",
@@ -83,14 +84,27 @@ arise — Roam always does.
 | `active_from` / `active_to` | integer, null | `null` for still active. |
 | `debut_album` / `debut_album_year` | string, integer | |
 | `total_studio_albums` | integer | |
+| `artist_info` | string | A paragraph about the artist, shown on their page. |
 | `artist_image` | string | Square photo. |
 | `artist_logo` | string | Transparent PNG usually. |
 | `artist_banner` | string | Wide background. |
 | `sort_as` | string | Files the artist under another name — The Beatles under B. |
 
-Only `sort_as` and the three image fields change what Roam does today. The
-biographical fields are read and stored, but there is nowhere to show them yet;
-they are recorded now so the data is there when there is.
+All of it is shown on the artist page, beside the photo: the biography as a
+paragraph, the rest as a line of facts. `sort_as` files the artist under another
+name for ordering and is the one field that changes behaviour rather than
+display.
+
+`artist_info` is filled from **TheAudioDB**, whose `strBiographyEN` arrives in
+the same response the artist photo and logo passes already request -- so the
+biography costs no extra call. That API's shared key is public and capped at 30
+requests a minute for everyone using it, which is why those passes stamp an
+attempt even on failure and never retry in a loop. The same discipline applies
+here.
+
+Everything in this file is editable by hand, from the artist's long-press sheet
+in the app or from an external editor. A value written by a person is never
+replaced by a lookup.
 
 Where a field or the whole file is absent, Roam falls back to the filename
 conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
