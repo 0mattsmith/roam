@@ -25,6 +25,7 @@ import android.net.Uri
 import app.roam.core.database.ArtistListItem
 import app.roam.data.catalog.LibraryQueries
 import app.roam.data.catalog.AlbumBulkEdits
+import app.roam.data.catalog.TrackEditState
 import app.roam.data.catalog.TrackEditor
 import app.roam.data.catalog.TrackEdits
 import app.roam.core.database.AlbumListItem
@@ -579,8 +580,8 @@ class LibraryViewModel @Inject constructor(
     // ---- track editing ------------------------------------------------------
 
     /** Non-null while the edit form is open, holding the values it started with. */
-    private val _editing = MutableStateFlow<Pair<TrackListItem, TrackEdits>?>(null)
-    val editing: StateFlow<Pair<TrackListItem, TrackEdits>?> = _editing.asStateFlow()
+    private val _editing = MutableStateFlow<Pair<TrackListItem, TrackEditState>?>(null)
+    val editing: StateFlow<Pair<TrackListItem, TrackEditState>?> = _editing.asStateFlow()
 
     /**
      * Opens the album a track sits in, and optionally its editor.
@@ -701,11 +702,18 @@ class LibraryViewModel @Inject constructor(
     /**
      * Saves, then opens the neighbour. Discarding what was just typed is the
      * one behaviour nobody wants from an arrow key.
+     *
+     * Null [edits] mean nothing was typed. Writing anyway would mark the track
+     * hand-edited, which permanently takes it out of the tag pass and out of
+     * album.json's reach -- so paging through an album to read it would quietly
+     * freeze every track in it.
      */
-    fun stepTrackEditor(current: TrackListItem, edits: TrackEdits, delta: Int) =
+    fun stepTrackEditor(current: TrackListItem, edits: TrackEdits?, delta: Int) =
         viewModelScope.launch {
-            trackEditor.apply(current.id, edits)
-                .onFailure { _photoMessage.value = "Could not save: ${it.message}" }
+            edits?.let {
+                trackEditor.apply(current.id, it)
+                    .onFailure { e -> _photoMessage.value = "Could not save: ${e.message}" }
+            }
 
             val siblings = tracks.listItemsRaw(LibraryQueries.tracksForAlbum(current.albumId))
             // Re-found by id: saving may have renamed or re-parented this track,

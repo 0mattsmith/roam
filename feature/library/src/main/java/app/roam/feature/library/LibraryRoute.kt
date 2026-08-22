@@ -432,7 +432,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         )
     }
 
-    editing?.let { (track, initial) ->
+    editing?.let { (track, state) ->
         // Asked once per target rather than per recomposition; an arrow that
         // does nothing is worse than one that is visibly disabled.
         var canPrev by remember(track.id) { mutableStateOf(false) }
@@ -445,7 +445,9 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
 
         TrackEditDialog(
             trackId = track.id,
-            initial = initial,
+            initial = state.edits,
+            source = state.source,
+            tagState = state.tagState,
             artworkId = track.albumArtworkId,
             canGoPrevious = canPrev,
             canGoNext = canNext,

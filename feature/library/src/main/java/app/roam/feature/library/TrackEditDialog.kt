@@ -53,6 +53,8 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.text.KeyboardOptions
 import app.roam.core.database.TrackListItem
+import app.roam.core.model.TagState
+import app.roam.data.catalog.MetadataSource
 import app.roam.data.catalog.TrackEdits
 
 /**
@@ -170,6 +172,10 @@ fun TrackEditDialog(
      */
     trackId: Long,
     initial: TrackEdits,
+    /** Whose values these are. Shown, because it decides what an edit will do. */
+    source: MetadataSource,
+    /** Whether the file itself has been read yet. */
+    tagState: TagState,
     artworkId: String?,
     canGoPrevious: Boolean,
     canGoNext: Boolean,
@@ -177,7 +183,13 @@ fun TrackEditDialog(
     onSave: (TrackEdits) -> Unit,
     /** Looks the words up now, returning them, or null when nothing was found. */
     onFetchLyrics: suspend () -> String?,
-    onStep: (TrackEdits, Int) -> Unit,
+    /**
+     * Null edits mean nothing was typed, so the neighbour opens without a write.
+     * Stepping used to save regardless, which marked every track someone had
+     * merely LOOKED at as hand-edited -- and a hand-edited track is out of the
+     * tag pass and out of album.json's reach for good.
+     */
+    onStep: (TrackEdits?, Int) -> Unit,
     onCoverSave: () -> Unit,
     onCoverRemove: () -> Unit,
     onCoverPicked: (Uri) -> Unit,
@@ -228,6 +240,14 @@ fun TrackEditDialog(
         lyrics = lyrics,
     )
 
+    // Nothing typed means nothing to save, and the button says so rather than
+    // offering a write with a permanent consequence: applyUserEdit takes a
+    // track out of the tag pass and out of album.json's reach for good, which
+    // is a strange thing to get from pressing Save to close a dialog you only
+    // opened to look at. TrackEditor guards the other half -- a change to only
+    // the lyrics or the trim points does not freeze the tags either.
+    val dirty = collect().comparable() != initial.comparable()
+
     AlertDialog(
         // A tap outside must NOT discard a form full of typing. Back still
         // works and still means cancel -- that is a deliberate gesture, and
@@ -240,6 +260,8 @@ fun TrackEditDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                SourceNote(source, tagState)
+
                 Field(title, "Title") { title = it }
                 Field(artist, "Artist") { artist = it }
                 Field(album, "Album") { album = it }
@@ -352,32 +374,110 @@ fun TrackEditDialog(
                 )
 
                 // Stepping saves first, so working down an album never silently
-                // drops the edit you just made.
+                // drops the edit you just made -- but only when there IS one.
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                 ) {
                     IconButton(
-                        onClick = { onStep(collect(), -1) },
+                        onClick = { onStep(collect().takeIf { dirty }, -1) },
                         enabled = canGoPrevious,
                     ) {
-                        Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Save and previous track")
+                        Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Previous track")
                     }
                     IconButton(
-                        onClick = { onStep(collect(), 1) },
+                        onClick = { onStep(collect().takeIf { dirty }, 1) },
                         enabled = canGoNext,
                     ) {
-                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Save and next track")
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Next track")
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(collect()) }) { Text("Save") }
+            TextButton(enabled = dirty, onClick = { onSave(collect()) }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+/**
+ * Where these values came from, and whether the file has been read.
+ *
+ * Two separate facts. A track can be described by `album.json` and still have
+ * tags nobody has looked at, and knowing which is which is the difference
+ * between "this is right" and "this is a guess off the filename".
+ */
+@Composable
+private fun SourceNote(source: MetadataSource, tagState: TagState) {
+    val (headline, detail) = when (source) {
+        MetadataSource.USER ->
+            "Your edits" to "Nothing overwrites these. Undo them from the long-press menu."
+        MetadataSource.DOCUMENT ->
+            "From album.json" to "Stored beside the music, so it survives a reinstall."
+        MetadataSource.TAGS ->
+            "From the file's tags" to "Read out of the file itself."
+        MetadataSource.PATH ->
+            "From the file and folder names" to "Nothing better was available."
+    }
+
+    Column {
+        Text(
+            headline,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            detail,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        // The one case worth guarding. Until the tag pass reaches a track, what
+        // is on screen is inferred from its filename -- and anything that
+        // freezes those values, an edit today or writing album.json tomorrow,
+        // records the guess and stops the real tags ever being consulted.
+        // Nothing would look wrong afterwards, so nobody would go looking.
+        val warning = when (tagState) {
+            TagState.PENDING, TagState.PATH_INFERRED ->
+                "The file's own tags have not been read yet."
+            TagState.FAILED ->
+                "The file's tags could not be read, so these are a guess."
+            TagState.OK -> null
+        }
+        warning?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The form's values, flattened so two of them can be compared for equality.
+ *
+ * Blank and absent mean the same thing to every field here, but they are
+ * different values -- so a form nobody touched would compare unequal to what it
+ * opened with and the Save button would light up for no reason. The clip times
+ * are round-tripped through the same formatting the boxes use, because a value
+ * that is not a whole number of seconds comes back slightly different and would
+ * do exactly the same thing.
+ */
+private fun TrackEdits.comparable(): TrackEdits = copy(
+    title = title.trim(),
+    artist = artist.trim(),
+    album = album.trim(),
+    albumArtist = albumArtist?.trim()?.ifBlank { null },
+    genre = genre?.trim()?.ifBlank { null },
+    sortArtist = sortArtist?.trim()?.ifBlank { null },
+    groupArtist = groupArtist?.trim()?.ifBlank { null },
+    startMs = parseClip(formatClip(startMs)),
+    endMs = parseClip(formatClip(endMs)),
+    lyrics = lyrics?.trim()?.ifBlank { null },
+)
 
 @Composable
 private fun Field(

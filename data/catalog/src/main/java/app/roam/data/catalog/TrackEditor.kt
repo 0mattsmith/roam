@@ -7,6 +7,7 @@ import app.roam.core.database.ArtistEntity
 import app.roam.core.database.RoamDatabase
 import app.roam.core.database.TrackDao
 import app.roam.core.model.Ids
+import app.roam.core.model.TagState
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -71,6 +72,45 @@ data class TrackEdits(
 )
 
 /**
+ * Who the values on screen belong to, highest claim first.
+ *
+ * The same order the reader and the tag pass enforce (invariant 6f), stated
+ * once so the form can say it out loud rather than leaving someone to work out
+ * why an edit did or did not stick.
+ */
+enum class MetadataSource {
+    /** Typed into Roam. Nothing overwrites it. */
+    USER,
+
+    /** From `album.json` beside the music. Survives a reinstall. */
+    DOCUMENT,
+
+    /** Read out of the file itself. */
+    TAGS,
+
+    /** Guessed from the file and folder names, because nothing better exists. */
+    PATH,
+}
+
+/**
+ * The form's starting values, and where they came from.
+ *
+ * Provenance is not a field anyone edits, which is why it rides alongside
+ * [TrackEdits] rather than inside it -- `apply` would otherwise be handed a
+ * value it must remember to ignore.
+ */
+data class TrackEditState(
+    val edits: TrackEdits,
+    val source: MetadataSource,
+    /**
+     * Whether the file has been read yet, which [source] alone cannot say: a
+     * track can be hand-edited or described by a document and still have tags
+     * nobody has looked at.
+     */
+    val tagState: TagState,
+)
+
+/**
  * Hand-typed track metadata.
  *
  * The hard part is not writing the columns, it is that artist and album ids are
@@ -91,10 +131,10 @@ class TrackEditor @Inject constructor(
     private val db: RoamDatabase,
 ) {
 
-    /** Current values, for populating the form. */
-    suspend fun current(trackId: Long): TrackEdits? = withContext(Dispatchers.IO) {
+    /** Current values, for populating the form, and where they came from. */
+    suspend fun current(trackId: Long): TrackEditState? = withContext(Dispatchers.IO) {
         val track = tracks.byId(trackId) ?: return@withContext null
-        TrackEdits(
+        val edits = TrackEdits(
             title = track.title,
             artist = artists.byId(track.artistId)?.name.orEmpty(),
             album = albums.byId(track.albumId)?.title.orEmpty(),
@@ -110,6 +150,19 @@ class TrackEditor @Inject constructor(
             startMs = track.startMs,
             endMs = track.endMs,
             lyrics = track.lyrics,
+        )
+        TrackEditState(
+            edits = edits,
+            // Read in the same order everything else enforces it, off one row
+            // that was already fetched -- so the form's answer and the reader's
+            // behaviour cannot drift apart.
+            source = when {
+                track.userEdited -> MetadataSource.USER
+                track.fromDoc -> MetadataSource.DOCUMENT
+                track.tagState == TagState.OK -> MetadataSource.TAGS
+                else -> MetadataSource.PATH
+            },
+            tagState = track.tagState,
         )
     }
 
@@ -179,17 +232,40 @@ class TrackEditor @Inject constructor(
                 )
             )
 
-            tracks.applyUserEdit(
-                id = trackId,
-                title = edits.title.trim().ifBlank { UNKNOWN_TITLE },
-                artistId = artistId,
-                albumId = albumId,
-                albumArtist = albumArtistName,
-                trackNo = edits.trackNo,
-                discNo = edits.discNo,
-                year = edits.year,
-                genre = edits.genre?.trim()?.ifBlank { null },
-            )
+            val title = edits.title.trim().ifBlank { UNKNOWN_TITLE }
+            val genre = edits.genre?.trim()?.ifBlank { null }
+
+            // Only when the METADATA actually moved. applyUserEdit sets
+            // userEdited, and that flag is permanent in effect: it takes the
+            // track out of the tag pass and out of album.json's reach for good.
+            // Setting a trim point or pasting lyrics says nothing about whether
+            // the title is right -- both are written above, on their own, for
+            // exactly that reason -- and it must not be the thing that freezes
+            // a track's tags forever.
+            val stored = tracks.byId(trackId)
+            val moved = stored == null ||
+                stored.title != title ||
+                stored.artistId != artistId ||
+                stored.albumId != albumId ||
+                stored.albumArtist != albumArtistName ||
+                stored.trackNo != edits.trackNo ||
+                stored.discNo != edits.discNo ||
+                stored.year != edits.year ||
+                stored.genre != genre
+
+            if (moved) {
+                tracks.applyUserEdit(
+                    id = trackId,
+                    title = title,
+                    artistId = artistId,
+                    albumId = albumId,
+                    albumArtist = albumArtistName,
+                    trackNo = edits.trackNo,
+                    discNo = edits.discNo,
+                    year = edits.year,
+                    genre = genre,
+                )
+            }
             albums.setCompilation(albumId, edits.compilation)
             applySortArtist(artistId, artistName, edits.sortArtist)
             applyGroupArtist(artistId, edits.groupArtist)
