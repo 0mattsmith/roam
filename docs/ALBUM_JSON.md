@@ -435,6 +435,44 @@ cheerful summary would leave out:
 > Once the file exists, Roam trusts it over the tags — and you edit it here,
 > the same as now.
 
+### Generating is an album-sized operation
+
+`album.json` lists every track in the album, so it cannot be written from one
+track's editor without knowing the whole album. Roam knows it from its own
+database, so the checkbox works wherever it appears — but ticking it in a
+single track's editor writes the album index AND a file for every track in that
+album, not just the one on screen.
+
+The checkbox says so, because otherwise editing one track and finding
+forty-four new files is a surprise:
+
+> **☐ Create album.json** — writes the index for this album and a file for each
+> of its 44 tracks
+
+The album editor is the natural place to do it. Once the files exist, each
+track's own editor edits its `<track>.json` and the index together.
+
+### Local copies
+
+There is no separate local cache of these files, because Room already is one.
+Reading json puts its values in the tracks table, which is what browsing, the
+car and offline playback read from.
+
+A second copy of the raw json would be a second thing that can go stale against
+the first, and it would not survive what it was meant to survive: app-private
+storage is deleted on uninstall along with the database. **The copy on the
+source is the durable one** — that is the entire reason the metadata moved out
+of the database.
+
+An edit writes both: Room so the screen updates now, the source so it lasts.
+
+Paths make this work. Every path is relative to its own file's folder, never
+absolute and never a Drive id, so the same `album.json` resolves correctly read
+from Drive, from an rclone mount, or from a copy on a desktop. The one
+exception is `external`, which is the case where an absolute reference cannot
+be avoided — and that is why it carries a path AND an id rather than only an
+id.
+
 ### The one case worth guarding
 
 Roam already prefers embedded tags over the folder path, so json cannot usually
