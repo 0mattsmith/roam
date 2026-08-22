@@ -409,7 +409,25 @@ every level. You and Roam will not always be on the same version, and a writer
 that drops what it did not understand would silently undo the other's work.
 
 Roam writes two-space indent, a trailing newline, keys in the order given here,
-so a diff between saves shows what actually changed.
+so a diff between saves shows what actually changed. Key order is not a
+courtesy: `org.json` backs its objects with a `HashMap` on the JVM and a
+`LinkedHashMap` on Android, so a writer that inherited its ordering would
+reshuffle the file on every save and every diff would look total.
+
+**These files are replaced in place, not archived.** Roam never overwrites an
+image and never deletes one — it numbers the outgoing file aside instead. An
+index is different: it is regenerable from the catalogue, and it is written
+every time somebody corrects a track, so archiving would bury the folder in
+`album1.json`, `album2.json`. Preserving unrecognised fields is what protects
+this file instead, and for something written this often it is the stronger
+protection.
+
+**Nothing creates a folder.** The album folder is worked out from where the
+tracks actually are — the longest path prefix they share, taken segment by
+segment, so a disc subfolder resolves to its parent for free. If it cannot be
+found on the source, the write is refused rather than conjuring one, exactly as
+the artwork and lyric passes do. An album whose tracks share no folder at all
+has nowhere for an index to live, and Roam says so.
 
 ---
 

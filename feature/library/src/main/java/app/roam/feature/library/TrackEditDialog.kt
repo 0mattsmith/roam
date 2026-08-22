@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restore
@@ -177,10 +178,13 @@ fun TrackEditDialog(
     /** Whether the file itself has been read yet. */
     tagState: TagState,
     artworkId: String?,
+    /** How many files ticking "Create album.json" would write. */
+    albumTrackCount: Int,
     canGoPrevious: Boolean,
     canGoNext: Boolean,
     onDismiss: () -> Unit,
-    onSave: (TrackEdits) -> Unit,
+    /** Second argument: also write this album's metadata files to the source. */
+    onSave: (TrackEdits, Boolean) -> Unit,
     /** Looks the words up now, returning them, or null when nothing was found. */
     onFetchLyrics: suspend () -> String?,
     /**
@@ -247,6 +251,14 @@ fun TrackEditDialog(
     // opened to look at. TrackEditor guards the other half -- a change to only
     // the lyrics or the trim points does not freeze the tags either.
     val dirty = collect().comparable() != initial.comparable()
+
+    // Absent once the values already come from a document, so its presence is
+    // itself the answer to "is this album described yet".
+    val canCreateDocs = source != MetadataSource.DOCUMENT
+    var createDocs by rememberSaveable(trackId) { mutableStateOf(false) }
+    var showDocHelp by rememberSaveable(trackId) { mutableStateOf(false) }
+
+    if (showDocHelp) DocHelpDialog { showDocHelp = false }
 
     AlertDialog(
         // A tap outside must NOT discard a form full of typing. Back still
@@ -360,6 +372,16 @@ fun TrackEditDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
+                if (canCreateDocs) {
+                    CreateDocsRow(
+                        checked = createDocs,
+                        albumTrackCount = albumTrackCount,
+                        tagState = tagState,
+                        onChange = { createDocs = it },
+                        onHelp = { showDocHelp = true },
+                    )
+                }
+
                 AlbumArtBlock(
                     targetKey = trackId,
                     artworkId = artworkId,
@@ -395,7 +417,12 @@ fun TrackEditDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = dirty, onClick = { onSave(collect()) }) { Text("Save") }
+            // Ticking the box is itself a change worth saving, even when no
+            // field moved -- creating the files IS the action in that case.
+            TextButton(
+                enabled = dirty || createDocs,
+                onClick = { onSave(collect(), createDocs) },
+            ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -438,6 +465,95 @@ private fun SourceNote(source: MetadataSource, tagState: TagState) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/**
+ * The offer to make these corrections durable.
+ *
+ * It says how many files it will write, because `album.json` describes the
+ * whole album -- ticking this in one track's editor and then finding
+ * forty-four new files on your Drive would be a surprise, and a surprise on
+ * someone's own storage is the kind that stops them trusting the app.
+ */
+@Composable
+private fun CreateDocsRow(
+    checked: Boolean,
+    albumTrackCount: Int,
+    tagState: TagState,
+    onChange: (Boolean) -> Unit,
+    onHelp: () -> Unit,
+) {
+    Column {
+        Row(
+            Modifier.fillMaxWidth().clickable { onChange(!checked) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = checked, onCheckedChange = onChange)
+            Column(Modifier.weight(1f)) {
+                Text("Create album.json", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    if (albumTrackCount > 1) {
+                        "Writes the index for this album and a file for each of " +
+                            "its $albumTrackCount tracks"
+                    } else {
+                        "Writes the index for this album and a file for its track"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onHelp) {
+                Icon(Icons.Filled.HelpOutline, contentDescription = "Why create album.json?")
+            }
+        }
+
+        // The one case worth guarding, and it belongs here rather than on the
+        // source line: writing the files makes json outrank the tags, so doing
+        // it before the tags have been read records the filename guess and
+        // stops the real ones ever being consulted. Nothing would look wrong
+        // afterwards, so nobody would go looking.
+        if (tagState != TagState.OK) {
+            Text(
+                "Tags for this track have not been read yet, so it will be left " +
+                    "out. Settings → Read tags fetches them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(start = 12.dp, top = 2.dp),
+            )
+        }
+    }
+}
+
+/** Verbatim from docs/ALBUM_JSON.md. The last line is the part that matters. */
+@Composable
+private fun DocHelpDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Why create album.json?") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    "Roam keeps your corrections in its own database, which is " +
+                        "deleted if you ever reinstall the app. An album.json file " +
+                        "sits beside the music on your Drive, so your edits survive " +
+                        "a reinstall and any other player or device can read them."
+                )
+                Text(
+                    "It is also faster. Roam reads one small file per album instead " +
+                        "of opening every track to check its tags."
+                )
+                Text("Nothing is written into your audio files, and nothing is deleted.")
+                Text(
+                    "Once the file exists, Roam trusts it over the tags — and you " +
+                        "edit it here, the same as now."
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Got it") } },
+    )
 }
 
 /**

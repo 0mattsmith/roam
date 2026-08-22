@@ -230,6 +230,45 @@ interface TrackDao {
     @Query("UPDATE tracks SET tagState = 'PENDING' WHERE sourceId = :sourceId")
     suspend fun retryAllTags(sourceId: String): Int
 
+    // ---- writing the metadata files -----------------------------------------
+
+    /**
+     * Everything an album's documents need, in the order they will be listed.
+     *
+     * Its own projection rather than TrackListItem: that one carries artwork
+     * ids and loved flags for drawing a row, and none of the file facts these
+     * documents are built out of.
+     */
+    @Query("""
+        SELECT t.id AS id, t.title AS title, ar.name AS artistName,
+               aar.name AS albumArtistName, al.title AS albumTitle,
+               al.compilation AS compilation, al.discTotal AS discTotal,
+               t.trackNo AS trackNo, t.discNo AS discNo,
+               t.year AS year, t.originalYear AS originalYear, t.genre AS genre,
+               t.durationMs AS durationMs, t.startMs AS startMs, t.endMs AS endMs,
+               t.fileName AS fileName, t.folderPath AS folderPath,
+               t.tagState AS tagState, t.lyricsAttemptedAt AS lyricsAttemptedAt
+        FROM tracks t
+        JOIN artists ar  ON ar.id  = t.artistId
+        JOIN albums  al  ON al.id  = t.albumId
+        JOIN artists aar ON aar.id = al.artistId
+        WHERE t.albumId = :albumId AND t.hidden = 0
+        ORDER BY t.discNo, t.trackNo, t.title
+    """)
+    suspend fun docTracksForAlbum(albumId: Long): List<DocTrackRow>
+
+    /**
+     * The document now owns this row: the file is the durable copy, so Roam's
+     * own override steps aside for it.
+     *
+     * Both halves matter. Leaving userEdited set would make the next sync's
+     * reader refuse to apply the very file that was just written -- applyFromDoc
+     * carries `AND userEdited = 0` -- and the two would drift apart with no way
+     * to tell which was right.
+     */
+    @Query("UPDATE tracks SET fromDoc = 1, userEdited = 0 WHERE id IN (:ids)")
+    suspend fun markWrittenToDoc(ids: List<Long>)
+
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun byId(id: Long): TrackEntity?
 
@@ -623,6 +662,29 @@ data class FolderTrackRow(
     val fileName: String?,
     val folderPath: String?,
     val fromDoc: Boolean,
+)
+
+/** One track, as the metadata files describe it. */
+data class DocTrackRow(
+    val id: Long,
+    val title: String,
+    val artistName: String,
+    val albumArtistName: String,
+    val albumTitle: String,
+    val compilation: Boolean,
+    val discTotal: Int,
+    val trackNo: Int?,
+    val discNo: Int?,
+    val year: Int?,
+    val originalYear: Int?,
+    val genre: String?,
+    val durationMs: Long,
+    val startMs: Long?,
+    val endMs: Long?,
+    val fileName: String?,
+    val folderPath: String?,
+    val tagState: TagState,
+    val lyricsAttemptedAt: Long?,
 )
 
 data class ArtistPhotoRow(val id: Long, val name: String)

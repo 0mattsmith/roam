@@ -429,6 +429,10 @@ argued about mid-flight:
 | A chorus only appears once | One LRC line can carry several timestamps for repeats -- emit one entry per stamp, not per line |
 | Lyrics vanish after correcting a title | `TrackEditor.apply` wrote lyrics unconditionally, nulling `syncedLyrics` on every save. It must compare against the stored words first |
 | A track with no lyrics is looked up on every play | `lyricsAttemptedAt` not stamped on a miss. Same mistake as `artworkAttemptedAt` -- a miss is an answer |
+| Saving album.json shows a diff on every line | Key order came from org.json, which is a HashMap on the JVM and a LinkedHashMap on Android. `Json.kt` emits an ordered tree for exactly this; never `JSONObject.toString(2)` |
+| An edit to album.json deleted a field Roam does not know about | The writer must go THROUGH what is on the source — `preserving()` at every level, including per entry. These files are shared with an external editor |
+| Roam created a folder while writing metadata files | `resolveFolder(create = false)`, same as the artwork and lyric passes. The album folder is the tracks' shared path prefix; no prefix means no index |
+| album.json got numbered aside like a cover | It must not. Images are archived because they are irreplaceable; an index is regenerable and rewritten constantly, so it is overwritten in place and protected by field preservation instead |
 | An album.json is ignored | Its entries name files that are not there. Matching is on the `file` locator, never a title or a track number -- those are what an edit changes. `DocMatcher` is pure and tested; check the locator a disc subfolder produces (`Disc 1/01 x.mp3`, not `01 x.mp3`) |
 | Corrected titles revert a minute after a sync | The doc pass ran after `TagWorker` instead of before it, or `fromDoc` is not being set — see invariant 6f |
 | A whole album's metadata reverts to its tags | Its tracks were released. `clearFromDoc` only ever runs for a folder whose `album.json` was READ successfully; a failed read must never look like a deletion |

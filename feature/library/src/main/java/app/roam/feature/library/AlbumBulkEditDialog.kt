@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
@@ -64,6 +65,7 @@ fun AlbumHeaderSheet(
     onGoToArtist: () -> Unit,
     onBulkEdit: () -> Unit,
     onFetchLyrics: () -> Unit,
+    onWriteMetadataFiles: () -> Unit,
     onRemoveAlbum: () -> Unit,
     onArtworkPicked: (Uri) -> Unit,
 ) {
@@ -135,6 +137,18 @@ fun AlbumHeaderSheet(
                 headlineContent = { Text("Get lyrics for the album") },
                 supportingContent = { Text("Fills in every track that has none") },
                 leadingContent = { Icon(Icons.Filled.Lyrics, contentDescription = null) },
+            )
+
+            // The album is the natural place for this: album.json describes
+            // the whole record, so doing it from one track's editor writes
+            // files for every other track anyway.
+            ListItem(
+                modifier = Modifier.clickable(onClick = onWriteMetadataFiles),
+                headlineContent = { Text("Write metadata files to Drive") },
+                supportingContent = {
+                    Text("album.json and one per track, so your edits survive a reinstall")
+                },
+                leadingContent = { Icon(Icons.Filled.Save, contentDescription = null) },
             )
 
             ListItem(

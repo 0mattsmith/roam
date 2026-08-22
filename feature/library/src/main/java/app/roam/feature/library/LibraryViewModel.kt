@@ -17,6 +17,7 @@ import app.roam.core.model.TrackSort
 import app.roam.core.model.ViewMode
 import android.content.Context
 import app.roam.core.datastore.SettingsRepository
+import app.roam.data.catalog.metadata.DocWriter
 import app.roam.data.catalog.metadata.LyricsRepository
 import app.roam.data.catalog.metadata.LyricsWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -92,6 +93,7 @@ class LibraryViewModel @Inject constructor(
     private val player: PlayerController,
     private val photos: ArtworkEditor,
     private val trackEditor: TrackEditor,
+    private val docWriter: DocWriter,
     private val settings: SettingsRepository,
     private val lyrics: LyricsRepository,
     @ApplicationContext private val ctx: Context,
@@ -607,13 +609,56 @@ class LibraryViewModel @Inject constructor(
         _editing.value = null
     }
 
-    fun saveTrackEdits(trackId: Long, edits: TrackEdits) = viewModelScope.launch {
+    fun saveTrackEdits(
+        trackId: Long,
+        edits: TrackEdits,
+        createDocs: Boolean = false,
+    ) = viewModelScope.launch {
+        val albumId = _editing.value?.first?.albumId
         _editing.value = null
         // Lists redraw themselves: every PagingSource here observes the tables
         // the edit touches, including the artist and album it may have moved to.
-        _photoMessage.value = trackEditor.apply(trackId, edits)
+        val saved = trackEditor.apply(trackId, edits)
             .fold({ "Track updated" }, { "Could not save: ${it.message}" })
+
+        // After the edit, never before: the files are built from the catalogue,
+        // so writing them first would put the OLD values on the source and then
+        // have the reader hand them straight back on the next sync.
+        _photoMessage.value = if (createDocs && albumId != null) {
+            writeMetadataFiles(albumId)
+        } else {
+            saved
+        }
     }
+
+    /**
+     * Writes an album's metadata files, and says what happened.
+     *
+     * The message is the whole feedback: this touches someone's Drive, and a
+     * silent success there is indistinguishable from a silent failure.
+     */
+    private suspend fun writeMetadataFiles(albumId: Long): String =
+        docWriter.writeAlbum(albumId).fold(
+            { report ->
+                when {
+                    report.wroteNothing -> "Nothing to write yet"
+                    report.skippedUnread > 0 ->
+                        "Wrote ${report.filesWritten} files, skipped " +
+                            "${report.skippedUnread} with unread tags"
+                    else -> "Wrote ${report.filesWritten} files to Drive"
+                }
+            },
+            { "Could not write: ${it.message}" },
+        )
+
+    /** From the album's long-press sheet, where doing this to a whole album belongs. */
+    fun writeAlbumMetadataFiles(albumId: Long) = viewModelScope.launch {
+        _photoMessage.value = writeMetadataFiles(albumId)
+    }
+
+    /** How many files ticking "Create album.json" would write. */
+    suspend fun albumTrackCount(albumId: Long): Int =
+        tracks.listItemsRaw(LibraryQueries.tracksForAlbum(albumId)).size
 
     /**
      * Lyrics for every track on an album that has none.

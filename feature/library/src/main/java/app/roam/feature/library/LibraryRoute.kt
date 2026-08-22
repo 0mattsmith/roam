@@ -437,9 +437,13 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         // does nothing is worse than one that is visibly disabled.
         var canPrev by remember(track.id) { mutableStateOf(false) }
         var canNext by remember(track.id) { mutableStateOf(false) }
+        // Asked per album rather than per track: the checkbox says how many
+        // files it will write, and that is a fact about the album.
+        var albumTracks by remember(track.albumId) { mutableStateOf(0) }
         LaunchedEffect(track.id) {
             canPrev = vm.hasSiblingTrack(track, -1)
             canNext = vm.hasSiblingTrack(track, 1)
+            albumTracks = vm.albumTrackCount(track.albumId)
             vm.clearPastCovers()
         }
 
@@ -449,10 +453,11 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             source = state.source,
             tagState = state.tagState,
             artworkId = track.albumArtworkId,
+            albumTrackCount = albumTracks,
             canGoPrevious = canPrev,
             canGoNext = canNext,
             onDismiss = vm::closeTrackEditor,
-            onSave = { edits -> vm.saveTrackEdits(track.id, edits) },
+            onSave = { edits, createDocs -> vm.saveTrackEdits(track.id, edits, createDocs) },
             onFetchLyrics = { vm.fetchLyricsNow(track.id) },
             onStep = { edits, delta -> vm.stepTrackEditor(track, edits, delta) },
             onCoverSave = { vm.saveAlbumCoverFor(track) },
@@ -476,6 +481,10 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             onFetchLyrics = {
                 headerSheetFor = null
                 vm.fetchLyricsForAlbum(track.albumId, track.albumTitle)
+            },
+            onWriteMetadataFiles = {
+                headerSheetFor = null
+                vm.writeAlbumMetadataFiles(track.albumId)
             },
             onRemoveAlbum = {
                 headerSheetFor = null

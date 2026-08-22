@@ -1,0 +1,255 @@
+package app.roam.data.catalog.metadata
+
+import app.roam.core.database.DocTrackRow
+import app.roam.core.model.TagState
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * These documents are shared with an external editor and edited by hand, so the
+ * ways this can go wrong are all quiet ones: a field silently dropped on a save,
+ * a key order that makes every diff look total, a path that names nothing.
+ */
+class DocBuilderTest {
+
+    private fun row(
+        id: Long = 1,
+        title: String = "Rock 'n' Roll Star",
+        artist: String = "Oasis",
+        albumArtist: String = "Oasis",
+        album: String = "Definitely Maybe",
+        compilation: Boolean = false,
+        discTotal: Int = 1,
+        trackNo: Int? = 1,
+        discNo: Int? = 1,
+        year: Int? = 1994,
+        originalYear: Int? = null,
+        genre: String? = "Britpop",
+        durationMs: Long = 323_000,
+        startMs: Long? = null,
+        endMs: Long? = null,
+        fileName: String? = "01 Rock.mp3",
+        folderPath: String? = "Oasis/Definitely Maybe (1994)",
+        tagState: TagState = TagState.OK,
+        lyricsAttemptedAt: Long? = null,
+    ) = DocTrackRow(
+        id, title, artist, albumArtist, album, compilation, discTotal, trackNo, discNo,
+        year, originalYear, genre, durationMs, startMs, endMs, fileName, folderPath,
+        tagState, lyricsAttemptedAt,
+    )
+
+    // ---- where the index belongs --------------------------------------------
+
+    @Test
+    fun `one folder is the album folder`() {
+        assertEquals(
+            listOf("Oasis", "Definitely Maybe (1994)"),
+            DocBuilder.albumFolder(listOf(row(), row(id = 2))),
+        )
+    }
+
+    @Test
+    fun `disc subfolders resolve to their parent`() {
+        val folder = DocBuilder.albumFolder(
+            listOf(
+                row(folderPath = "Oasis/Definitely Maybe (1994)/Disc 1"),
+                row(id = 2, folderPath = "Oasis/Definitely Maybe (1994)/Disc 2"),
+            )
+        )
+        assertEquals(listOf("Oasis", "Definitely Maybe (1994)"), folder)
+    }
+
+    @Test
+    fun `a shared prefix that is not a shared folder is not one`() {
+        // Segment by segment, not character by character. These two share
+        // fourteen characters and no folder at all.
+        val folder = DocBuilder.albumFolder(
+            listOf(
+                row(folderPath = "Oasis/Definitely Maybe"),
+                row(id = 2, folderPath = "Oasis/Definitely Maybe Live"),
+            )
+        )
+        assertEquals(listOf("Oasis"), folder)
+    }
+
+    @Test
+    fun `tracks with nothing in common have nowhere to be indexed`() {
+        val folder = DocBuilder.albumFolder(
+            listOf(row(folderPath = "Oasis/A"), row(id = 2, folderPath = "Blur/B"))
+        )
+        assertTrue(folder.isEmpty())
+    }
+
+    @Test
+    fun `a locator carries the disc subfolder and the track doc sits beside the audio`() {
+        val album = listOf("Oasis", "Definitely Maybe (1994)")
+        val deep = row(folderPath = "Oasis/Definitely Maybe (1994)/Disc 1", fileName = "02 Shaker.mp3")
+        assertEquals("Disc 1/02 Shaker.mp3", DocBuilder.locator(album, deep))
+        assertEquals("01 Rock.json", DocBuilder.trackDocName("01 Rock.mp3"))
+        assertEquals("Disc 1", DocBuilder.below(album, deep))
+    }
+
+    @Test
+    fun `a row with no filename cannot be named`() {
+        assertNull(DocBuilder.locator(listOf("Oasis"), row(fileName = null)))
+    }
+
+    // ---- what comes out -----------------------------------------------------
+
+    @Test
+    fun `an album document reads back as the album it described`() {
+        val json = DocBuilder.albumDocument(null, listOf(row(), row(id = 2, trackNo = 2, title = "Shakermaker", fileName = "02 Shaker.mp3")))
+        val parsed = LibraryDocs.album(json)!!
+
+        assertEquals("Oasis", parsed.albumArtist)
+        assertEquals("Definitely Maybe", parsed.albumTitle)
+        assertEquals(1994, parsed.year)
+        assertEquals(listOf("Britpop"), parsed.genres)
+        assertEquals(2, parsed.tracks.size)
+        assertEquals("01 Rock.mp3", parsed.tracks.first().file)
+        assertEquals("01 Rock.json", parsed.tracks.first().trackMeta)
+        assertEquals("Shakermaker", parsed.tracks[1].title)
+    }
+
+    @Test
+    fun `keys come out in the documented order`() {
+        // Not cosmetic. org.json's key order differs between its JVM and
+        // Android implementations, so a document that inherited it would
+        // reshuffle on every save and every diff would look total.
+        val json = DocBuilder.albumDocument(null, listOf(row()))
+        val order = Regex("^  \"(\\w+)\"", RegexOption.MULTILINE).findAll(json).map { it.groupValues[1] }.toList()
+        assertEquals(
+            listOf(
+                "schema", "album_artist", "album_title", "year", "genres",
+                "is_compilation", "total_discs", "total_tracks", "cover_art", "tracks",
+            ),
+            order,
+        )
+        assertTrue("must end with a newline", json.endsWith("\n"))
+    }
+
+    @Test
+    fun `the track artist is only stated when it differs from the album's`() {
+        val plain = LibraryDocs.album(DocBuilder.albumDocument(null, listOf(row())))!!
+        assertNull(plain.tracks.single().artist)
+
+        val guest = row(artist = "Ringo Starr", albumArtist = "Various Artists", compilation = true)
+        val comp = LibraryDocs.album(DocBuilder.albumDocument(null, listOf(guest)))!!
+        assertEquals("Ringo Starr", comp.tracks.single().artist)
+        assertTrue(comp.isCompilation)
+    }
+
+    // ---- not dropping other people's work -----------------------------------
+
+    @Test
+    fun `fields this version does not understand survive a rewrite`() {
+        val existing = JSONObject(
+            """
+            {
+              "schema": 1, "album_artist": "Oasis", "album_title": "Old title",
+              "cover_art": "front.jpg",
+              "mood": "swaggering",
+              "credits": { "producer": "Owen Morris" },
+              "tracks": [
+                { "file": "01 Rock.mp3", "title": "Old", "lyrics": "01 Rock.lrc", "bpm": 122 }
+              ]
+            }
+            """
+        )
+        val json = DocBuilder.albumDocument(existing, listOf(row()))
+        val out = JSONObject(json)
+
+        // Roam's own fields are updated...
+        assertEquals("Definitely Maybe", out.getString("album_title"))
+        // ...the cover it does not manage is kept as found...
+        assertEquals("front.jpg", out.getString("cover_art"))
+        // ...and everything it has never heard of is still there.
+        assertEquals("swaggering", out.getString("mood"))
+        assertEquals("Owen Morris", out.getJSONObject("credits").getString("producer"))
+
+        val entry = out.getJSONArray("tracks").getJSONObject(0)
+        assertEquals("Rock 'n' Roll Star", entry.getString("title"))
+        assertEquals(122, entry.getInt("bpm"))
+        // Lyrics paths are preserved, never invented: Roam cannot see whether a
+        // .lrc is beside the file without asking, and a path naming nothing is
+        // worse than no path at all.
+        assertEquals("01 Rock.lrc", entry.getString("lyrics"))
+    }
+
+    @Test
+    fun `an entry that moved to a different file does not inherit the old one's extras`() {
+        val existing = JSONObject(
+            """
+            {
+              "schema": 1, "album_artist": "Oasis", "album_title": "Definitely Maybe",
+              "tracks": [ { "file": "old name.mp3", "lyrics": "old name.lrc" } ]
+            }
+            """
+        )
+        val out = JSONObject(DocBuilder.albumDocument(existing, listOf(row())))
+        val entry = out.getJSONArray("tracks").getJSONObject(0)
+        assertEquals("01 Rock.mp3", entry.getString("file"))
+        assertTrue("a renamed file must not carry the old entry's lyrics", !entry.has("lyrics"))
+    }
+
+    @Test
+    fun `a track document keeps what it does not manage and states what it does`() {
+        val existing = JSONObject("""{ "schema": 1, "composer": "Noel Gallagher", "isrc": "GBAAA9400123" }""")
+        val out = JSONObject(
+            DocBuilder.trackDocument(existing, row(startMs = 5_000, endMs = 300_000, lyricsAttemptedAt = 0L))
+        )
+        assertEquals("Noel Gallagher", out.getString("composer"))
+        assertEquals("GBAAA9400123", out.getString("isrc"))
+        assertEquals("Rock 'n' Roll Star", out.getString("title"))
+        assertEquals("Definitely Maybe", out.getString("album"))
+        assertEquals(323, out.getInt("duration_seconds"))
+        assertEquals("0:05", out.getString("start_at"))
+        assertEquals("5:00", out.getString("end_at"))
+        assertEquals("1970-01-01", out.getString("lyrics_checked"))
+    }
+
+    @Test
+    fun `a track nobody has looked for lyrics on does not claim otherwise`() {
+        val out = JSONObject(DocBuilder.trackDocument(null, row()))
+        assertTrue(!out.has("lyrics_checked"))
+        assertTrue(!out.has("start_at"))
+    }
+
+    // ---- the small pieces ---------------------------------------------------
+
+    @Test
+    fun `genres split the way the reader joins them`() {
+        assertEquals(listOf("Britpop", "Indie Rock"), DocBuilder.splitGenres("Britpop; Indie Rock"))
+        assertEquals(listOf("Britpop"), DocBuilder.splitGenres("Britpop, britpop"))
+        assertTrue(DocBuilder.splitGenres(null).isEmpty())
+        assertTrue(DocBuilder.splitGenres("  ").isEmpty())
+    }
+
+    @Test
+    fun `clock times round-trip through the parser`() {
+        assertEquals("0:05", DocBuilder.clock(5_000))
+        assertEquals("1:23", DocBuilder.clock(83_000))
+        assertEquals("1:01:40", DocBuilder.clock(3_700_000))
+        assertNull(DocBuilder.clock(null))
+
+        // Compared with == rather than assertEquals: a nullable Long against a
+        // literal picks the Object overload, which is correct but easy to
+        // misread as the primitive one.
+        assertTrue(LibraryDocs.parseClock(DocBuilder.clock(83_000)) == 83_000L)
+        assertTrue(LibraryDocs.parseClock(DocBuilder.clock(3_700_000)) == 3_700_000L)
+    }
+
+    @Test
+    fun `a document round-trips without drifting`() {
+        // Written, read, written again: the second pass must be byte-identical
+        // or every save would show a diff and nobody could tell a real change
+        // from noise.
+        val rows = listOf(row(), row(id = 2, trackNo = 2, fileName = "02 Shaker.mp3", title = "Shakermaker"))
+        val once = DocBuilder.albumDocument(null, rows)
+        val twice = DocBuilder.albumDocument(JSONObject(once), rows)
+        assertEquals(once, twice)
+    }
+}
