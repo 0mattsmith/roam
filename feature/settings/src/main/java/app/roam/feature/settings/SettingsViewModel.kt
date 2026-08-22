@@ -11,6 +11,7 @@ import app.roam.data.catalog.sync.SyncWorker
 import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
 import app.roam.data.catalog.metadata.LyricsWorker
+import app.roam.data.catalog.tags.TagWorker
 import app.roam.data.source.drive.DriveAuth
 import app.roam.data.source.drive.DriveSourceProvider
 import app.roam.data.source.drive.DriveSourceProvider.Companion.SOURCE_ID
@@ -98,6 +99,37 @@ class SettingsViewModel @Inject constructor(
     /** Just the number, for the row that leads to the page listing them. */
     val hiddenCount = trackDao.hiddenCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /** Tracks marked as hand-edited on files whose tags were never read. */
+    val frozenCount = trackDao.frozenOnGuessCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /**
+     * Asks the tag pass to try again.
+     *
+     * FAILED is terminal by design -- it is what stops a file with no tags
+     * being re-read on every sync -- so without this there was no way back from
+     * a read that failed on a flaky connection. [everything] widens it to files
+     * that were read fine, for when the parser itself has improved.
+     */
+    fun readTagsAgain(everything: Boolean) = viewModelScope.launch {
+        val sourceId = drive.sourceId
+        val queued =
+            if (everything) trackDao.retryAllTags(sourceId) else trackDao.retryFailedTags(sourceId)
+        TagWorker.enqueue(getApplication(), settings.settings.first().wifiOnlyForLargeTransfers)
+        _tagMessage.value = when (queued) {
+            0 -> "Nothing to re-read"
+            1 -> "Reading 1 track"
+            else -> "Reading $queued tracks"
+        }
+    }
+
+    private val _tagMessage = MutableStateFlow<String?>(null)
+    val tagMessage: StateFlow<String?> = _tagMessage.asStateFlow()
+
+    fun tagMessageShown() {
+        _tagMessage.value = null
+    }
 
     val showLyrics = settings.settings
         .map { it.showLyrics }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun SettingsRoute(
     onBack: () -> Unit,
     onOpenRemoved: () -> Unit,
+    onOpenFrozen: () -> Unit,
     vm: SettingsViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -265,6 +267,64 @@ fun SettingsRoute(
 
             Spacer(Modifier.height(24.dp))
             SectionHeader("Library")
+
+            val tagMessage by vm.tagMessage.collectAsStateWithLifecycle()
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(onClick = { vm.readTagsAgain(everything = false) }) { Text("Read tags") }
+                OutlinedButton(onClick = { vm.readTagsAgain(everything = true) }) {
+                    Text("Re-read all")
+                }
+                tagMessage?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Text(
+                // The same shape as the lyrics pair above it, and for the same
+                // reason: one button fills gaps, the other is the way back from
+                // an answer Roam has already recorded and would never revisit.
+                "\"Read tags\" tries files Roam gave up on. \"Re-read all\" reads " +
+                    "every file again, for when a title is wrong rather than missing. " +
+                    "Neither replaces anything you typed yourself.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+
+            val frozenCount by vm.frozenCount.collectAsStateWithLifecycle()
+            if (frozenCount > 0) {
+                ListItem(
+                    modifier = Modifier.clickable(onClick = onOpenFrozen),
+                    headlineContent = { Text("Needs a look") },
+                    supportingContent = {
+                        Text(
+                            if (frozenCount == 1) "1 track is stuck on a guessed title"
+                            else "$frozenCount tracks are stuck on a guessed title"
+                        )
+                    },
+                    leadingContent = {
+                        Icon(
+                            Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                    trailingContent = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                        )
+                    },
+                )
+            }
 
             val hiddenCount by vm.hiddenCount.collectAsStateWithLifecycle()
             ListItem(

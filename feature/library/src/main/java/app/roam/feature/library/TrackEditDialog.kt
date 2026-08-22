@@ -402,11 +402,14 @@ fun TrackEditDialog(
 }
 
 /**
- * Where these values came from, and whether the file has been read.
+ * Where these values came from.
  *
- * Two separate facts. A track can be described by `album.json` and still have
- * tags nobody has looked at, and knowing which is which is the difference
- * between "this is right" and "this is a guess off the filename".
+ * A statement about the VALUES ON SCREEN and nothing else. An earlier version
+ * also announced whether the file's tags had been read, which read as "these
+ * are a guess" over a title somebody had typed themselves -- the tags being
+ * unread says nothing about a value that did not come from them. Where it does
+ * matter is when the tags have never been read AND nothing better exists, which
+ * is the PATH case, and that is said there.
  */
 @Composable
 private fun SourceNote(source: MetadataSource, tagState: TagState) {
@@ -417,8 +420,10 @@ private fun SourceNote(source: MetadataSource, tagState: TagState) {
             "From album.json" to "Stored beside the music, so it survives a reinstall."
         MetadataSource.TAGS ->
             "From the file's tags" to "Read out of the file itself."
-        MetadataSource.PATH ->
-            "From the file and folder names" to "Nothing better was available."
+        MetadataSource.PATH -> "From the file and folder names" to when (tagState) {
+            TagState.FAILED -> "Roam could not read this file's own tags."
+            else -> "Roam has not read this file's own tags yet."
+        }
     }
 
     Column {
@@ -432,27 +437,6 @@ private fun SourceNote(source: MetadataSource, tagState: TagState) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
-        // The one case worth guarding. Until the tag pass reaches a track, what
-        // is on screen is inferred from its filename -- and anything that
-        // freezes those values, an edit today or writing album.json tomorrow,
-        // records the guess and stops the real tags ever being consulted.
-        // Nothing would look wrong afterwards, so nobody would go looking.
-        val warning = when (tagState) {
-            TagState.PENDING, TagState.PATH_INFERRED ->
-                "The file's own tags have not been read yet."
-            TagState.FAILED ->
-                "The file's tags could not be read, so these are a guess."
-            TagState.OK -> null
-        }
-        warning?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
     }
 }
 

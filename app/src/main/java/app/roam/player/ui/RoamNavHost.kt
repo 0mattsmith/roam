@@ -20,6 +20,7 @@ import androidx.navigation.compose.rememberNavController
 import app.roam.feature.library.LibraryRoute
 import app.roam.feature.nowplaying.NowPlayingRoute
 import app.roam.feature.downloader.DownloaderRoute
+import app.roam.feature.settings.FrozenTracksRoute
 import app.roam.feature.settings.RemovedTracksRoute
 import app.roam.feature.settings.SettingsRoute
 
@@ -31,6 +32,7 @@ object Routes {
     const val DOWNLOADER = "downloader"
     const val SETTINGS = "settings"
     const val REMOVED = "settings/removed"
+    const val FROZEN = "settings/frozen"
 }
 
 /**
@@ -126,11 +128,19 @@ fun RoamNavHost(
                 )
             }
             composable(Routes.SETTINGS) {
-                SettingsRoute(onBack = back, onOpenRemoved = { go(Routes.REMOVED) })
+                SettingsRoute(
+                    onBack = back,
+                    onOpenRemoved = { go(Routes.REMOVED) },
+                    onOpenFrozen = { go(Routes.FROZEN) },
+                )
             }
             composable(Routes.REMOVED)     { RemovedTracksRoute(onBack = back) }
+            composable(Routes.FROZEN)      { FrozenTracksRoute(onBack = back) }
         }
 
+        // Above the update banner, because this one is about the person's own
+        // library rather than about Roam, and it is the one they can act on.
+        NeedsLookBannerHost(onOpen = { go(Routes.FROZEN) })
         UpdateBannerHost()
     }
 }

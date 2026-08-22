@@ -183,6 +183,53 @@ interface TrackDao {
     @Query("UPDATE tracks SET userEdited = 0, tagState = 'PENDING' WHERE id = :id")
     suspend fun clearUserEdit(id: Long)
 
+    // ---- tracks stuck on a guess --------------------------------------------
+    //
+    // userEdited on a track whose tags were NEVER read successfully. The flag
+    // stops the tag pass writing metadata, so such a row is frozen on whatever
+    // it showed when the flag landed -- and if the tags had not been read by
+    // then, that is a title worked out from the filename, kept forever.
+    //
+    // The step arrows used to write this flag on every press, so paging down an
+    // album to READ it froze every track in it. Roam cannot tell that from a
+    // real edit, because the flag does not record why it was set. So it does
+    // not guess: it counts them, says so, and lets the person look.
+
+    @Query("SELECT COUNT(*) FROM tracks WHERE userEdited = 1 AND tagState != 'OK' AND hidden = 0")
+    fun frozenOnGuessCount(): Flow<Int>
+
+    @Query("""
+        SELECT t.id AS id, t.title AS title, ar.name AS artistName, al.title AS albumTitle
+        FROM tracks t
+        JOIN artists ar ON ar.id = t.artistId
+        JOIN albums  al ON al.id = t.albumId
+        WHERE t.userEdited = 1 AND t.tagState != 'OK' AND t.hidden = 0
+        ORDER BY ar.sortName, al.sortTitle, t.discNo, t.trackNo
+    """)
+    fun frozenOnGuess(): Flow<List<HiddenTrackRow>>
+
+    /** Hands every one of them back to its file at once. */
+    @Query("""
+        UPDATE tracks SET userEdited = 0, tagState = 'PENDING'
+        WHERE userEdited = 1 AND tagState != 'OK' AND hidden = 0
+    """)
+    suspend fun releaseFrozenOnGuess(): Int
+
+    /**
+     * Lets the tag pass try a file it has already given up on.
+     *
+     * FAILED is deliberately terminal -- it is what stops a file with no tags
+     * being re-read on every sync. Terminal with no way back is a different
+     * thing, though: a read that failed on a flaky connection stayed failed
+     * forever, and nothing on screen said why the title never improved.
+     */
+    @Query("UPDATE tracks SET tagState = 'PENDING' WHERE sourceId = :sourceId AND tagState = 'FAILED'")
+    suspend fun retryFailedTags(sourceId: String): Int
+
+    /** Everything, including files that were read fine. The bigger hammer. */
+    @Query("UPDATE tracks SET tagState = 'PENDING' WHERE sourceId = :sourceId")
+    suspend fun retryAllTags(sourceId: String): Int
+
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun byId(id: Long): TrackEntity?
 
