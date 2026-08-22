@@ -242,6 +242,96 @@ Decade playlists read `original_year` and fall back to `year`. Without it an
 
 ---
 
+## Paths name real files
+
+Every path field — `artist_image`, `artist_logo`, `artist_banner`, `cover_art`,
+`file`, `track_meta`, `lyrics`, `audio_file`, `lyrics_file` — names a file that
+**exists at the moment of writing**. A writer does not invent a name it intends
+to create later, and does not leave one behind pointing at something it did not
+write.
+
+For an upload that means the audio, its `.json`, its `.lrc` if there is one,
+and the index are written as one operation. Half-written is worse than absent:
+absent falls back to the tags, whereas a path to nothing is a claim that turns
+out to be false, and the failure appears somewhere unrelated later.
+
+### Keeping the index true
+
+`album.json` is a description of a folder, so it is rewritten whenever that
+folder changes:
+
+- a file **added** to an album gains an entry
+- a file **removed** loses its entry
+- a file **renamed** has its entry's paths updated
+
+An index that has drifted is not merely stale — its entries point at files that
+are gone, and its missing entries hide files that are there.
+
+---
+
+## A track that lives somewhere else
+
+Sometimes a file is already on Drive in the wrong place, and the fix is either
+to move it or to record where it actually is. Roam **asks** rather than
+deciding, and the question says plainly what will happen: which file, from
+which folder, to which folder, and that nothing is deleted either way.
+
+**If the move is accepted**, the file and its `.json` and `.lrc` move together,
+both albums' indexes are rewritten, and the entry is an ordinary relative
+`file` like any other.
+
+**If it is declined**, the file stays exactly where it is and the entry records
+where that is:
+
+```json
+{
+  "disc": 1,
+  "track": 4,
+  "title": "Half the World Away",
+  "file": null,
+  "external": {
+    "path": "Oasis/The Masterplan (1998)/10 Half the World Away.mp3",
+    "source": "drive",
+    "file_id": "1a2b3c4d5e6f",
+    "folder_id": "9x8y7z6w5v"
+  }
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `path` | Relative to the LIBRARY ROOT, not the album folder. Portable; readable by anything. |
+| `source` | Which backend the ids belong to. `drive` today; SMB and WebDAV arrive in phase 5. |
+| `file_id` | The backend's own identifier. |
+| `folder_id` | Its parent, for resolving the neighbours. |
+
+`file` is `null` when `external` is present. `track_meta` and `lyrics` for such
+a track are relative to **wherever the file actually is**, since those sidecars
+live beside the audio.
+
+### Why both a path and an id
+
+They fail in opposite directions, so each covers the other. A Drive id survives
+a move or a rename and a path does not; a path is readable by your editor,
+by rclone and by a future SMB source, and an id is meaningless to all three.
+
+When they disagree, the **id wins** and the path is repaired. An id that no
+longer resolves falls back to the path. Both failing is a broken entry, which
+Roam reports rather than guessing at.
+
+### An explicit claim beats the folder it sits in
+
+A file in `The Masterplan/` is part of that album by default, because that is
+where it is. An `external` entry elsewhere **claims** it, and the claim wins —
+the same rule as everywhere else in this document, where what was written down
+deliberately beats what was inferred.
+
+So the track appears once, under the album that claimed it, and not under the
+album whose folder happens to hold the bytes. Without that rule it would show
+up twice, which is worse than either answer on its own.
+
+---
+
 ## Matching entries to files
 
 By **`file`** (or `audio_file`), compared case-insensitively after normalising
