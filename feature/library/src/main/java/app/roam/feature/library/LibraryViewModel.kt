@@ -642,9 +642,9 @@ class LibraryViewModel @Inject constructor(
             { report ->
                 when {
                     report.wroteNothing -> "Nothing to write yet"
-                    report.skippedUnread > 0 ->
+                    report.skippedGuesses > 0 ->
                         "Wrote ${report.filesWritten} files, skipped " +
-                            "${report.skippedUnread} with unread tags"
+                            "${report.skippedGuesses} with no usable tags"
                     else -> "Wrote ${report.filesWritten} files to Drive"
                 }
             },

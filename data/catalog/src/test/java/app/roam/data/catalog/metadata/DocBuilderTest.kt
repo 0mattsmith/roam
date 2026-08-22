@@ -4,6 +4,7 @@ import app.roam.core.database.DocTrackRow
 import app.roam.core.model.TagState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,11 +35,13 @@ class DocBuilderTest {
         fileName: String? = "01 Rock.mp3",
         folderPath: String? = "Oasis/Definitely Maybe (1994)",
         tagState: TagState = TagState.OK,
+        userEdited: Boolean = false,
+        fromDoc: Boolean = false,
         lyricsAttemptedAt: Long? = null,
     ) = DocTrackRow(
         id, title, artist, albumArtist, album, compilation, discTotal, trackNo, discNo,
         year, originalYear, genre, durationMs, startMs, endMs, fileName, folderPath,
-        tagState, lyricsAttemptedAt,
+        tagState, userEdited, fromDoc, lyricsAttemptedAt,
     )
 
     // ---- where the index belongs --------------------------------------------
@@ -216,6 +219,31 @@ class DocBuilderTest {
         val out = JSONObject(DocBuilder.trackDocument(null, row()))
         assertTrue(!out.has("lyrics_checked"))
         assertTrue(!out.has("start_at"))
+    }
+
+    // ---- who has vouched for the values --------------------------------------
+
+    @Test
+    fun `a hand-typed correction is never treated as a guess`() {
+        // The rule that got this wrong: a track someone had just carefully
+        // fixed was refused by the writer, because applyUserEdit does not touch
+        // tagState and the guard asked about tagState alone. An edit is the
+        // strongest claim there is.
+        assertFalse(row(tagState = TagState.PENDING, userEdited = true).isGuess)
+        assertFalse(row(tagState = TagState.FAILED, userEdited = true).isGuess)
+    }
+
+    @Test
+    fun `a document and the file's own tags both count as vouched for`() {
+        assertFalse(row(tagState = TagState.FAILED, fromDoc = true).isGuess)
+        assertFalse(row(tagState = TagState.OK).isGuess)
+    }
+
+    @Test
+    fun `nothing but the filename is a guess, and that is what gets refused`() {
+        assertTrue(row(tagState = TagState.PENDING).isGuess)
+        assertTrue(row(tagState = TagState.FAILED).isGuess)
+        assertTrue(row(tagState = TagState.PATH_INFERRED).isGuess)
     }
 
     // ---- previous artwork ---------------------------------------------------

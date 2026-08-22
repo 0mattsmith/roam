@@ -306,8 +306,8 @@ fun SettingsRoute(
                     headlineContent = { Text("Needs a look") },
                     supportingContent = {
                         Text(
-                            if (frozenCount == 1) "1 track is stuck on a guessed title"
-                            else "$frozenCount tracks are stuck on a guessed title"
+                            if (frozenCount == 1) "1 track has no usable tags"
+                            else "$frozenCount tracks have no usable tags"
                         )
                     },
                     leadingContent = {

@@ -34,11 +34,12 @@ class FrozenTracksViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
-     * Hands one track back to its file.
+     * Asks the tag pass to open one of these files again.
      *
-     * clearUserEdit does both halves: it drops the flag AND sets tagState back
-     * to PENDING, so the pass below actually has something to pick up. Dropping
-     * the flag alone would leave a FAILED row that nothing ever revisits.
+     * clearUserEdit rather than a bare tagState reset: these rows carry no user
+     * edit by definition, so the flag half is a no-op, and the PENDING half is
+     * what gives the pass something to pick up. A FAILED row is otherwise never
+     * revisited -- that is the point of FAILED.
      */
     fun release(id: Long) = viewModelScope.launch {
         tracks.clearUserEdit(id)

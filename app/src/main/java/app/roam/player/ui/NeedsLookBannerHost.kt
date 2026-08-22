@@ -30,11 +30,10 @@ class NeedsLookViewModel @Inject constructor(
 /**
  * Says so when Roam's own catalogue has gone wrong in a way it cannot fix alone.
  *
- * Right now that means one thing: tracks marked as hand-edited whose files were
- * never read, so they are frozen on a title worked out from the filename. Some
- * of those somebody typed; the rest the editor's step arrows marked by accident,
- * and the flag does not record which is which. So Roam counts them and offers
- * the page, rather than repairing over the top of real work.
+ * Right now that means one thing: tracks whose files Roam read and found no
+ * usable tags in, so their titles come from their filenames and no automatic
+ * pass will ever improve them. It counts those and offers the page, because the
+ * alternative to saying so is a library that is quietly wrong forever.
  *
  * Dismissal is per session, not remembered. This is a real problem with a real
  * fix, and a permanent "no" would leave a library quietly wrong with nothing
@@ -57,7 +56,7 @@ fun NeedsLookBannerHost(
 
     NoticeBanner(
         headline = if (count == 1) "1 track needs a look" else "$count tracks need a look",
-        detail = "Marked as edited by hand, on files Roam has never read",
+        detail = "No usable tags in the file, so the title is its filename",
         actionLabel = "Review",
         onAction = { dismissed = true; onOpen() },
         onDismiss = { dismissed = true },

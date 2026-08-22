@@ -183,19 +183,25 @@ interface TrackDao {
     @Query("UPDATE tracks SET userEdited = 0, tagState = 'PENDING' WHERE id = :id")
     suspend fun clearUserEdit(id: Long)
 
-    // ---- tracks stuck on a guess --------------------------------------------
+    // ---- tracks running on a guess ------------------------------------------
     //
-    // userEdited on a track whose tags were NEVER read successfully. The flag
-    // stops the tag pass writing metadata, so such a row is frozen on whatever
-    // it showed when the flag landed -- and if the tags had not been read by
-    // then, that is a title worked out from the filename, kept forever.
+    // A track whose title came from its FILENAME and where nothing better is
+    // coming: the file was read, it had no usable tags, nobody has corrected it
+    // and no album.json describes it. Roam cannot improve these on its own,
+    // which is the whole reason they are worth listing.
     //
-    // The step arrows used to write this flag on every press, so paging down an
-    // album to READ it froze every track in it. Roam cannot tell that from a
-    // real edit, because the flag does not record why it was set. So it does
-    // not guess: it counts them, says so, and lets the person look.
+    // An earlier version asked "userEdited AND tags not read", meaning to catch
+    // the tracks the step arrows froze by accident. It caught something else
+    // entirely: applyUserEdit does not touch tagState, so a track somebody had
+    // just deliberately corrected landed in the list the moment they pressed
+    // Save -- and the writer then refused to put it in album.json, which is
+    // exactly backwards. A hand-typed correction is the STRONGEST claim there
+    // is; it is a guess that needs guarding against, not an edit.
 
-    @Query("SELECT COUNT(*) FROM tracks WHERE userEdited = 1 AND tagState != 'OK' AND hidden = 0")
+    @Query("""
+        SELECT COUNT(*) FROM tracks
+        WHERE tagState = 'FAILED' AND userEdited = 0 AND fromDoc = 0 AND hidden = 0
+    """)
     fun frozenOnGuessCount(): Flow<Int>
 
     @Query("""
@@ -203,15 +209,21 @@ interface TrackDao {
         FROM tracks t
         JOIN artists ar ON ar.id = t.artistId
         JOIN albums  al ON al.id = t.albumId
-        WHERE t.userEdited = 1 AND t.tagState != 'OK' AND t.hidden = 0
+        WHERE t.tagState = 'FAILED' AND t.userEdited = 0 AND t.fromDoc = 0 AND t.hidden = 0
         ORDER BY ar.sortName, al.sortTitle, t.discNo, t.trackNo
     """)
     fun frozenOnGuess(): Flow<List<HiddenTrackRow>>
 
-    /** Hands every one of them back to its file at once. */
+    /**
+     * Asks the tag pass to try all of them again.
+     *
+     * Worth offering even though FAILED usually means the file genuinely has no
+     * tags: a read can also fail on a flaky connection, and there is otherwise
+     * no way back from that.
+     */
     @Query("""
-        UPDATE tracks SET userEdited = 0, tagState = 'PENDING'
-        WHERE userEdited = 1 AND tagState != 'OK' AND hidden = 0
+        UPDATE tracks SET tagState = 'PENDING'
+        WHERE tagState = 'FAILED' AND userEdited = 0 AND fromDoc = 0 AND hidden = 0
     """)
     suspend fun releaseFrozenOnGuess(): Int
 
@@ -247,7 +259,8 @@ interface TrackDao {
                t.year AS year, t.originalYear AS originalYear, t.genre AS genre,
                t.durationMs AS durationMs, t.startMs AS startMs, t.endMs AS endMs,
                t.fileName AS fileName, t.folderPath AS folderPath,
-               t.tagState AS tagState, t.lyricsAttemptedAt AS lyricsAttemptedAt
+               t.tagState AS tagState, t.userEdited AS userEdited,
+               t.fromDoc AS fromDoc, t.lyricsAttemptedAt AS lyricsAttemptedAt
         FROM tracks t
         JOIN artists ar  ON ar.id  = t.artistId
         JOIN albums  al  ON al.id  = t.albumId
@@ -684,8 +697,21 @@ data class DocTrackRow(
     val fileName: String?,
     val folderPath: String?,
     val tagState: TagState,
+    val userEdited: Boolean,
+    val fromDoc: Boolean,
     val lyricsAttemptedAt: Long?,
-)
+) {
+    /**
+     * Nobody has vouched for these values: the file's tags were never read,
+     * no document describes it and nobody has typed a correction, so the
+     * title came from the filename.
+     *
+     * The one thing worth refusing to write down. Recording a guess makes
+     * json outrank the tags, so the real ones are never consulted again --
+     * and nothing on screen would look wrong afterwards.
+     */
+    val isGuess: Boolean get() = !userEdited && !fromDoc && tagState != TagState.OK
+}
 
 data class ArtistPhotoRow(val id: Long, val name: String)
 

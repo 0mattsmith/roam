@@ -135,7 +135,23 @@ fun RoamNavHost(
                 )
             }
             composable(Routes.REMOVED)     { RemovedTracksRoute(onBack = back) }
-            composable(Routes.FROZEN)      { FrozenTracksRoute(onBack = back) }
+            composable(Routes.FROZEN) {
+                FrozenTracksRoute(
+                    onBack = back,
+                    // Straight into the editor for that track. Roam has
+                    // nothing left to offer these files; a person does.
+                    //
+                    // popUpTo, exactly as the downloader does it: the library is
+                    // the start destination and already on the stack, so
+                    // launchSingleTop would not match it and a second copy would
+                    // be pushed behind Settings.
+                    onOpenTrack = { id ->
+                        nav.navigate(Routes.libraryAt(id, edit = true)) {
+                            popUpTo(Routes.LIBRARY_AT) { inclusive = true }
+                        }
+                    },
+                )
+            }
         }
 
         // Above the update banner, because this one is about the person's own

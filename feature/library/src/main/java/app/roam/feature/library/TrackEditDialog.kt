@@ -377,6 +377,7 @@ fun TrackEditDialog(
                         checked = createDocs,
                         albumTrackCount = albumTrackCount,
                         tagState = tagState,
+                        source = source,
                         onChange = { createDocs = it },
                         onHelp = { showDocHelp = true },
                     )
@@ -480,6 +481,7 @@ private fun CreateDocsRow(
     checked: Boolean,
     albumTrackCount: Int,
     tagState: TagState,
+    source: MetadataSource,
     onChange: (Boolean) -> Unit,
     onHelp: () -> Unit,
 ) {
@@ -507,15 +509,17 @@ private fun CreateDocsRow(
             }
         }
 
-        // The one case worth guarding, and it belongs here rather than on the
-        // source line: writing the files makes json outrank the tags, so doing
-        // it before the tags have been read records the filename guess and
-        // stops the real ones ever being consulted. Nothing would look wrong
-        // afterwards, so nobody would go looking.
-        if (tagState != TagState.OK) {
+        // Informative, not a refusal. What must not be written down is a
+        // filename GUESS -- recording one makes json outrank the tags, so the
+        // real ones are never consulted again and nothing looks wrong
+        // afterwards. Values somebody typed are the opposite of a guess, and
+        // refusing THOSE left the tracks people had just carefully fixed as the
+        // only ones that could not be made durable.
+        if (tagState != TagState.OK && source != MetadataSource.USER) {
             Text(
-                "Tags for this track have not been read yet, so it will be left " +
-                    "out. Settings → Read tags fetches them.",
+                "Roam has not read this file's own tags, so what is above came " +
+                    "from its name. Check it before writing, or fetch them from " +
+                    "Settings → Read tags.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(start = 12.dp, top = 2.dp),

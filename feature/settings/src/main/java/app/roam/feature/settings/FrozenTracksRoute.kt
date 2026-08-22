@@ -1,5 +1,6 @@
 package app.roam.feature.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -20,17 +21,23 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
- * Tracks whose metadata is marked as hand-typed, on files Roam has never read.
+ * Tracks whose titles came from their filenames, with nothing better coming.
  *
- * A page rather than a silent repair. Roam cannot tell a title somebody typed
- * from one the step arrows froze by accident -- the flag records that an edit
- * happened, never why -- so guessing either way is wrong. It shows the list and
- * lets the person look, which is the only honest answer.
+ * Roam read these files and found no usable tags, nobody has corrected them and
+ * no album.json describes them -- so what is on screen is a guess, and no
+ * automatic pass will improve it. That is the whole reason they are worth
+ * listing: everything else in the library either has an answer or is about to
+ * get one.
+ *
+ * A page rather than a repair, because there is nothing to repair with. Tapping
+ * a track opens its editor, which is where a person can supply what the file
+ * could not.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FrozenTracksRoute(
     onBack: () -> Unit,
+    onOpenTrack: (Long) -> Unit,
     vm: FrozenTracksViewModel = hiltViewModel(),
 ) {
     val frozen by vm.frozen.collectAsStateWithLifecycle()
@@ -39,18 +46,19 @@ fun FrozenTracksRoute(
     if (confirmAll) {
         AlertDialog(
             onDismissRequest = { confirmAll = false },
-            title = { Text("Read the tags for all ${frozen.size}?") },
+            title = { Text("Try reading all ${frozen.size} again?") },
             text = {
                 Text(
-                    "Roam will read each file and use whatever its tags say. Any " +
-                        "title, artist or album you typed for these tracks will be " +
-                        "replaced. Files with no tags will keep the name they have now.\n\n" +
-                        "Nothing on Drive is touched."
+                    "Roam will open each file and look for tags a second time. Most " +
+                        "of these genuinely have none and will come back unchanged — " +
+                        "but a read can also fail on a poor connection, and this is " +
+                        "the way back from that.\n\n" +
+                        "Nothing you have typed is affected, and nothing on Drive is touched."
                 )
             },
             confirmButton = {
                 TextButton(onClick = { confirmAll = false; vm.releaseAll() }) {
-                    Text("Read the tags")
+                    Text("Try again")
                 }
             },
             dismissButton = { TextButton(onClick = { confirmAll = false }) { Text("Cancel") } },
@@ -89,8 +97,8 @@ fun FrozenTracksRoute(
                 Text("Nothing to look at", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Every track marked as edited by hand sits on a file whose tags " +
-                        "Roam has read, so nothing here is running on a guess.",
+                    "Every track in your library has its title from its own tags, " +
+                        "from an album.json, or from you.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -105,15 +113,13 @@ fun FrozenTracksRoute(
                     // Says what happened and what it costs, on the page someone
                     // lands on when they are wondering what Roam did to their
                     // library. No jargon: nothing here mentions a flag.
-                    "These tracks are marked as edited by hand, but Roam has never " +
-                        "managed to read their files' own tags — so what you see is " +
-                        "worked out from the filename, and nothing will replace it.\n\n" +
-                        "Some of these you probably did type yourself. The rest were " +
-                        "marked by the up and down arrows in the editor, which used to " +
-                        "save on every press even when nothing had changed. That is " +
-                        "fixed, but Roam cannot tell the two apart now.\n\n" +
-                        "\"Read the tags\" throws away what is stored for that track " +
-                        "and uses the file instead. The file on Drive is never touched.",
+                    "Roam opened these files and found no tags it could use, so " +
+                        "their titles are worked out from the filenames. Nothing you " +
+                        "have typed is involved, and no automatic pass will improve " +
+                        "them.\n\n" +
+                        "Tap one to edit it by hand. \"Try again\" re-reads the file, " +
+                        "which is worth a go if the first read failed on a poor " +
+                        "connection rather than because the tags are missing.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
@@ -123,6 +129,7 @@ fun FrozenTracksRoute(
             items(frozen.size, key = { frozen[it].id }) { index ->
                 val track = frozen[index]
                 ListItem(
+                    modifier = Modifier.clickable { onOpenTrack(track.id) },
                     headlineContent = {
                         Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     },
@@ -134,7 +141,7 @@ fun FrozenTracksRoute(
                         )
                     },
                     trailingContent = {
-                        TextButton(onClick = { vm.release(track.id) }) { Text("Read tags") }
+                        TextButton(onClick = { vm.release(track.id) }) { Text("Try again") }
                     },
                 )
             }

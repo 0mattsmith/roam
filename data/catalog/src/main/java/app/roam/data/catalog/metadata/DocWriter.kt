@@ -5,7 +5,6 @@ import app.roam.core.database.DocTrackRow
 import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
 import app.roam.core.model.SourceType
-import app.roam.core.model.TagState
 import app.roam.data.source.DocNames
 import app.roam.data.source.SourceProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -22,8 +21,8 @@ import javax.inject.Singleton
 data class DocWriteReport(
     val albumTitle: String,
     val filesWritten: Int,
-    /** Tracks skipped because their tags have never been read. */
-    val skippedUnread: Int,
+    /** Tracks skipped because nothing has vouched for their metadata. */
+    val skippedGuesses: Int,
 ) {
     val wroteNothing: Boolean get() = filesWritten == 0
 }
@@ -71,7 +70,7 @@ class DocWriter @Inject constructor(
     suspend fun writeAlbum(
         albumId: Long,
         onlyTrackId: Long? = null,
-        skipUnreadTags: Boolean = true,
+        skipGuesses: Boolean = true,
     ): Result<DocWriteReport> = runCatching {
         val provider = providers[SourceType.DRIVE]?.get() ?: error("No source connected")
         val root = settings.settings.first().driveFolderId ?: error("No music folder chosen")
@@ -81,7 +80,7 @@ class DocWriter @Inject constructor(
             albumId = albumId,
             cacheDir = ctx.cacheDir,
             onlyTrackId = onlyTrackId,
-            skipUnreadTags = skipUnreadTags,
+            skipGuesses = skipGuesses,
         ).getOrThrow()
     }
 
@@ -89,11 +88,15 @@ class DocWriter @Inject constructor(
      * @param onlyTrackId write just this track's own file, plus the index.
      *   Null writes a file for every track, which is what creating an index
      *   from scratch means.
-     * @param skipUnreadTags refuse tracks whose tags have never been read. The
-     *   one case worth guarding: until the tag pass reaches a track, what Roam
-     *   holds is inferred from the filename, and writing it down makes json
-     *   outrank the tags -- so the guess is recorded and the real ones are
-     *   never consulted again. Nothing would look wrong afterwards.
+     * @param skipGuesses refuse tracks nobody has vouched for -- see
+     *   [DocTrackRow.isGuess]. Writing a filename-derived title down makes json
+     *   outrank the tags, so the guess is recorded and the real ones are never
+     *   consulted again, and nothing would look wrong afterwards.
+     *
+     *   Deliberately narrower than "tags not read". A hand-typed correction on
+     *   a file whose tags are unread is not a guess, it is the strongest claim
+     *   there is -- and refusing THOSE meant the tracks somebody had just
+     *   carefully fixed were the only ones that could not be made durable.
      */
     suspend fun write(
         provider: SourceProvider,
@@ -101,7 +104,7 @@ class DocWriter @Inject constructor(
         albumId: Long,
         cacheDir: File,
         onlyTrackId: Long? = null,
-        skipUnreadTags: Boolean = true,
+        skipGuesses: Boolean = true,
     ): Result<DocWriteReport> = withContext(Dispatchers.IO) {
         runCatching {
             val rows = tracks.docTracksForAlbum(albumId)
@@ -118,7 +121,7 @@ class DocWriter @Inject constructor(
             val folderId = provider.resolveFolder(root, folder, create = false)
                 ?: error("Could not find ${folder.joinToString("/")} on the source")
 
-            val usable = rows.filterNot { skipUnreadTags && it.tagState != TagState.OK }
+            val usable = rows.filterNot { skipGuesses && it.isGuess }
             val toWrite = usable.filter { onlyTrackId == null || it.id == onlyTrackId }
 
             var written = 0
@@ -150,7 +153,7 @@ class DocWriter @Inject constructor(
             DocWriteReport(
                 albumTitle = rows.first().albumTitle,
                 filesWritten = written,
-                skippedUnread = rows.size - usable.size,
+                skippedGuesses = rows.size - usable.size,
             )
         }
     }
