@@ -1,240 +1,281 @@
-# `album.json` — the metadata contract
+# The metadata contract
 
-The album folder owns its own metadata. Roam reads this file, the downloader
-writes it, and an external editor may rewrite it freely. It is the reason a
-reinstall no longer costs a library's worth of corrections: the edits live
-beside the music, not in a database on one phone.
+Three files describe a library: one per artist, one per album, one per track.
+Roam reads them, the downloader writes them, and an external editor may rewrite
+any of them. This document is the agreement between all three.
 
-This document is the agreement between all three. Anything not written here is
-not guaranteed.
-
----
-
-## Where it lives
+It exists because metadata used to live only in Roam's database, where a
+reinstall destroyed it. Now the corrections live beside the music and the
+database is a cache that can be thrown away.
 
 ```
-Music/
-└── Royal Blood/
+MUSIC/
+└── Oasis/
     ├── artist.json
     ├── artist.jpg
-    ├── banner.jpg
-    ├── logo.png
-    └── Typhoons (2021)/
+    ├── logo.jpg
+    └── Definitely Maybe (Deluxe Version) (1994)/
         ├── album.json
         ├── cover.jpg
-        ├── 01 - Trouble's Coming.mp3
-        └── ...
+        └── Disc 1 - Remastered Album/
+            ├── 01 Rock 'n' Roll Star.mp3
+            ├── 01 Rock 'n' Roll Star.json
+            └── 01 Rock 'n' Roll Star.lrc
 ```
 
-Album folders are `ALBUM (YEAR)` inside `ARTIST`. Roam checks for the folder
-before creating it, and only creates one once the metadata is settled — a
-folder is never named from a guess.
-
-Multi-disc sets put tracks in `CD1/`, `CD2/` subfolders. The `file` field
-carries that prefix; nothing else changes.
+Album folders are `ALBUM (YEAR)` inside `ARTIST`. Disc subfolders may be named
+however the release makes sense; nothing depends on their names.
 
 ---
 
-## Precedence — the rule everything else follows
+## Which file is read when
 
-1. **`album.json`** — what you decided
-2. **embedded tags** in the audio file
-3. **the folder path** — artist and album inferred from the directory names
+**`album.json` is the index, and the only file read to browse.** It carries
+everything a list needs, so opening an album costs ONE request no matter how
+many tracks it holds.
 
-This is a deliberate inversion of the old behaviour, which was "tags win, the
-path fills the gaps". The json now outranks both, because it is the only one of
-the three that represents a decision rather than an accident of how a file was
-encoded. A file whose ID3 says `Track 03` and whose json says
-`Don't Look Back in Anger` is titled from the json, every time.
+**`<track>.json` is always written, and read on demand.** Every audio file has
+one, so there is never a question of where a track's information lives. Roam
+fetches it when it needs something the index does not carry, or when the index
+is missing.
 
-Roam does not need the file's tags to be correct. It never has to rewrite them
-either, which is what makes an edit cheap: changing a title is a few hundred
-bytes of json, not a re-upload of a 40 MB album.
+This split is the whole performance story. Roam reads from Drive over HTTP,
+where the per-request overhead dominates: one file for a 44-track deluxe
+edition is a fraction of a second, forty-four is most of a minute. Writing them
+all costs nothing at browse time; reading them all would cost everything.
 
----
+**Precedence, highest first:**
 
-## Schema
+1. `<track>.json` — for fields only it carries, and when the index is absent
+2. `album.json` — for everything it carries; this is what browsing uses
+3. embedded tags in the audio file
+4. the folder path
 
-### Top level
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `schema` | integer | yes | Currently `1`. Lets a reader refuse a file it does not understand rather than misreading it. |
-| `album_artist` | string | yes | The artist the ALBUM belongs to. On a compilation this is what holds it together — see below. |
-| `album_title` | string | yes | Without the year. The year lives in its own field and in the folder name. |
-| `year` | integer | no | Year of THIS release. |
-| `original_year` | integer | no | First release of the material. See "Two years". |
-| `genre` | string | no | Free text. |
-| `is_compilation` | boolean | no | Defaults `false`. |
-| `total_discs` | integer | no | Derived from `tracks` when absent. |
-| `total_tracks` | integer | no | Derived from `tracks` when absent. |
-| `cover_art` | string | no | Filename relative to the album folder. Defaults to `cover.jpg`. |
-| `tracks` | array | yes | May be empty; an album with no entries is legal and simply has no overrides. |
-
-### Each track
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `file` | string | **yes** | Path relative to the album folder, forward slashes. THE identity of the entry. |
-| `title` | string | yes | |
-| `artist` | string | no | Falls back to `album_artist`. Set it per track on a compilation. |
-| `disc` | integer | no | Defaults `1`. |
-| `track` | integer | no | Position within the disc. |
-| `year` | integer | no | Overrides the album's year for this track. Rare, but a compilation wants it. |
-| `genre` | string | no | Overrides the album's genre. |
-| `duration` | string | no | `mm:ss` or `hh:mm:ss`. INFORMATIONAL ONLY — see the warning below. |
-| `start_at` | string | no | Trim point. **Omit unless deliberately trimming.** |
-| `end_at` | string | no | Trim point. **Omit unless deliberately trimming.** |
-
----
-
-## `start_at` / `end_at` are trim points, not the track length
-
-**This is the easiest way to break a whole library, so it gets its own
-section.**
-
-`end_at` tells Roam to STOP THERE. It is for a hidden track, a locked groove,
-or a minute of applause you never want to hear. It is not a description of how
-long the file is.
-
-Writing `end_at` equal to the track's duration means every track in your
-library stops fractionally early — a stored duration is rounded, and the last
-moment of the song gets clipped. Roam's own gotchas list already carries this
-one: *"The last second is clipped off every track — `endMs` fell back to the
-stored duration."*
-
-So:
-
-```jsonc
-// WRONG - clips the end of every track
-{ "file": "03 - Wonderwall.mp3", "title": "Wonderwall", "end_at": "04:18" }
-
-// RIGHT - no trim, plays the whole file
-{ "file": "03 - Wonderwall.mp3", "title": "Wonderwall" }
-
-// RIGHT - a real trim, skipping two minutes of silence before a hidden track
-{ "file": "12 - Champagne Supernova.mp3", "title": "Champagne Supernova",
-  "start_at": "00:00", "end_at": "07:27" }
-```
-
-If you want the length recorded for your own reference, use `duration`. Roam
-reads it for display only and never turns it into a clip.
-
----
-
-## Two years
-
-`year` is the year of the release the file came from. `original_year` is when
-the material first appeared.
-
-They differ more often than you would think, and always in the cases that
-matter to a decade playlist:
-
-- a 2014 remaster of a 1995 album — `year: 2014`, `original_year: 1995`
-- *100 Hits of the 80s*, released 2005 — the album is `year: 2005`, but each
-  track carries its own `original_year`
-
-Roam's decade playlists read `original_year` and fall back to `year`. Without
-that distinction an 80s playlist fills up with whichever compilation the tracks
-were ripped from, which is precisely the wrong answer.
-
-Both are optional. Set `original_year` when you know it and it differs.
-
----
-
-## Matching entries to files
-
-Entries are matched to audio files by **`file`**, compared case-insensitively
-after normalising separators. Not by track number, and not by title — both of
-those are things an edit is likely to be changing.
-
-- A `file` with no matching audio file on disk is **ignored**, not an error.
-  Roam will not invent a track that is not there.
-- An audio file with no entry falls through to its embedded tags, then to the
-  path. It still appears in the library.
-- Neither case is a failure. A partial `album.json` is legitimate: correcting
-  three titles on a fourteen-track album needs three entries.
-
----
-
-## Rewriting the file
-
-Anything writing `album.json` must **preserve fields it does not recognise**,
-at both album and track level. You and Roam will not always be on the same
-version, and a writer that drops what it did not understand would silently
-undo the other one's work.
-
-Roam writes the file with two-space indent and a trailing newline, keys in the
-order given in this document, so that a diff between two saves shows what
-actually changed.
+Where `album.json` and a track file disagree about a field they BOTH carry,
+the index wins for browsing, because that is the copy Roam has in hand.
+Anything writing these files must write both together so the question does not
+arise — Roam always does.
 
 ---
 
 ## `artist.json`
 
-Optional, and a manifest rather than a source of truth. Its purpose is to point
-at images that may not follow the usual names.
+```json
+{
+  "schema": 1,
+  "artist_name": "Oasis",
+  "active_from": 1991,
+  "active_to": null,
+  "debut_album": "Definitely Maybe",
+  "debut_album_year": 1994,
+  "total_studio_albums": 7,
+  "artist_image": "artist.jpg",
+  "artist_logo": "logo.jpg",
+  "artist_banner": "banner.jpg",
+  "sort_as": "Oasis"
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `schema` | integer | `1`. Lets a reader refuse a file it does not understand. |
+| `artist_name` | string | |
+| `active_from` / `active_to` | integer, null | `null` for still active. |
+| `debut_album` / `debut_album_year` | string, integer | |
+| `total_studio_albums` | integer | |
+| `artist_image` | string | Square photo. |
+| `artist_logo` | string | Transparent PNG usually. |
+| `artist_banner` | string | Wide background. |
+| `sort_as` | string | Files the artist under another name — The Beatles under B. |
+
+Only `sort_as` and the three image fields change what Roam does today. The
+biographical fields are read and stored, but there is nowhere to show them yet;
+they are recorded now so the data is there when there is.
+
+Where a field or the whole file is absent, Roam falls back to the filename
+conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
+`fanart.jpg`, `logo.png`.
+
+---
+
+## `album.json`
 
 ```json
 {
   "schema": 1,
-  "name": "Royal Blood",
-  "sort_as": "Royal Blood",
-  "image": "artist.jpg",
-  "banner": "banner.jpg",
-  "logo": "logo.png"
+  "album_artist": "Oasis",
+  "album_title": "Definitely Maybe (Deluxe Version)",
+  "year": 1994,
+  "original_year": 1994,
+  "genre": "Britpop",
+  "is_compilation": false,
+  "total_discs": 3,
+  "total_tracks": 44,
+  "cover_art": "cover.jpg",
+  "tracks": [
+    {
+      "disc": 1,
+      "track": 1,
+      "title": "Rock 'n' Roll Star",
+      "artist": "Oasis",
+      "file": "Disc 1 - Remastered Album/01 Rock 'n' Roll Star.mp3",
+      "track_meta": "Disc 1 - Remastered Album/01 Rock 'n' Roll Star.json",
+      "lyrics": "Disc 1 - Remastered Album/01 Rock 'n' Roll Star.lrc"
+    }
+  ]
 }
 ```
 
-All fields optional. Where it is absent, Roam falls back to the filename
-conventions it already uses (`artist.jpg`, `folder.jpg`, `banner.jpg`,
-`fanart.jpg`, `logo.png`), so an artist folder without one behaves exactly as
-it does today.
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `schema` | integer | yes | `1` |
+| `album_artist` | string | yes | On a compilation this is what holds the album together. |
+| `album_title` | string | yes | Without the year; that lives in its own field and the folder name. |
+| `year` | integer | no | Year of THIS release. |
+| `original_year` | integer | no | First release of the material. See "Two years". |
+| `genre` | string | no | |
+| `is_compilation` | boolean | no | Defaults `false`. Decides which name the folder takes — see "Uploading". |
+| `total_discs` / `total_tracks` | integer | no | Derived from `tracks` when absent. |
+| `cover_art` | string | no | Relative to the album folder. Defaults `cover.jpg`. |
+| `tracks` | array | yes | May be empty. |
 
-`sort_as` files the artist under a different name for ordering — the mechanism
-that puts The Beatles under B.
+### Each entry
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file` | string | **yes** | Relative to the album folder, forward slashes. THE identity of the entry. |
+| `track_meta` | string | yes | Path to that track's own json. |
+| `lyrics` | string, null | no | Path to the `.lrc` or `.txt`, `null` when there is none. |
+| `title` | string | yes | |
+| `artist` | string | no | Falls back to `album_artist`. Set per track on a compilation. |
+| `disc` / `track` | integer | no | `disc` defaults to 1. |
+
+`lyrics` saves a lookup, but is not the only way words are found: a `.lrc`
+sharing the audio file's basename is still picked up when the field is absent
+or stale. Files get dropped in without the index being updated.
+
+---
+
+## `<track>.json`
+
+Named for the audio file, beside it. `01 Rock 'n' Roll Star.mp3` is accompanied
+by `01 Rock 'n' Roll Star.json`.
+
+```json
+{
+  "schema": 1,
+  "title": "Rock 'n' Roll Star",
+  "track_number": 1,
+  "disc_number": 1,
+  "artist": "Oasis",
+  "album": "Definitely Maybe (Deluxe Version)",
+  "album_artist": "Oasis",
+  "year": 1994,
+  "original_year": 1994,
+  "genre": "Britpop",
+  "composer": "Noel Gallagher",
+  "duration_seconds": 323,
+  "audio_file": "01 Rock 'n' Roll Star.mp3",
+  "lyrics_file": "01 Rock 'n' Roll Star.lrc"
+}
+```
+
+Paths here are relative to the **track's own folder**, not the album folder —
+the file describes its neighbours.
+
+Repeating `album` and `album_artist` is deliberate: it means a file moved
+somewhere else still knows what it is, which is the point of having the file at
+all. It also means those fields can drift from `album.json`, which is why the
+index wins for browsing and why anything writing one writes both.
+
+`duration_seconds` is informational. Roam works in milliseconds internally and
+measures playback from the file itself.
+
+### Trim points
+
+`start_at` and `end_at` are **optional and normally absent**. They tell Roam to
+begin or stop somewhere other than the ends of the file — a locked groove, a
+minute of applause, silence before a hidden track.
+
+They are NOT a description of how long the track is. Writing `end_at` equal to
+the duration clips the last moment off every song, because a stored duration is
+rounded. Roam's gotchas list already carries that one. Use `duration_seconds`
+to record length; leave the trim points out unless you mean them.
+
+```jsonc
+// WRONG - clips the end
+{ "title": "Wonderwall", "duration_seconds": 258, "end_at": "04:18" }
+
+// RIGHT - no trim
+{ "title": "Wonderwall", "duration_seconds": 258 }
+
+// RIGHT - a real trim
+{ "title": "Champagne Supernova", "start_at": "00:00", "end_at": "07:27" }
+```
+
+---
+
+## Two years
+
+`year` is the year of this release; `original_year` is when the material first
+appeared. They differ in exactly the cases a decade playlist cares about:
+
+- a 2014 remaster of a 1995 album — `year: 2014`, `original_year: 1995`
+- *100 Hits of the 80s* from 2005 — the album is 2005, each track carries its own
+
+Decade playlists read `original_year` and fall back to `year`. Without it an
+80s playlist fills with whichever compilation the tracks came from.
+
+---
+
+## Matching entries to files
+
+By **`file`** (or `audio_file`), compared case-insensitively after normalising
+separators. Never by track number or title — those are what an edit changes.
+
+- An entry with no matching audio file is ignored, not an error.
+- An audio file with no entry falls through to its tags, then the path. It
+  still appears in the library.
+- Neither is a failure. A partial `album.json` is legitimate.
+
+---
+
+## Rewriting
+
+Anything writing these files must **preserve fields it does not recognise**, at
+every level. You and Roam will not always be on the same version, and a writer
+that drops what it did not understand would silently undo the other's work.
+
+Roam writes two-space indent, a trailing newline, keys in the order given here,
+so a diff between saves shows what actually changed.
+
+---
+
+## Uploading
+
+Nothing reaches Drive until its metadata is settled. The folder names come FROM
+the metadata, so writing the file first and correcting it later leaves a wrongly
+named folder behind that only a human can tidy.
+
+Order:
+
+1. Resolve the metadata — catalogue lookup, or what the review sheet decided
+2. Work out the folder: `ARTIST > ALBUM (YEAR)`
+   - **ARTIST** is the track's own artist, **unless `is_compilation`**, in which
+     case it is `album_artist`. Otherwise a compilation scatters across every
+     guest performer.
+3. Check whether those folders exist; create only what is missing
+4. Write the audio file, `<track>.json`, and `album.json` together
+5. Only then let sync see it
 
 ---
 
 ## What does NOT go in these files
 
-**User state.** Loved flags, play counts, skip counts, last played, and hidden
-tracks are yours rather than the album's, and they change constantly while the
-metadata sits still. Mixing them in would mean rewriting `album.json` every
-time a song finishes.
+**User state** — loved, play counts, skips, last played, hidden. Those are
+yours rather than the album's and change constantly while the metadata sits
+still; mixing them in would mean rewriting `album.json` every time a song ends.
+They belong in `.roam/state.json`, with its own lifecycle.
 
-They belong in `.roam/state.json`, which is a separate problem with a separate
-lifecycle — see the phase 6 notes on per-field timestamps and summed play
-counts.
-
-**Lyrics.** Already handled: a `.lrc` or `.txt` beside the audio file, which is
-what every other player reads too.
-
----
-
-## Worked example
-
-```json
-{
-  "schema": 1,
-  "album_artist": "Royal Blood",
-  "album_title": "Typhoons",
-  "year": 2021,
-  "genre": "Alternative Rock",
-  "is_compilation": false,
-  "total_discs": 1,
-  "total_tracks": 3,
-  "cover_art": "cover.jpg",
-  "tracks": [
-    { "file": "01 - Trouble's Coming.mp3", "title": "Trouble's Coming",
-      "disc": 1, "track": 1, "duration": "03:56" },
-    { "file": "02 - Oblivion.mp3", "title": "Oblivion",
-      "disc": 1, "track": 2, "duration": "03:20" },
-    { "file": "03 - Typhoons.mp3", "title": "Typhoons",
-      "disc": 1, "track": 3, "duration": "03:53" }
-  ]
-}
-```
-
-Note what is absent: no `start_at`, no `end_at`, no `artist` on the tracks. All
-three are inherited or unset, and that is the normal case.
+**Lyrics themselves** — a `.lrc` or `.txt` beside the audio file, which is what
+every other player reads. These files only point at them.
