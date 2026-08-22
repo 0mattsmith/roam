@@ -234,6 +234,40 @@ class LibraryDocsTest {
         assertEquals((3600 + 120 + 3) * 1000L, doc.endMs)
     }
 
+    // ---- knowing there are no words ------------------------------------------
+
+    private fun trackWith(lyrics: String, checked: String) = LibraryDocs.track(
+        """{ "schema": 1, "title": "T", "lyrics_file": $lyrics, "lyrics_checked": $checked }"""
+    )!!
+
+    @Test
+    fun `a path means there are words`() {
+        val doc = trackWith(""""01 T.lrc"""", "null")
+        assertEquals("01 T.lrc", doc.lyricsFile)
+        assertTrue(doc.lyricsResolved)
+        assertFalse(doc.knownToHaveNoLyrics)
+    }
+
+    @Test
+    fun `null with no date means nobody has looked`() {
+        val doc = LibraryDocs.track("""{ "schema": 1, "title": "T" }""")!!
+        assertNull(doc.lyricsFile)
+        assertNull(doc.lyricsChecked)
+        assertFalse(doc.lyricsResolved)
+        // The distinction that matters: not "no lyrics", but "unknown".
+        assertFalse(doc.knownToHaveNoLyrics)
+    }
+
+    @Test
+    fun `null with a date means looked and found nothing`() {
+        val doc = trackWith("null", """"2026-08-22"""")
+        assertNull(doc.lyricsFile)
+        assertEquals("2026-08-22", doc.lyricsChecked)
+        assertTrue(doc.lyricsResolved)
+        // This is what stops an instrumental being looked up on every install.
+        assertTrue(doc.knownToHaveNoLyrics)
+    }
+
     // ---- schema -------------------------------------------------------------
 
     @Test

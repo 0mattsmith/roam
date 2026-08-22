@@ -168,6 +168,9 @@ conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
 sharing the audio file's basename is still picked up when the field is absent
 or stale. Files get dropped in without the index being updated.
 
+`null` here means no lyrics are known — NOT that nobody has looked. That
+distinction lives in the track file, as `lyrics_checked`.
+
 ---
 
 ## `<track>.json`
@@ -190,7 +193,8 @@ by `01 Rock 'n' Roll Star.json`.
   "composer": "Noel Gallagher",
   "duration_seconds": 323,
   "audio_file": "01 Rock 'n' Roll Star.mp3",
-  "lyrics_file": "01 Rock 'n' Roll Star.lrc"
+  "lyrics_file": "01 Rock 'n' Roll Star.lrc",
+  "lyrics_checked": "2026-08-22"
 }
 ```
 
@@ -204,6 +208,33 @@ index wins for browsing and why anything writing one writes both.
 
 `duration_seconds` is informational. Roam works in milliseconds internally and
 measures playback from the file itself.
+
+### Knowing there are no words
+
+`lyrics_file` is `null` when there are none. `lyrics_checked` is the date
+somebody last looked.
+
+Those two together say something neither says alone:
+
+| `lyrics_file` | `lyrics_checked` | Means |
+| --- | --- | --- |
+| a path | any | Here are the words. |
+| `null` | absent | Nobody has looked yet. Look. |
+| `null` | a date | Looked, found nothing. Do not keep asking. |
+
+This is the reason not to create an empty `.lrc` as a placeholder. An empty
+file cannot tell an instrumental apart from a failed lookup, it has to be
+downloaded before you learn it is empty, and for Poweramp, Navidrome and Kodi
+the file existing is precisely the signal that lyrics DO exist.
+
+Roam already avoids re-asking, but it remembers in its database — which is the
+thing a reinstall throws away, so every instrumental gets looked up again on a
+fresh install and again on the desktop. Recording it here instead means the
+answer travels with the music.
+
+A date rather than a boolean, so a sweep years later can decide to re-ask about
+tracks nobody has checked since. Any `YYYY-MM-DD` will do; the precision is not
+load-bearing.
 
 ### Trim points
 

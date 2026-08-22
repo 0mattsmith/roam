@@ -90,10 +90,26 @@ data class TrackDoc(
     val durationMs: Long?,
     val audioFile: String?,
     val lyricsFile: String?,
+    /**
+     * When somebody last looked for words, `YYYY-MM-DD`.
+     *
+     * Only meaningful alongside [lyricsFile]. A null file with no date means
+     * nobody has looked; a null file WITH a date means somebody looked and
+     * there are none, so nothing should keep asking. Roam knows that today
+     * only in its own database, which a reinstall discards -- recorded here it
+     * travels with the music.
+     */
+    val lyricsChecked: String?,
     /** Absent unless deliberately trimmed. Never derived from a duration. */
     val startMs: Long?,
     val endMs: Long?,
-)
+) {
+    /** True when a lookup has happened, whatever it found. */
+    val lyricsResolved: Boolean get() = lyricsFile != null || lyricsChecked != null
+
+    /** True when somebody looked and there was nothing to find. */
+    val knownToHaveNoLyrics: Boolean get() = lyricsFile == null && lyricsChecked != null
+}
 
 object LibraryDocs {
 
@@ -148,6 +164,7 @@ object LibraryDocs {
             durationMs = o.intOrNull("duration_seconds")?.let { it * 1000L },
             audioFile = o.stringOrNull("audio_file"),
             lyricsFile = o.stringOrNull("lyrics_file"),
+            lyricsChecked = o.stringOrNull("lyrics_checked"),
             startMs = parseClock(o.stringOrNull("start_at")),
             endMs = parseClock(o.stringOrNull("end_at")),
         )
