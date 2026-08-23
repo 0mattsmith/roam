@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "title": "Supersonic (Live At Glasgow Tramshed)",
+  "track_number": 1,
+  "disc_number": 3,
+  "artist": "Oasis",
+  "album": "Definitely Maybe (Chasing the Sun Edition)",
+  "album_artist": "Oasis",
+  "year": 2014,
+  "original_year": 1994,
+  "genres": [
+    "Britpop",
+    "Alternative Rock",
+    "Rock"
+  ],
+  "composer": "Noel Gallagher",
+  "duration_seconds": 286,
+  "audio_file": "01 Supersonic (Live At Glasgow Tramshed).mp3",
+  "lyrics_file": null,
+  "lyrics_checked": "2026-08-23"
+}

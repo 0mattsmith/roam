@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "title": "Rock 'n' Roll Star",
+  "track_number": 1,
+  "disc_number": 1,
+  "artist": "Oasis",
+  "album": "Definitely Maybe (Chasing the Sun Edition)",
+  "album_artist": "Oasis",
+  "year": 2014,
+  "original_year": 1994,
+  "genres": [
+    "Britpop",
+    "Alternative Rock",
+    "Rock"
+  ],
+  "composer": "Noel Gallagher",
+  "duration_seconds": 323,
+  "audio_file": "01 Rock 'n' Roll Star.mp3",
+  "lyrics_file": null,
+  "lyrics_checked": "2026-08-23"
+}
