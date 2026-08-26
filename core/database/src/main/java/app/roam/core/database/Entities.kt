@@ -69,6 +69,14 @@ data class AlbumEntity(
     @PrimaryKey val id: Long,
     val title: String,
     val sortTitle: String,
+    /**
+     * TSOA / `soal` / ALBUMSORT. "How this album files", when it differs.
+     *
+     * Same shape as [ArtistEntity.sortAs]: this is the override, [sortTitle] is
+     * what every ORDER BY actually reads. One field to set, and no query has to
+     * know the feature exists.
+     */
+    val sortAs: String? = null,
     /** ALBUM artist, not track artist. Compilations stay together. */
     val artistId: Long,
     /**
@@ -116,6 +124,21 @@ data class TrackEntity(
      */
     val originalYear: Int? = null,
     val genre: String? = null,
+    /** TCOM / `©wrt` / COMPOSER. Who wrote it, as opposed to who performed it. */
+    val composer: String? = null,
+    /**
+     * TIT1 / `©grp` / GROUPING. The work a track belongs to.
+     *
+     * Classical uses it for the symphony a movement is part of; plenty of
+     * people use it as a free-form second genre. Roam does not interpret it --
+     * it carries it, because dropping a field on a re-save is how an editor
+     * loses somebody's work.
+     */
+    val grouping: String? = null,
+    /** TSOT / `sonm` / TITLESORT. "Ballad of..." filing under B. */
+    val titleSort: String? = null,
+    /** TSOC / `soco` / COMPOSERSORT. "Gallagher, Noel". */
+    val composerSort: String? = null,
     val durationMs: Long = 0,
     val bitrate: Int? = null,
     val sampleRate: Int? = null,

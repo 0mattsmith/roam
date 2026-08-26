@@ -16,6 +16,12 @@ import org.junit.Test
  */
 class DocBuilderTest {
 
+    /**
+     * Named arguments throughout, deliberately. This projection has grown three
+     * times and positional construction breaks silently when two adjacent
+     * fields share a type -- which, with five nullable Strings in a row, is now
+     * most of it.
+     */
     private fun row(
         id: Long = 1,
         title: String = "Rock 'n' Roll Star",
@@ -24,11 +30,19 @@ class DocBuilderTest {
         album: String = "Definitely Maybe",
         compilation: Boolean = false,
         discTotal: Int = 1,
+        albumSort: String? = null,
+        artistSort: String? = null,
+        albumArtistSort: String? = null,
         trackNo: Int? = 1,
+        trackTotal: Int? = null,
         discNo: Int? = 1,
         year: Int? = 1994,
         originalYear: Int? = null,
         genre: String? = "Britpop",
+        composer: String? = null,
+        grouping: String? = null,
+        titleSort: String? = null,
+        composerSort: String? = null,
         durationMs: Long = 323_000,
         startMs: Long? = null,
         endMs: Long? = null,
@@ -39,9 +53,35 @@ class DocBuilderTest {
         fromDoc: Boolean = false,
         lyricsAttemptedAt: Long? = null,
     ) = DocTrackRow(
-        id, title, artist, albumArtist, album, compilation, discTotal, trackNo, discNo,
-        year, originalYear, genre, durationMs, startMs, endMs, fileName, folderPath,
-        tagState, userEdited, fromDoc, lyricsAttemptedAt,
+        id = id,
+        title = title,
+        artistName = artist,
+        albumArtistName = albumArtist,
+        albumTitle = album,
+        compilation = compilation,
+        discTotal = discTotal,
+        albumSort = albumSort,
+        artistSort = artistSort,
+        albumArtistSort = albumArtistSort,
+        trackNo = trackNo,
+        trackTotal = trackTotal,
+        discNo = discNo,
+        year = year,
+        originalYear = originalYear,
+        genre = genre,
+        composer = composer,
+        grouping = grouping,
+        titleSort = titleSort,
+        composerSort = composerSort,
+        durationMs = durationMs,
+        startMs = startMs,
+        endMs = endMs,
+        fileName = fileName,
+        folderPath = folderPath,
+        tagState = tagState,
+        userEdited = userEdited,
+        fromDoc = fromDoc,
+        lyricsAttemptedAt = lyricsAttemptedAt,
     )
 
     // ---- where the index belongs --------------------------------------------
@@ -219,6 +259,64 @@ class DocBuilderTest {
         val out = JSONObject(DocBuilder.trackDocument(null, row()))
         assertTrue(!out.has("lyrics_checked"))
         assertTrue(!out.has("start_at"))
+    }
+
+    // ---- the fields the tag formats have -------------------------------------
+
+    @Test
+    fun `a track document carries every field a tag format has a name for`() {
+        val out = JSONObject(
+            DocBuilder.trackDocument(
+                null,
+                row(
+                    composer = "Noel Gallagher",
+                    composerSort = "Gallagher, Noel",
+                    grouping = "Britpop Era",
+                    titleSort = "Rock and Roll Star",
+                    artistSort = "Oasis",
+                    albumSort = "Definitely Maybe",
+                    albumArtistSort = "Oasis",
+                    trackTotal = 11,
+                    discTotal = 3,
+                ),
+            )
+        )
+        assertEquals("Noel Gallagher", out.getString("composer"))
+        assertEquals("Gallagher, Noel", out.getString("composer_sort"))
+        assertEquals("Britpop Era", out.getString("grouping"))
+        assertEquals("Rock and Roll Star", out.getString("title_sort"))
+        assertEquals("Oasis", out.getString("artist_sort"))
+        assertEquals("Definitely Maybe", out.getString("album_sort"))
+        assertEquals("Oasis", out.getString("album_artist_sort"))
+        assertEquals(11, out.getInt("total_tracks"))
+        assertEquals(3, out.getInt("total_discs"))
+        assertEquals(false, out.getBoolean("is_compilation"))
+
+        val back = LibraryDocs.track(out.toString())!!
+        assertEquals("Gallagher, Noel", back.composerSort)
+        assertEquals("Britpop Era", back.grouping)
+        assertEquals(11, back.totalTracks)
+    }
+
+    @Test
+    fun `an album document states how it files, when it differs`() {
+        val plain = LibraryDocs.album(DocBuilder.albumDocument(null, listOf(row())))!!
+        assertNull(plain.albumSort)
+
+        val filed = LibraryDocs.album(
+            DocBuilder.albumDocument(null, listOf(row(albumSort = "Masterplan, The")))
+        )!!
+        assertEquals("Masterplan, The", filed.albumSort)
+    }
+
+    @Test
+    fun `a field Roam has no value for falls back to what the document said`() {
+        // Composer was preserved-only before the column existed. A hand-written
+        // document that has one must not lose it just because Roam's row is
+        // still blank.
+        val existing = JSONObject("""{ "schema": 1, "composer": "Noel Gallagher" }""")
+        val out = JSONObject(DocBuilder.trackDocument(existing, row(composer = null)))
+        assertEquals("Noel Gallagher", out.getString("composer"))
     }
 
     // ---- who has vouched for the values --------------------------------------

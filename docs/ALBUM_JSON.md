@@ -127,6 +127,8 @@ conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
   "is_compilation": false,
   "total_discs": 3,
   "total_tracks": 44,
+  "album_sort": null,
+  "album_artist_sort": "Oasis",
   "cover_art": "cover.jpg",
   "previous_artwork": ["cover1.jpg", "cover2.jpg"],
   "tracks": [
@@ -153,6 +155,7 @@ conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
 | `genres` | array of strings | no | See "Genres". A singular `genre` string is still read. |
 | `is_compilation` | boolean | no | Defaults `false`. Decides which name the folder takes — see "Uploading". |
 | `total_discs` / `total_tracks` | integer | no | Derived from `tracks` when absent. |
+| `album_sort` / `album_artist_sort` | string | no | How the album files. See "How this maps onto tags". |
 | `cover_art` | string | no | Relative to the album folder. Defaults `cover.jpg`. |
 | `previous_artwork` | array | no | Covers this album has had before. See "Previous artwork". |
 | `tracks` | array | yes | May be empty. |
@@ -195,6 +198,15 @@ by `01 Rock 'n' Roll Star.json`.
   "original_year": 1994,
   "genres": ["Britpop", "Alternative Rock"],
   "composer": "Noel Gallagher",
+  "grouping": null,
+  "is_compilation": false,
+  "total_tracks": 11,
+  "total_discs": 3,
+  "title_sort": null,
+  "artist_sort": "Oasis",
+  "album_sort": null,
+  "album_artist_sort": "Oasis",
+  "composer_sort": "Gallagher, Noel",
   "duration_seconds": 323,
   "audio_file": "01 Rock 'n' Roll Star.mp3",
   "lyrics_file": "01 Rock 'n' Roll Star.lrc",
@@ -288,6 +300,65 @@ so suggestions are instant and work offline. Backspace at the start of the
 input removes the last chip, which is the behaviour every email To: field
 already taught everybody; each chip also has a small remove control for touch.
 No edit mode, because a mode is a thing to be in and get out of.
+
+---
+
+## How this maps onto tags
+
+Every key below one line is also a real tag in the audio file. That is the
+point: a correction written here can be rendered into the file, and a player
+that has never heard of Roam still sees it.
+
+| Field | Sidecar key | MP3 (ID3v2) | M4A (MP4 atom) | FLAC / Ogg (Vorbis) |
+| --- | --- | --- | --- | --- |
+| Title | `title` | TIT2 | `©nam` | TITLE |
+| Artist | `artist` | TPE1 | `©ART` | ARTIST |
+| Album | `album` | TALB | `©alb` | ALBUM |
+| Album artist | `album_artist` | TPE2 | `aART` | ALBUMARTIST |
+| Track number | `track_number` | TRCK (part 1) | `trkn` (part 1) | TRACKNUMBER |
+| Total tracks | `total_tracks` | TRCK (part 2) | `trkn` (part 2) | TRACKTOTAL |
+| Disc number | `disc_number` | TPOS (part 1) | `disk` (part 1) | DISCNUMBER |
+| Total discs | `total_discs` | TPOS (part 2) | `disk` (part 2) | DISCTOTAL |
+| Year | `year` | TDRC / TYER | `©day` | DATE / YEAR |
+| Original year | `original_year` | TDOR / TORY | `----:com.apple.iTunes:ORIGINAL YEAR` | ORIGINALYEAR / ORIGINALDATE |
+| Genres | `genres` | TCON | `©gen` / `gnre` | GENRE |
+| Composer | `composer` | TCOM | `©wrt` | COMPOSER |
+| Grouping / work | `grouping` | TIT1 | `©grp` / `©wrk` | GROUPING |
+| Compilation | `is_compilation` | TCMP (1/0) | `cpil` (1/0) | COMPILATION / ITUNESCOMPILATION |
+| Title sort | `title_sort` | TSOT | `sonm` | TITLESORT |
+| Artist sort | `artist_sort` | TSOP | `soar` | ARTISTSORT |
+| Album sort | `album_sort` | TSOA | `soal` | ALBUMSORT |
+| Album artist sort | `album_artist_sort` | TSO2 / TSOP | `soaa` | ALBUMARTISTSORT |
+| Composer sort | `composer_sort` | TSOC | `soco` | COMPOSERSORT |
+| Cover art | `cover_art` | APIC (type 3) | `covr` | METADATA_BLOCK_PICTURE |
+
+The same table lives in code as `TagMap` in `:core:model`, read by the tag
+reader, the document writer and the editor's tag-name toggle. Three copies of
+it would eventually disagree about something like ALBUMARTISTSORT, and nobody
+would notice until a round-trip put a field in the wrong frame.
+
+### The sort fields
+
+`artist_sort` is "Bowie, David" — how the artist files, not what they are
+called. Roam has always had this as `sortAs` on the artist, and they are the
+same field: the editor writes one box, which sets `ARTISTSORT` in the document
+and drives every `ORDER BY` in the library.
+
+`album_artist_sort` is the one worth knowing about. Foobar and MusicBrainz
+Picard write TSO2; the ID3v2.4 standard never defined it, so some tools use
+TSOP for both. Read both, write TSO2.
+
+### What has no tag at all
+
+`start_at`, `end_at` and `group_artist` exist only here. Trim points are a
+playback preference no format has a frame for, and folding one artist into
+another is Roam's own idea. The editor marks them, because a field with no tag
+equivalent is one that will not travel to another player — which is exactly
+what somebody needs to know before relying on it.
+
+`lyrics_file` points at a `.lrc` beside the track rather than embedding the
+words. That IS what other players read, so it travels — just as a file rather
+than as USLT.
 
 ---
 

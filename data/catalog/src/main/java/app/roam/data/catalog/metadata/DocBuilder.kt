@@ -29,8 +29,8 @@ object DocBuilder {
      */
     val ALBUM_KEYS = listOf(
         "schema", "album_artist", "album_title", "year", "original_year",
-        "genres", "is_compilation", "total_discs", "total_tracks", "cover_art",
-        "previous_artwork", "tracks",
+        "genres", "is_compilation", "total_discs", "total_tracks",
+        "album_sort", "album_artist_sort", "cover_art", "previous_artwork", "tracks",
     )
 
     /** Key order for `artist.json`. Roam does not build these yet; it patches them. */
@@ -48,7 +48,9 @@ object DocBuilder {
 
     private val TRACK_KEYS = listOf(
         "schema", "title", "track_number", "disc_number", "artist", "album",
-        "album_artist", "year", "original_year", "genres", "composer",
+        "album_artist", "year", "original_year", "genres", "composer", "grouping",
+        "is_compilation", "total_tracks", "total_discs",
+        "title_sort", "artist_sort", "album_sort", "album_artist_sort", "composer_sort",
         "duration_seconds", "audio_file", "lyrics_file", "lyrics_checked",
         "start_at", "end_at",
     )
@@ -160,6 +162,8 @@ object DocBuilder {
                     (rows.mapNotNull { it.discNo }.maxOrNull() ?: first.discTotal).coerceAtLeast(1).toLong()
                 ))
                 add("total_tracks" to Json.Num(rows.size.toLong()))
+                first.albumSort.json()?.let { add("album_sort" to it) }
+                first.albumArtistSort.json()?.let { add("album_artist_sort" to it) }
                 add("cover_art" to Json.Str(existing.stringOr("cover_art", "cover.jpg")))
                 // Carried straight across. The retired covers are a fact about
                 // the FOLDER, and nothing in the catalogue knows them -- they
@@ -191,7 +195,20 @@ object DocBuilder {
                 row.year.json()?.let { add("year" to it) }
                 row.originalYear.json()?.let { add("original_year" to it) }
                 if (genres.isNotEmpty()) add("genres" to genres.jsonArray())
-                existing?.opt("composer").asString().json()?.let { add("composer" to it) }
+                // The catalogue knows these now, so they are written rather
+                // than merely preserved -- which is the difference between a
+                // field surviving a rewrite and a field being editable.
+                (row.composer.json() ?: existing?.opt("composer").asString().json())
+                    ?.let { add("composer" to it) }
+                row.grouping.json()?.let { add("grouping" to it) }
+                add("is_compilation" to row.compilation.json())
+                row.trackTotal.json()?.let { add("total_tracks" to it) }
+                add("total_discs" to Json.Num(row.discTotal.coerceAtLeast(1).toLong()))
+                row.titleSort.json()?.let { add("title_sort" to it) }
+                row.artistSort.json()?.let { add("artist_sort" to it) }
+                row.albumSort.json()?.let { add("album_sort" to it) }
+                row.albumArtistSort.json()?.let { add("album_artist_sort" to it) }
+                row.composerSort.json()?.let { add("composer_sort" to it) }
                 if (row.durationMs > 0) add("duration_seconds" to Json.Num(row.durationMs / 1000))
                 row.fileName.json()?.let { add("audio_file" to it) }
                 existing?.takeIf { it.has("lyrics_file") }

@@ -69,6 +69,9 @@ data class AlbumDoc(
     val isCompilation: Boolean,
     val totalDiscs: Int?,
     val totalTracks: Int?,
+    /** ALBUMSORT and ALBUMARTISTSORT. How the album files, when it differs. */
+    val albumSort: String?,
+    val albumArtistSort: String?,
     val coverArt: String,
     /**
      * Covers this album has had before, oldest retired first.
@@ -102,6 +105,23 @@ data class TrackDoc(
     val originalYear: Int?,
     val genres: List<String>,
     val composer: String?,
+    /** TIT1 / grouping. Carried, never interpreted -- see the entity comment. */
+    val grouping: String?,
+    /**
+     * The totals a track states about its own release.
+     *
+     * Part two of TRCK and TPOS, which is why they sit beside the numbers
+     * rather than only in the album index.
+     */
+    val totalTracks: Int?,
+    val totalDiscs: Int?,
+    val isCompilation: Boolean,
+    /** The sort orders, all five. See docs/ALBUM_JSON.md. */
+    val titleSort: String?,
+    val artistSort: String?,
+    val albumSort: String?,
+    val albumArtistSort: String?,
+    val composerSort: String?,
     val durationMs: Long?,
     val audioFile: String?,
     val lyricsFile: String?,
@@ -160,6 +180,8 @@ object LibraryDocs {
             isCompilation = o.optBoolean("is_compilation", false),
             totalDiscs = o.intOrNull("total_discs"),
             totalTracks = o.intOrNull("total_tracks"),
+            albumSort = o.stringOrNull("album_sort"),
+            albumArtistSort = o.stringOrNull("album_artist_sort"),
             coverArt = o.stringOrNull("cover_art") ?: "cover.jpg",
             previousArtwork = o.strings("previous_artwork"),
             tracks = o.optJSONArray("tracks").objects().mapNotNull { entry(it) },
@@ -178,6 +200,15 @@ object LibraryDocs {
             originalYear = o.intOrNull("original_year"),
             genres = o.genres(),
             composer = o.stringOrNull("composer"),
+            grouping = o.stringOrNull("grouping"),
+            totalTracks = o.intOrNull("total_tracks"),
+            totalDiscs = o.intOrNull("total_discs"),
+            isCompilation = o.optBoolean("is_compilation", false),
+            titleSort = o.stringOrNull("title_sort"),
+            artistSort = o.stringOrNull("artist_sort"),
+            albumSort = o.stringOrNull("album_sort"),
+            albumArtistSort = o.stringOrNull("album_artist_sort"),
+            composerSort = o.stringOrNull("composer_sort"),
             durationMs = o.intOrNull("duration_seconds")?.let { it * 1000L },
             audioFile = o.stringOrNull("audio_file"),
             lyricsFile = o.stringOrNull("lyrics_file"),

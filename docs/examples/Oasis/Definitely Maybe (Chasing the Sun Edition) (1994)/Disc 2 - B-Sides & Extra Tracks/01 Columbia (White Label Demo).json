@@ -14,6 +14,12 @@
     "Rock"
   ],
   "composer": "Noel Gallagher",
+  "composer_sort": "Gallagher, Noel",
+  "is_compilation": false,
+  "total_tracks": 16,
+  "total_discs": 3,
+  "artist_sort": "Oasis",
+  "album_artist_sort": "Oasis",
   "duration_seconds": 375,
   "audio_file": "01 Columbia (White Label Demo).mp3",
   "lyrics_file": null,
