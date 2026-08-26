@@ -1,5 +1,6 @@
 package app.roam.data.catalog.metadata
 
+import app.roam.core.model.Genres
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -333,38 +334,21 @@ private fun JSONObject.intOrNull(key: String): Int? {
 /**
  * Genres, as a list, however they were written.
  *
- * A track has several: Britpop AND Alternative Rock AND Indie, and a smart
- * playlist asking for one of them should find it. Crammed into a single string
- * they can only be matched by guessing at separators, which is what made genre
- * rules unreliable in the first place.
- *
- * The singular "genre" is still read, because embedded tags only ever carry one
- * and a hand-written file may too. A string containing separators is split, so
- * "Britpop; Indie Rock" from an old tag becomes two.
+ * The array and the singular string are merged: embedded tags only ever carry
+ * one, a hand-written file may carry either, and a packed "Britpop; Indie Rock"
+ * from an old tag has to become two rather than staying one unmatchable lump.
+ * The splitting rule itself lives in [Genres], shared with the writer.
  */
 private fun JSONObject.genres(): List<String> {
     val fromArray = optJSONArray("genres")
-        ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } } }
-        .orEmpty()
-
-    val fromString = stringOrNull("genre")
-        ?.split(';', ',', '/')
-        .orEmpty()
-
-    return (fromArray + fromString)
-        .map { it.trim() }
-        .filter { it.isNotEmpty() && it != "null" }
-        // Case-insensitively distinct, keeping the first spelling seen.
-        .distinctBy { it.lowercase() }
-}
-
-/** A string array, minus the blanks and the org.json "null" trap. */
-private fun JSONObject.strings(key: String): List<String> =
-    optJSONArray(key)
         ?.let { arr -> (0 until arr.length()).map { arr.optString(it) } }
         .orEmpty()
         .map { it.trim() }
         .filter { it.isNotEmpty() && it != "null" }
+
+    return (fromArray + Genres.split(stringOrNull("genre")))
+        .distinctBy { it.lowercase() }
+}
 
 private fun JSONArray?.objects(): List<JSONObject> {
     if (this == null) return emptyList()

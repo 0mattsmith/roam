@@ -1,6 +1,7 @@
 package app.roam.data.catalog.metadata
 
 import app.roam.core.database.DocTrackRow
+import app.roam.core.model.Genres
 import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneOffset
@@ -266,17 +267,11 @@ object DocBuilder {
     /**
      * The single `genre` column back into a list.
      *
-     * The same separators [LibraryDocs] splits on when reading, so a document
-     * written here and read back gives the same list -- and a genre string that
-     * arrived from an old tag as "Britpop; Indie Rock" becomes two on the way
-     * out rather than staying one unmatchable lump.
+     * Delegates to [Genres] so the writer and the reader cannot drift: a
+     * document written here and read back has to give the same list, and two
+     * implementations of "does a slash separate genres" would not.
      */
-    fun splitGenres(genre: String?): List<String> =
-        genre?.split(';', ',', '/')
-            .orEmpty()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && it != "null" }
-            .distinctBy { it.lowercase() }
+    fun splitGenres(genre: String?): List<String> = Genres.split(genre)
 
     /** Milliseconds as the "m:ss" the contract uses. Null stays null. */
     fun clock(ms: Long?): String? {

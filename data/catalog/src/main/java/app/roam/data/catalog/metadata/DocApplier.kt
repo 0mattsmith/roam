@@ -167,7 +167,7 @@ class DocApplier @Inject constructor(
         val albumArtist = doc.albumArtist
         val albumArtistId = Ids.artist(albumArtist)
         val albumId = Ids.album(albumArtist, doc.albumTitle)
-        val genre = doc.genres.joinToString(GENRE_SEPARATOR).ifBlank { null }
+        val genre = Genres.join(doc.genres)
 
         // The album this track belonged to a moment ago, so a rename inherits
         // its cover instead of landing on a fresh row whose artworkId defaults
@@ -303,16 +303,5 @@ class DocApplier @Inject constructor(
          * to hide the latency, not enough to earn a userRateLimitExceeded.
          */
         const val FETCH_WIDTH = 8
-
-        /**
-         * How a list of genres is stored in the single `genre` column.
-         *
-         * The parser already splits on this when reading a singular `genre`
-         * string, so writing it back this way round-trips -- and it is what a
-         * genre rule will split on when the smart playlists land. A proper
-         * table is the right home eventually; this is the form that does not
-         * lose the second genre in the meantime.
-         */
-        const val GENRE_SEPARATOR = "; "
     }
 }

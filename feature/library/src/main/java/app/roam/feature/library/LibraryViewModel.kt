@@ -12,6 +12,7 @@ import app.roam.core.database.TrackListItem
 import app.roam.core.model.AlbumSort
 import app.roam.core.model.ArtistSort
 import app.roam.core.model.LibraryTab
+import app.roam.core.model.Genres
 import app.roam.core.model.Ids
 import app.roam.core.model.TrackSort
 import app.roam.core.model.ViewMode
@@ -609,11 +610,7 @@ class LibraryViewModel @Inject constructor(
         _editing.value = null
     }
 
-    fun saveTrackEdits(
-        trackId: Long,
-        edits: TrackEdits,
-        createDocs: Boolean = false,
-    ) = viewModelScope.launch {
+    fun saveTrackEdits(trackId: Long, edits: TrackEdits) = viewModelScope.launch {
         val albumId = _editing.value?.first?.albumId
         _editing.value = null
         // Lists redraw themselves: every PagingSource here observes the tables
@@ -621,15 +618,20 @@ class LibraryViewModel @Inject constructor(
         val saved = trackEditor.apply(trackId, edits)
             .fold({ "Track updated" }, { "Could not save: ${it.message}" })
 
-        // After the edit, never before: the files are built from the catalogue,
-        // so writing them first would put the OLD values on the source and then
-        // have the reader hand them straight back on the next sync.
-        _photoMessage.value = if (createDocs && albumId != null) {
+        // The documents are UPDATED when they exist and never created here --
+        // creating them is Consolidate Metadata's job, deliberately, because
+        // new files appearing on someone's Drive should be something they asked
+        // for rather than a side effect of fixing a title.
+        _photoMessage.value = if (albumId != null && docWriter.hasDocument(albumId)) {
             writeMetadataFiles(albumId)
         } else {
             saved
         }
     }
+
+    /** The genres this library already uses, for the editor's chip suggestions. */
+    suspend fun knownGenres(): List<String> =
+        tracks.genreStrings().flatMap { Genres.split(it) }.distinctBy { it.lowercase() }
 
     /**
      * Writes an album's metadata files, and says what happened.

@@ -1,6 +1,7 @@
 package app.roam.data.catalog.metadata
 
 import app.roam.core.database.DocTrackRow
+import app.roam.core.model.Genres
 import app.roam.core.model.TagState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -437,6 +438,70 @@ class DocBuilderTest {
     }
 
     // ---- the small pieces ---------------------------------------------------
+
+    @Test
+    fun `spellings of one genre collapse to one genre`() {
+        // Six tools over fifteen years produce six spellings. A genre rule
+        // cannot match across them, which is the whole reason genres became a
+        // list in the first place.
+        listOf("Brit pop", "Brit-Pop", "BRITPOP", "britpop", "Brit  Pop", "BritPop")
+            .forEach { assertEquals(it, "Britpop", Genres.canonical(it)) }
+
+        // The ampersand is punctuation and the n is a letter, so these two do
+        // not collapse on their own -- which is why the table holds both.
+        assertEquals("R&B", Genres.canonical("RnB"))
+        assertEquals("R&B", Genres.canonical("r & b"))
+    }
+
+    @Test
+    fun `a genre the table does not know takes the library's own spelling`() {
+        // The part that matters day to day: it stops a collection holding
+        // "Indie Rock" and "indie rock" as two things no rule can match.
+        assertEquals("Indie Rock", Genres.canonical("indie rock", listOf("Indie Rock")))
+        // ...and leaves a genuinely new one exactly as typed.
+        assertEquals("Shoegaze", Genres.canonical("Shoegaze", listOf("Indie Rock")))
+    }
+
+    @Test
+    fun `canonicalising a list drops the duplicates it creates`() {
+        assertEquals(
+            listOf("Britpop", "Indie Rock"),
+            Genres.canonicalise(listOf("Brit pop", "Britpop", "indie rock"), listOf("Indie Rock")),
+        )
+    }
+
+    @Test
+    fun `one field holding two spellings yields one genre`() {
+        assertEquals(listOf("Britpop"), Genres.split("Britpop; Brit-Pop"))
+    }
+
+    @Test
+    fun `a near miss is corrected to the one genre it can only be`() {
+        val library = listOf("Indie Rock", "Shoegaze", "Folk", "Funk", "Electronic")
+        assertEquals("Shoegaze", Genres.canonical("Shoegaz", library))
+        assertEquals("Shoegaze", Genres.canonical("Shoegazee", library))
+        assertEquals("Shoegaze", Genres.canonical("Shoegoze", library))
+    }
+
+    @Test
+    fun `a near miss is left alone whenever guessing could be wrong`() {
+        val library = listOf("Indie Rock", "Shoegaze", "Folk", "Funk")
+
+        // Already in the library, so it is deliberate whatever it looks like.
+        // Folk and Funk are one edit apart and both real.
+        assertEquals("Funk", Genres.canonical("Funk", library))
+        assertEquals("Folk", Genres.canonical("Folk", library))
+
+        // Too short: at four characters one edit is a quarter of the word.
+        assertEquals("Fonk", Genres.canonical("Fonk", library))
+
+        // Two edits away is a different genre, not a typo.
+        assertEquals("Shoegazing", Genres.canonical("Shoegazing", library))
+
+        // Equally close to two known genres, so Roam cannot say which was
+        // meant -- and picking one is a coin toss with someone else's library.
+        assertEquals("Fonky", Genres.canonical("Fonky", listOf("Funky", "Fonly")))
+    }
 
     @Test
     fun `genres split the way the reader joins them`() {

@@ -6,6 +6,7 @@ import app.roam.core.database.ArtistDao
 import app.roam.core.database.ArtistEntity
 import app.roam.core.database.RoamDatabase
 import app.roam.core.database.TrackDao
+import app.roam.core.model.Genres
 import app.roam.core.model.Ids
 import app.roam.core.model.TagState
 import androidx.room.withTransaction
@@ -48,10 +49,28 @@ data class TrackEdits(
     val trackNo: Int?,
     val discNo: Int?,
     val year: Int?,
-    val genre: String?,
+    /** First release of the material, where it differs. Drives decade rules. */
+    val originalYear: Int?,
+    /**
+     * A list, because that is what the documents hold and what a genre rule has
+     * to match against. Joined into the single `genre` column on the way to the
+     * database and split on the way back, in exactly one place -- see [apply].
+     */
+    val genres: List<String>,
+    val composer: String?,
+    /** TIT1. The work a track belongs to. Carried, never interpreted. */
+    val grouping: String?,
+    /** Part two of TRCK and TPOS. "3 of 12", "1 of 3". */
+    val trackTotal: Int?,
+    val discTotal: Int?,
     val compilation: Boolean,
     /** Files this artist under another name for sorting. Blank means no override. */
     val sortArtist: String?,
+    /** The rest of the sort orders. TSOT, TSOA, TSO2, TSOC. */
+    val titleSort: String?,
+    val albumSort: String?,
+    val albumArtistSort: String?,
+    val composerSort: String?,
     /** Folds this artist into another one entirely. Blank means standalone. */
     val groupArtist: String?,
     /**
@@ -108,6 +127,8 @@ data class TrackEditState(
      * nobody has looked at.
      */
     val tagState: TagState,
+    /** The file's own type, so a tag label can name the right frame or atom. */
+    val mimeType: String?,
 )
 
 /**
@@ -131,9 +152,18 @@ class TrackEditor @Inject constructor(
     private val db: RoamDatabase,
 ) {
 
-    /** Current values, for populating the form, and where they came from. */
+    /**
+     * Current values, for populating the form, and where they came from.
+     *
+     * Genres are canonicalised on the way out: a track tagged "Brit pop" opens
+     * showing "Britpop", because the chips are meant to show what the genre IS
+     * rather than which of six spellings this particular file happens to carry.
+     * The tidy is not itself a change -- the form does not open dirty over it --
+     * but it rides along with the next save, and Consolidate does the library.
+     */
     suspend fun current(trackId: Long): TrackEditState? = withContext(Dispatchers.IO) {
         val track = tracks.byId(trackId) ?: return@withContext null
+        val known = tracks.genreStrings().flatMap { Genres.split(it) }
         val edits = TrackEdits(
             title = track.title,
             artist = artists.byId(track.artistId)?.name.orEmpty(),
@@ -142,9 +172,18 @@ class TrackEditor @Inject constructor(
             trackNo = track.trackNo,
             discNo = track.discNo,
             year = track.year,
-            genre = track.genre,
+            originalYear = track.originalYear,
+            genres = Genres.canonicalise(Genres.split(track.genre), known),
+            composer = track.composer,
+            grouping = track.grouping,
+            trackTotal = track.trackTotal,
+            discTotal = track.discTotal,
             compilation = albums.byId(track.albumId)?.compilation == true,
             sortArtist = artists.byId(track.artistId)?.sortAs,
+            titleSort = track.titleSort,
+            albumSort = albums.byId(track.albumId)?.sortAs,
+            albumArtistSort = albums.byId(track.albumId)?.artistId?.let { artists.byId(it)?.sortAs },
+            composerSort = track.composerSort,
             groupArtist = artists.byId(track.artistId)?.groupArtistId
                 ?.let { artists.byId(it)?.name },
             startMs = track.startMs,
@@ -163,6 +202,7 @@ class TrackEditor @Inject constructor(
                 else -> MetadataSource.PATH
             },
             tagState = track.tagState,
+            mimeType = track.mimeType,
         )
     }
 
@@ -233,7 +273,9 @@ class TrackEditor @Inject constructor(
             )
 
             val title = edits.title.trim().ifBlank { UNKNOWN_TITLE }
-            val genre = edits.genre?.trim()?.ifBlank { null }
+            // The one place the list becomes a string, using the shared
+            // joiner so it round-trips through Genres.split unchanged.
+            val genre = Genres.join(edits.genres)
 
             // Only when the METADATA actually moved. applyUserEdit sets
             // userEdited, and that flag is permanent in effect: it takes the
@@ -251,7 +293,14 @@ class TrackEditor @Inject constructor(
                 stored.trackNo != edits.trackNo ||
                 stored.discNo != edits.discNo ||
                 stored.year != edits.year ||
-                stored.genre != genre
+                stored.originalYear != edits.originalYear ||
+                stored.genre != genre ||
+                stored.composer != edits.composer ||
+                stored.grouping != edits.grouping ||
+                stored.titleSort != edits.titleSort ||
+                stored.composerSort != edits.composerSort ||
+                stored.trackTotal != edits.trackTotal ||
+                stored.discTotal != edits.discTotal
 
             if (moved) {
                 tracks.applyUserEdit(
@@ -261,13 +310,29 @@ class TrackEditor @Inject constructor(
                     albumId = albumId,
                     albumArtist = albumArtistName,
                     trackNo = edits.trackNo,
+                    trackTotal = edits.trackTotal,
                     discNo = edits.discNo,
+                    discTotal = edits.discTotal,
                     year = edits.year,
+                    originalYear = edits.originalYear,
                     genre = genre,
+                    composer = edits.composer?.trim()?.ifBlank { null },
+                    grouping = edits.grouping?.trim()?.ifBlank { null },
+                    titleSort = edits.titleSort?.trim()?.ifBlank { null },
+                    composerSort = edits.composerSort?.trim()?.ifBlank { null },
                 )
             }
             albums.setCompilation(albumId, edits.compilation)
+            // Same pairing artists have had all along: the override and the
+            // column every ORDER BY reads, written together.
+            val albumFiling = edits.albumSort?.trim()?.ifBlank { null }
+            albums.setSortAs(albumId, albumFiling, Ids.normalise(albumFiling ?: albumName))
             applySortArtist(artistId, artistName, edits.sortArtist)
+            // The album artist files separately when it is a different artist --
+            // "Various Artists" on a compilation is nobody's sort name.
+            if (albumArtistId != artistId) {
+                applySortArtist(albumArtistId, albumArtistName, edits.albumArtistSort)
+            }
             applyGroupArtist(artistId, edits.groupArtist)
 
             // The old artist or album may now hold nothing. Prune before the

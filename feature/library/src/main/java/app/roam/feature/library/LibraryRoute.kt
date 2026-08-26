@@ -439,11 +439,11 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         var canNext by remember(track.id) { mutableStateOf(false) }
         // Asked per album rather than per track: the checkbox says how many
         // files it will write, and that is a fact about the album.
-        var albumTracks by remember(track.albumId) { mutableStateOf(0) }
+        var knownGenres by remember { mutableStateOf(emptyList<String>()) }
         LaunchedEffect(track.id) {
             canPrev = vm.hasSiblingTrack(track, -1)
             canNext = vm.hasSiblingTrack(track, 1)
-            albumTracks = vm.albumTrackCount(track.albumId)
+            knownGenres = vm.knownGenres()
             vm.clearPastCovers()
         }
 
@@ -453,11 +453,12 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             source = state.source,
             tagState = state.tagState,
             artworkId = track.albumArtworkId,
-            albumTrackCount = albumTracks,
+            mimeType = state.mimeType,
+            knownGenres = knownGenres,
             canGoPrevious = canPrev,
             canGoNext = canNext,
             onDismiss = vm::closeTrackEditor,
-            onSave = { edits, createDocs -> vm.saveTrackEdits(track.id, edits, createDocs) },
+            onSave = { edits -> vm.saveTrackEdits(track.id, edits) },
             onFetchLyrics = { vm.fetchLyricsNow(track.id) },
             onStep = { edits, delta -> vm.stepTrackEditor(track, edits, delta) },
             onCoverSave = { vm.saveAlbumCoverFor(track) },

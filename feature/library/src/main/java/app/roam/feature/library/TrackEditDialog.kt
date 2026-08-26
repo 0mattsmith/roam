@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Edit
@@ -33,8 +36,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,13 +53,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import app.roam.core.database.TrackListItem
+import app.roam.core.model.TagFormat
+import app.roam.core.model.TagMap
 import app.roam.core.model.TagState
 import app.roam.data.catalog.MetadataSource
 import app.roam.data.catalog.TrackEdits
@@ -178,13 +194,14 @@ fun TrackEditDialog(
     /** Whether the file itself has been read yet. */
     tagState: TagState,
     artworkId: String?,
-    /** How many files ticking "Create album.json" would write. */
-    albumTrackCount: Int,
+    /** The file's own type, so a tag label names the right frame or atom. */
+    mimeType: String?,
+    /** Every genre already used in this library, for the chip suggestions. */
+    knownGenres: List<String>,
     canGoPrevious: Boolean,
     canGoNext: Boolean,
     onDismiss: () -> Unit,
-    /** Second argument: also write this album's metadata files to the source. */
-    onSave: (TrackEdits, Boolean) -> Unit,
+    onSave: (TrackEdits) -> Unit,
     /** Looks the words up now, returning them, or null when nothing was found. */
     onFetchLyrics: suspend () -> String?,
     /**
@@ -215,17 +232,37 @@ fun TrackEditDialog(
     var albumArtist by rememberSaveable(trackId) { mutableStateOf(initial.albumArtist.orEmpty()) }
     var trackNo by rememberSaveable(trackId) { mutableStateOf(initial.trackNo?.toString().orEmpty()) }
     var discNo by rememberSaveable(trackId) { mutableStateOf(initial.discNo?.toString().orEmpty()) }
+    var trackTotal by rememberSaveable(trackId) { mutableStateOf(initial.trackTotal?.toString().orEmpty()) }
+    var discTotal by rememberSaveable(trackId) { mutableStateOf(initial.discTotal?.toString().orEmpty()) }
     var year by rememberSaveable(trackId) { mutableStateOf(initial.year?.toString().orEmpty()) }
-    var genre by rememberSaveable(trackId) { mutableStateOf(initial.genre.orEmpty()) }
+    var originalYear by rememberSaveable(trackId) { mutableStateOf(initial.originalYear?.toString().orEmpty()) }
+    // The list itself, not a joined string: the chips ARE the model, and
+    // round-tripping through text would lose a genre containing a comma.
+    var genres by rememberSaveable(trackId) { mutableStateOf(initial.genres) }
     var compilation by rememberSaveable(trackId) { mutableStateOf(initial.compilation) }
+    var composer by rememberSaveable(trackId) { mutableStateOf(initial.composer.orEmpty()) }
+    var grouping by rememberSaveable(trackId) { mutableStateOf(initial.grouping.orEmpty()) }
+    var titleSort by rememberSaveable(trackId) { mutableStateOf(initial.titleSort.orEmpty()) }
     var sortArtist by rememberSaveable(trackId) { mutableStateOf(initial.sortArtist.orEmpty()) }
+    var albumSort by rememberSaveable(trackId) { mutableStateOf(initial.albumSort.orEmpty()) }
+    var albumArtistSort by rememberSaveable(trackId) { mutableStateOf(initial.albumArtistSort.orEmpty()) }
+    var composerSort by rememberSaveable(trackId) { mutableStateOf(initial.composerSort.orEmpty()) }
     var groupArtist by rememberSaveable(trackId) { mutableStateOf(initial.groupArtist.orEmpty()) }
+    // NOT keyed on trackId: someone who turned tag names on wants them on for
+    // the next track too, and the whole point of stepping is not re-setting up.
+    var showTagNames by rememberSaveable { mutableStateOf(false) }
+    var advancedOpen by rememberSaveable { mutableStateOf(false) }
     var startAt by rememberSaveable(trackId) { mutableStateOf(formatClip(initial.startMs)) }
     var endAt by rememberSaveable(trackId) { mutableStateOf(formatClip(initial.endMs)) }
     var lyrics by rememberSaveable(trackId) { mutableStateOf(initial.lyrics.orEmpty()) }
     var fetchingLyrics by remember(trackId) { mutableStateOf(false) }
     var lyricNote by rememberSaveable(trackId) { mutableStateOf<String?>(null) }
     val lyricScope = rememberCoroutineScope()
+
+    // Which dialect this file speaks, so a label names TIT2 over an MP3 and
+    // TITLE over a FLAC. Null for anything unrecognised -- naming the wrong
+    // frame would be worse than naming none.
+    val tagFormat = remember(mimeType) { TagMap.formatOf(mimeType) }.takeIf { showTagNames }
 
     fun collect() = TrackEdits(
         title = title,
@@ -235,9 +272,18 @@ fun TrackEditDialog(
         trackNo = trackNo.toIntOrNull(),
         discNo = discNo.toIntOrNull(),
         year = year.toIntOrNull(),
-        genre = genre.ifBlank { null },
+        originalYear = originalYear.toIntOrNull(),
+        genres = genres,
+        composer = composer.ifBlank { null },
+        grouping = grouping.ifBlank { null },
+        trackTotal = trackTotal.toIntOrNull(),
+        discTotal = discTotal.toIntOrNull(),
         compilation = compilation,
         sortArtist = sortArtist.ifBlank { null },
+        titleSort = titleSort.ifBlank { null },
+        albumSort = albumSort.ifBlank { null },
+        albumArtistSort = albumArtistSort.ifBlank { null },
+        composerSort = composerSort.ifBlank { null },
         groupArtist = groupArtist.ifBlank { null },
         startMs = parseClip(startAt),
         endMs = parseClip(endAt),
@@ -246,19 +292,11 @@ fun TrackEditDialog(
 
     // Nothing typed means nothing to save, and the button says so rather than
     // offering a write with a permanent consequence: applyUserEdit takes a
-    // track out of the tag pass and out of album.json's reach for good, which
-    // is a strange thing to get from pressing Save to close a dialog you only
-    // opened to look at. TrackEditor guards the other half -- a change to only
-    // the lyrics or the trim points does not freeze the tags either.
+    // track out of the tag pass for good, which is a strange thing to get from
+    // pressing Save to close a dialog you only opened to look at. TrackEditor
+    // guards the other half -- a change to only the lyrics or the trim points
+    // does not freeze the tags either.
     val dirty = collect().comparable() != initial.comparable()
-
-    // Absent once the values already come from a document, so its presence is
-    // itself the answer to "is this album described yet".
-    val canCreateDocs = source != MetadataSource.DOCUMENT
-    var createDocs by rememberSaveable(trackId) { mutableStateOf(false) }
-    var showDocHelp by rememberSaveable(trackId) { mutableStateOf(false) }
-
-    if (showDocHelp) DocHelpDialog { showDocHelp = false }
 
     AlertDialog(
         // A tap outside must NOT discard a form full of typing. Back still
@@ -293,37 +331,38 @@ fun TrackEditDialog(
                         )
                     }
                 }
-                Field(albumArtist, "Album artist", help = "Blank means same as artist") {
-                    albumArtist = it
-                }
-                Field(
-                    sortArtist,
-                    "Sorting artist",
-                    help = "File under another name, e.g. Makaveli under 2Pac",
-                ) { sortArtist = it }
-                Field(
-                    groupArtist,
-                    "Group artist",
-                    help = "Show this artist's albums under another, e.g. Makaveli inside 2Pac",
-                ) { groupArtist = it }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    NumberField(trackNo, "Track", Modifier.weight(1f)) { trackNo = it }
-                    NumberField(discNo, "Disc", Modifier.weight(1f)) { discNo = it }
-                    NumberField(year, "Year", Modifier.weight(1.2f)) { year = it }
-                }
-                Field(genre, "Genre") { genre = it }
+                Field(albumArtist, "Album artist", "album_artist", tagFormat,
+                    help = "Blank means same as artist") { albumArtist = it }
 
-                // Playback window, not a trim. Nothing is cut from the file --
-                // the player is simply told where the song really begins and
-                // ends, so clearing these puts everything back.
+                // "3 of 12" is how TRCK is actually written, so the pair sits
+                // together rather than as two unrelated boxes.
+                PairRow("Track", trackNo, trackTotal, "track_number", tagFormat,
+                    onFirst = { trackNo = it }, onSecond = { trackTotal = it })
+                PairRow("Disc", discNo, discTotal, "disc_number", tagFormat,
+                    onFirst = { discNo = it }, onSecond = { discTotal = it })
+
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ClipField(startAt, "Start at", Modifier.weight(1f)) { startAt = it }
-                    ClipField(endAt, "End at", Modifier.weight(1f)) { endAt = it }
+                    NumberField(year, "Year", Modifier.weight(1f), "year", tagFormat) { year = it }
+                    NumberField(
+                        originalYear, "Original year", Modifier.weight(1f),
+                        "original_year", tagFormat,
+                    ) { originalYear = it }
                 }
                 Text(
-                    "m:ss, for skipping silence or an intro. Leave blank for the whole track.",
+                    // The two-year split is the thing people get wrong, and a
+                    // decade rule reads the original -- so a 2014 reissue of a
+                    // 1994 record still counts as a nineties one.
+                    "Original year is when the music first came out. Leave it blank " +
+                        "unless this is a reissue.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                GenreChips(
+                    genres = genres,
+                    known = knownGenres,
+                    tagFormat = tagFormat,
+                    onChange = { genres = it },
                 )
 
                 // Multi-line and roomy: this field gets PASTED into far more
@@ -372,16 +411,23 @@ fun TrackEditDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                if (canCreateDocs) {
-                    CreateDocsRow(
-                        checked = createDocs,
-                        albumTrackCount = albumTrackCount,
-                        tagState = tagState,
-                        source = source,
-                        onChange = { createDocs = it },
-                        onHelp = { showDocHelp = true },
-                    )
-                }
+                AdvancedOptions(
+                    open = advancedOpen,
+                    onToggle = { advancedOpen = !advancedOpen },
+                    showTagNames = showTagNames,
+                    onShowTagNames = { showTagNames = it },
+                    tagFormat = tagFormat,
+                    composer = composer, onComposer = { composer = it },
+                    grouping = grouping, onGrouping = { grouping = it },
+                    titleSort = titleSort, onTitleSort = { titleSort = it },
+                    sortArtist = sortArtist, onSortArtist = { sortArtist = it },
+                    albumSort = albumSort, onAlbumSort = { albumSort = it },
+                    albumArtistSort = albumArtistSort, onAlbumArtistSort = { albumArtistSort = it },
+                    composerSort = composerSort, onComposerSort = { composerSort = it },
+                    groupArtist = groupArtist, onGroupArtist = { groupArtist = it },
+                    startAt = startAt, onStartAt = { startAt = it },
+                    endAt = endAt, onEndAt = { endAt = it },
+                )
 
                 AlbumArtBlock(
                     targetKey = trackId,
@@ -420,10 +466,7 @@ fun TrackEditDialog(
         confirmButton = {
             // Ticking the box is itself a change worth saving, even when no
             // field moved -- creating the files IS the action in that case.
-            TextButton(
-                enabled = dirty || createDocs,
-                onClick = { onSave(collect(), createDocs) },
-            ) { Text("Save") }
+            TextButton(enabled = dirty, onClick = { onSave(collect()) }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -469,95 +512,214 @@ private fun SourceNote(source: MetadataSource, tagState: TagState) {
 }
 
 /**
- * The offer to make these corrections durable.
+ * Genres as chips, because that is what they are.
  *
- * It says how many files it will write, because `album.json` describes the
- * whole album -- ticking this in one track's editor and then finding
- * forty-four new files on your Drive would be a surprise, and a surprise on
- * someone's own storage is the kind that stops them trusting the app.
+ * The array is the model and the text box only ever holds what is being typed
+ * right now. Storing them as one string and splitting on save would lose a
+ * genre containing a comma, and would make "the field is a list" something the
+ * person has to remember rather than see.
+ *
+ * Backspace on an empty box removes the last chip, which is the behaviour every
+ * address field has trained people to expect -- it makes a chip feel like one
+ * character rather than an object needing a separate gesture.
  */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalComposeUiApi::class)
 @Composable
-private fun CreateDocsRow(
-    checked: Boolean,
-    albumTrackCount: Int,
-    tagState: TagState,
-    source: MetadataSource,
-    onChange: (Boolean) -> Unit,
-    onHelp: () -> Unit,
+private fun GenreChips(
+    genres: List<String>,
+    known: List<String>,
+    tagFormat: TagFormat?,
+    onChange: (List<String>) -> Unit,
 ) {
+    var typed by rememberSaveable { mutableStateOf("") }
+
+    fun commit(value: String) {
+        val genre = value.trim()
+        // Case-insensitive, so a library does not end up holding Britpop and
+        // britpop as two different things.
+        if (genre.isNotEmpty() && genres.none { it.equals(genre, ignoreCase = true) }) {
+            onChange(genres + genre)
+        }
+        typed = ""
+    }
+
+    // What the library already uses, narrowed by what is being typed. Its own
+    // spellings first is the point: it is what stops one library holding
+    // "Britpop", "britpop" and "Brit-Pop".
+    val suggestions = remember(typed, known, genres) {
+        val query = typed.trim()
+        known.asSequence()
+            .filter { candidate -> genres.none { it.equals(candidate, ignoreCase = true) } }
+            .filter { query.isEmpty() || it.contains(query, ignoreCase = true) }
+            .take(6)
+            .toList()
+    }
+
     Column {
-        Row(
-            Modifier.fillMaxWidth().clickable { onChange(!checked) },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(checked = checked, onCheckedChange = onChange)
-            Column(Modifier.weight(1f)) {
-                Text("Create album.json", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    if (albumTrackCount > 1) {
-                        "Writes the index for this album and a file for each of " +
-                            "its $albumTrackCount tracks"
-                    } else {
-                        "Writes the index for this album and a file for its track"
+        Text("Genres", style = MaterialTheme.typography.labelMedium)
+
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            genres.forEach { genre ->
+                InputChip(
+                    selected = false,
+                    onClick = { onChange(genres - genre) },
+                    label = { Text(genre) },
+                    trailingIcon = {
+                        Icon(Icons.Filled.Close, contentDescription = "Remove $genre")
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            IconButton(onClick = onHelp) {
-                Icon(Icons.Filled.HelpOutline, contentDescription = "Why create album.json?")
             }
         }
 
-        // Informative, not a refusal. What must not be written down is a
-        // filename GUESS -- recording one makes json outrank the tags, so the
-        // real ones are never consulted again and nothing looks wrong
-        // afterwards. Values somebody typed are the opposite of a guess, and
-        // refusing THOSE left the tracks people had just carefully fixed as the
-        // only ones that could not be made durable.
-        if (tagState != TagState.OK && source != MetadataSource.USER) {
-            Text(
-                "Roam has not read this file's own tags, so what is above came " +
-                    "from its name. Check it before writing, or fetch them from " +
-                    "Settings → Read tags.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(start = 12.dp, top = 2.dp),
-            )
+        OutlinedTextField(
+            value = typed,
+            onValueChange = { entered ->
+                // A separator finishes a chip, so pasting "Rock, Pop" works and
+                // so does typing a comma out of habit.
+                if (entered.any { it in ";,/" }) {
+                    entered.split(';', ',', '/').forEach { commit(it) }
+                } else {
+                    typed = entered
+                }
+            },
+            placeholder = { Text("Add a genre") },
+            singleLine = true,
+            supportingText = tagName("genres", tagFormat)?.let { { Text(it) } },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { commit(typed) }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onPreviewKeyEvent { event ->
+                    val backspaceOnEmpty = event.type == KeyEventType.KeyDown &&
+                        event.key == Key.Backspace && typed.isEmpty() && genres.isNotEmpty()
+                    if (backspaceOnEmpty) {
+                        onChange(genres.dropLast(1))
+                        true
+                    } else {
+                        false
+                    }
+                },
+        )
+
+        if (suggestions.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                suggestions.forEach { suggestion ->
+                    SuggestionChip(
+                        onClick = { commit(suggestion) },
+                        label = { Text(suggestion) },
+                    )
+                }
+            }
         }
     }
 }
 
-/** Verbatim from docs/ALBUM_JSON.md. The last line is the part that matters. */
+/**
+ * The fields most people never touch, one tap away.
+ *
+ * Sorting orders, the composer credits, the Roam-only playback window and the
+ * artist grouping. Everything here is real and editable -- it is simply not
+ * what somebody opening the form to fix a title came for, and a form is easier
+ * to read when its first screen is the common case.
+ */
 @Composable
-private fun DocHelpDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Why create album.json?") },
-        text = {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+private fun AdvancedOptions(
+    open: Boolean,
+    onToggle: () -> Unit,
+    showTagNames: Boolean,
+    onShowTagNames: (Boolean) -> Unit,
+    tagFormat: TagFormat?,
+    composer: String, onComposer: (String) -> Unit,
+    grouping: String, onGrouping: (String) -> Unit,
+    titleSort: String, onTitleSort: (String) -> Unit,
+    sortArtist: String, onSortArtist: (String) -> Unit,
+    albumSort: String, onAlbumSort: (String) -> Unit,
+    albumArtistSort: String, onAlbumArtistSort: (String) -> Unit,
+    composerSort: String, onComposerSort: (String) -> Unit,
+    groupArtist: String, onGroupArtist: (String) -> Unit,
+    startAt: String, onStartAt: (String) -> Unit,
+    endAt: String, onEndAt: (String) -> Unit,
+) {
+    Column {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onToggle),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Advanced options",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (open) "Hide advanced options" else "Show advanced options",
+            )
+        }
+
+        if (!open) return@Column
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "Roam keeps your corrections in its own database, which is " +
-                        "deleted if you ever reinstall the app. An album.json file " +
-                        "sits beside the music on your Drive, so your edits survive " +
-                        "a reinstall and any other player or device can read them."
-                )
-                Text(
-                    "It is also faster. Roam reads one small file per album instead " +
-                        "of opening every track to check its tags."
-                )
-                Text("Nothing is written into your audio files, and nothing is deleted.")
-                Text(
-                    "Once the file exists, Roam trusts it over the tags — and you " +
-                        "edit it here, the same as now."
-                )
+                Column(Modifier.weight(1f)) {
+                    Text("Show tag names", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Labels every field with its name in this file's format",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = showTagNames, onCheckedChange = onShowTagNames)
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Got it") } },
-    )
+
+            Field(composer, "Composer", "composer", tagFormat) { onComposer(it) }
+            Field(
+                grouping, "Grouping", "grouping", tagFormat,
+                help = "The work this belongs to, e.g. a symphony",
+            ) { onGrouping(it) }
+
+            Text("Sorting", style = MaterialTheme.typography.labelLarge)
+            Field(titleSort, "Title sort", "title_sort", tagFormat) { onTitleSort(it) }
+            Field(
+                sortArtist, "Artist sort", "artist_sort", tagFormat,
+                help = "File under another name, e.g. Bowie, David",
+            ) { onSortArtist(it) }
+            Field(albumSort, "Album sort", "album_sort", tagFormat) { onAlbumSort(it) }
+            Field(
+                albumArtistSort, "Album artist sort", "album_artist_sort", tagFormat,
+            ) { onAlbumArtistSort(it) }
+            Field(composerSort, "Composer sort", "composer_sort", tagFormat) { onComposerSort(it) }
+
+            Text("Roam only", style = MaterialTheme.typography.labelLarge)
+            Text(
+                // Worth saying plainly: these do not travel. Somebody relying on
+                // a trim point should know no other player will honour it.
+                "No tag format has a name for these, so they live in Roam and in " +
+                    "the metadata files, and no other player will see them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Field(
+                groupArtist, "Group artist", "group_artist", tagFormat,
+                help = "Show this artist's albums under another, e.g. Makaveli inside 2Pac",
+            ) { onGroupArtist(it) }
+
+            // Playback window, not a trim. Nothing is cut from the file -- the
+            // player is simply told where the song really begins and ends, so
+            // clearing these puts everything back.
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ClipField(startAt, "Start at", Modifier.weight(1f)) { onStartAt(it) }
+                ClipField(endAt, "End at", Modifier.weight(1f)) { onEndAt(it) }
+            }
+            Text(
+                "m:ss, for skipping silence or an intro. Leave blank for the whole track.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 /**
@@ -575,8 +737,14 @@ private fun TrackEdits.comparable(): TrackEdits = copy(
     artist = artist.trim(),
     album = album.trim(),
     albumArtist = albumArtist?.trim()?.ifBlank { null },
-    genre = genre?.trim()?.ifBlank { null },
+    genres = genres.map { it.trim() }.filter { it.isNotEmpty() },
+    composer = composer?.trim()?.ifBlank { null },
+    grouping = grouping?.trim()?.ifBlank { null },
     sortArtist = sortArtist?.trim()?.ifBlank { null },
+    titleSort = titleSort?.trim()?.ifBlank { null },
+    albumSort = albumSort?.trim()?.ifBlank { null },
+    albumArtistSort = albumArtistSort?.trim()?.ifBlank { null },
+    composerSort = composerSort?.trim()?.ifBlank { null },
     groupArtist = groupArtist?.trim()?.ifBlank { null },
     startMs = parseClip(formatClip(startMs)),
     endMs = parseClip(formatClip(endMs)),
@@ -587,17 +755,33 @@ private fun TrackEdits.comparable(): TrackEdits = copy(
 private fun Field(
     value: String,
     label: String,
+    jsonKey: String? = null,
+    tagFormat: TagFormat? = null,
     help: String? = null,
     onChange: (String) -> Unit,
 ) {
+    val note = listOfNotNull(help, tagName(jsonKey, tagFormat)).joinToString(" · ")
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
-        supportingText = help?.let { { Text(it) } },
+        supportingText = note.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/**
+ * What this field is called in the file, or null when it should not be shown.
+ *
+ * Reads TagMap rather than a table of its own -- the whole reason that exists
+ * in :core:model is that the reader, the writer and this label must agree.
+ */
+private fun tagName(jsonKey: String?, tagFormat: TagFormat?): String? {
+    val mapping = jsonKey?.let { TagMap.of(it) } ?: return null
+    if (mapping.roamOnly) return "Roam only — no tag equivalent"
+    val format = tagFormat ?: return null
+    return mapping.name(format)
 }
 
 /**
@@ -655,6 +839,8 @@ private fun NumberField(
     value: String,
     label: String,
     modifier: Modifier = Modifier,
+    jsonKey: String? = null,
+    tagFormat: TagFormat? = null,
     onChange: (String) -> Unit,
 ) {
     OutlinedTextField(
@@ -663,8 +849,31 @@ private fun NumberField(
         // which beats an error message appearing after the fact.
         onValueChange = { entered -> onChange(entered.filter { it.isDigit() }.take(4)) },
         label = { Text(label) },
+        supportingText = tagName(jsonKey, tagFormat)?.let { { Text(it) } },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = modifier,
     )
+}
+
+/** "Track [3] of [12]" -- both halves of one frame, laid out as one. */
+@Composable
+private fun PairRow(
+    label: String,
+    first: String,
+    second: String,
+    jsonKey: String,
+    tagFormat: TagFormat?,
+    onFirst: (String) -> Unit,
+    onSecond: (String) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        NumberField(first, label, Modifier.weight(1f), jsonKey, tagFormat, onFirst)
+        Text("of", style = MaterialTheme.typography.bodyMedium)
+        NumberField(second, "", Modifier.weight(1f), onChange = onSecond)
+    }
 }

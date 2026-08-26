@@ -138,6 +138,22 @@ interface TrackDao {
     """)
     suspend fun tracksUnderFolder(sourceId: String, folderPath: String): List<FolderTrackRow>
 
+    /**
+     * Every genre string the library already holds, most used first.
+     *
+     * Feeds the editor's suggestions. Its own spellings before any external
+     * list, because that is what stops one library ending up with "Britpop",
+     * "britpop" and "Brit-Pop" as three different things.
+     *
+     * The column is joined, so callers split it -- see Genres.
+     */
+    @Query("""
+        SELECT genre FROM tracks
+        WHERE genre IS NOT NULL AND genre != '' AND hidden = 0
+        GROUP BY genre ORDER BY COUNT(*) DESC
+    """)
+    suspend fun genreStrings(): List<String>
+
     /** Which album a track belongs to right now, before a document moves it. */
     @Query("SELECT albumId FROM tracks WHERE id = :id")
     suspend fun albumIdOf(id: Long): Long?
@@ -155,8 +171,12 @@ interface TrackDao {
     @Query("""
         UPDATE tracks SET
           title = :title, artistId = :artistId, albumId = :albumId,
-          albumArtist = :albumArtist, trackNo = :trackNo, discNo = :discNo,
-          year = :year, genre = :genre, userEdited = 1
+          albumArtist = :albumArtist, trackNo = :trackNo, trackTotal = :trackTotal,
+          discNo = :discNo, discTotal = :discTotal,
+          year = :year, originalYear = :originalYear, genre = :genre,
+          composer = :composer, grouping = :grouping,
+          titleSort = :titleSort, composerSort = :composerSort,
+          userEdited = 1
         WHERE id = :id
     """)
     suspend fun applyUserEdit(
@@ -166,9 +186,16 @@ interface TrackDao {
         albumId: Long,
         albumArtist: String?,
         trackNo: Int?,
+        trackTotal: Int?,
         discNo: Int?,
+        discTotal: Int?,
         year: Int?,
+        originalYear: Int?,
         genre: String?,
+        composer: String?,
+        grouping: String?,
+        titleSort: String?,
+        composerSort: String?,
     )
 
     /**
@@ -800,6 +827,17 @@ interface AlbumDao {
 
     @Query("UPDATE albums SET compilation = :compilation WHERE id = :albumId")
     suspend fun setCompilation(albumId: Long, compilation: Boolean)
+
+    /**
+     * The album's filing name, and what ORDER BY reads, together.
+     *
+     * Exactly the shape ArtistDao.setSortAs has: writing the override alone
+     * would leave sortTitle stale, and sortTitle is the column every list
+     * actually sorts on -- so an album filed under another name would look
+     * unchanged until something else happened to rebuild it.
+     */
+    @Query("UPDATE albums SET sortAs = :sortAs, sortTitle = :sortTitle WHERE id = :albumId")
+    suspend fun setSortAs(albumId: Long, sortAs: String?, sortTitle: String)
 
     /**
      * The release year, when a document states one.

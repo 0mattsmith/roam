@@ -1,6 +1,7 @@
 package app.roam.data.catalog.metadata
 
 import android.content.Context
+import app.roam.core.database.DocRevisionDao
 import app.roam.core.database.DocTrackRow
 import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
@@ -56,6 +57,7 @@ data class DocWriteReport(
 class DocWriter @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val tracks: TrackDao,
+    private val docs: DocRevisionDao,
     private val settings: SettingsRepository,
     private val providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>,
 ) {
@@ -82,6 +84,26 @@ class DocWriter @Inject constructor(
             onlyTrackId = onlyTrackId,
             skipGuesses = skipGuesses,
         ).getOrThrow()
+    }
+
+    /**
+     * Whether this album already has an `album.json` on the source.
+     *
+     * What the editor asks before saving. Roam UPDATES documents that exist and
+     * never creates one -- creating them is Consolidate Metadata's job, so that
+     * new files appearing on somebody's Drive is something they asked for
+     * rather than a side effect of fixing a title.
+     *
+     * Answered from doc_revisions rather than by asking the source: the crawl
+     * already found every album.json, and a network round trip to decide
+     * whether to show a message would be absurd.
+     */
+    suspend fun hasDocument(albumId: Long): Boolean {
+        val rows = tracks.docTracksForAlbum(albumId)
+        val folder = DocBuilder.albumFolder(rows)
+        if (folder.isEmpty()) return false
+        val sourceId = providers[SourceType.DRIVE]?.get()?.sourceId ?: return false
+        return docs.all(sourceId).any { it.folderPath == folder.joinToString("/") }
     }
 
     /**
