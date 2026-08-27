@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.roam.data.catalog.metadata.ConsolidateWorker
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -299,6 +300,9 @@ fun SettingsRoute(
                 modifier = Modifier.padding(bottom = 8.dp),
             )
 
+            Spacer(Modifier.height(16.dp))
+            ConsolidateSection(vm)
+
             val frozenCount by vm.frozenCount.collectAsStateWithLifecycle()
             if (frozenCount > 0) {
                 ListItem(
@@ -435,4 +439,112 @@ private fun SectionHeader(text: String) {
         color = MaterialTheme.colorScheme.primary,
     )
     Spacer(Modifier.height(4.dp))
+}
+
+/**
+ * Reading the library's own metadata files, on request and only on request.
+ *
+ * These documents are hand-authored on a schedule nobody but their author
+ * knows, so Roam noticing and acting would be the wrong shape. Somebody presses
+ * a button when they have finished editing.
+ */
+@Composable
+private fun ConsolidateSection(vm: SettingsViewModel) {
+    val run by vm.consolidate.collectAsStateWithLifecycle()
+    var offerToCreate by remember { mutableStateOf(false) }
+
+    // Offered exactly once per finished run that found nothing. A library with
+    // no documents is the normal state before anybody has written any, so this
+    // is an offer rather than a warning.
+    val foundNothing = run?.finished == true && run?.found == 0 && run?.total == 0
+
+    if (offerToCreate) {
+        AlertDialog(
+            onDismissRequest = { offerToCreate = false },
+            title = { Text("Create metadata files?") },
+            text = {
+                Text(
+                    "Roam found no album.json anywhere in your library. It can write " +
+                        "what it already knows — one index per album and a file per " +
+                        "track — so there is something to consolidate from.\n\n" +
+                        "Tracks whose tags have never been read are left out, because " +
+                        "writing a title guessed from a filename would record the guess " +
+                        "and stop the real tags ever being read.\n\n" +
+                        "Nothing already on Drive is deleted or overwritten in place."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    offerToCreate = false
+                    vm.consolidateMetadata(ConsolidateWorker.MODE_CREATE)
+                }) { Text("Create them") }
+            },
+            dismissButton = {
+                TextButton(onClick = { offerToCreate = false }) { Text("Not now") }
+            },
+        )
+    }
+
+    SectionHeader("Metadata files")
+
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(
+            onClick = { vm.consolidateMetadata(ConsolidateWorker.MODE_QUICK) },
+            enabled = run?.running != true,
+        ) { Text("Quick scan") }
+
+        OutlinedButton(
+            onClick = { vm.consolidateMetadata(ConsolidateWorker.MODE_FULL) },
+            enabled = run?.running != true,
+        ) { Text("Full scan") }
+
+        if (run?.running == true) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        }
+    }
+
+    Text(
+        // Says what the difference actually IS rather than "fast" and "slow",
+        // because the choice is about who you trust, not how long you will wait.
+        "\"Quick scan\" skips files Roam has already read and that have not " +
+            "changed since. \"Full scan\" re-reads every one — the right choice " +
+            "after editing them with another tool, because \"unchanged\" is only " +
+            "ever a claim about Roam's own bookkeeping.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 8.dp),
+    )
+
+    run?.let { state ->
+        val line = when {
+            state.error != null -> state.error
+            state.running && state.total > 0 -> "Writing ${state.done} of ${state.total} albums"
+            state.running -> "Looking through your library…"
+            state.written > 0 -> "Wrote ${state.written} files"
+            foundNothing -> "No metadata files found"
+            state.finished ->
+                "Read ${state.read} of ${state.found} files, updated ${state.applied} tracks" +
+                    if (state.unreadable > 0) " · ${state.unreadable} could not be read" else ""
+            else -> null
+        }
+        line?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (state.error != null) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+
+        if (foundNothing) {
+            TextButton(onClick = { offerToCreate = true }) { Text("Create them from what Roam knows") }
+        }
+    }
 }

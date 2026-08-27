@@ -66,6 +66,13 @@ object Genres {
      * Several keys may point at one name: "R&B" and "RnB" do not collapse to
      * the same key on their own, because the ampersand is punctuation and the
      * n is a letter.
+     *
+     * **Listing a genre here also protects it from [nearest].** A table hit
+     * returns before the near-miss step runs, which is why the genuine
+     * one-edit neighbours are all in here: Electronic and Electronica are
+     * different genres, and so are Folk Rock and Funk Rock. Without an entry
+     * apiece, typing one into a library that only holds the other would
+     * silently merge them.
      */
     val CANONICAL: Map<String, String> = mapOf(
         "britpop" to "Britpop",
@@ -74,14 +81,25 @@ object Genres {
         "rnb" to "R&B",
         "rhythmandblues" to "R&B",
         "lofi" to "Lo-Fi",
-        "postrock" to "Post-Rock",
-        "postpunk" to "Post-Punk",
         "triphop" to "Trip-Hop",
         "synthpop" to "Synth-Pop",
         "drumandbass" to "Drum & Bass",
         "dnb" to "Drum & Bass",
         "singersongwriter" to "Singer-Songwriter",
         "rocknroll" to "Rock \'n\' Roll",
+
+        // Not spellings of each other. Each entry is here to STOP the near-miss
+        // step merging a genuine pair that happens to sit one edit apart.
+        "electronic" to "Electronic",
+        "electronica" to "Electronica",
+        "folkrock" to "Folk Rock",
+        "funkrock" to "Funk Rock",
+        "folkpunk" to "Folk Punk",
+        "funkpunk" to "Funk Punk",
+        "hardrock" to "Hard Rock",
+        "hardrap" to "Hard Rap",
+        "postrock" to "Post-Rock",
+        "postpunk" to "Post-Punk",
     )
 
     /**

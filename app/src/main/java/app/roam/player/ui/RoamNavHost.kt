@@ -154,6 +154,10 @@ fun RoamNavHost(
             }
         }
 
+        // Work somebody started in Settings and walked away from. Above the
+        // banners because it is transient and they are not.
+        ConsolidateProgressHost()
+
         // Above the update banner, because this one is about the person's own
         // library rather than about Roam, and it is the one they can act on.
         NeedsLookBannerHost(onOpen = { go(Routes.FROZEN) })

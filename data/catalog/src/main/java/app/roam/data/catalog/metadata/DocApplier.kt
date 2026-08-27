@@ -61,7 +61,17 @@ class DocApplier @Inject constructor(
     private val db: RoamDatabase,
 ) {
 
-    suspend fun apply(provider: SourceProvider, found: List<RemoteFile>): DocReport {
+    /**
+     * @param force re-read and re-apply every document, ignoring the revision
+     *   cache. What "Full scan" means: after somebody has been rewriting these
+     *   files with another tool, "nothing changed since Roam last looked" is a
+     *   claim about Roam's bookkeeping rather than about the files.
+     */
+    suspend fun apply(
+        provider: SourceProvider,
+        found: List<RemoteFile>,
+        force: Boolean = false,
+    ): DocReport {
         val sourceId = provider.sourceId
         val cached = docs.all(sourceId).associateBy { it.remoteId }
 
@@ -77,7 +87,8 @@ class DocApplier @Inject constructor(
         val pending = found.mapNotNull { file ->
             val rows = tracks.tracksUnderFolder(sourceId, file.folderPath)
             val previous = cached[file.remoteId]
-            val unchanged = previous != null &&
+            val unchanged = !force &&
+                previous != null &&
                 previous.revision != null &&
                 previous.revision == file.revision &&
                 // The revision alone is not enough. Dropping a new file into

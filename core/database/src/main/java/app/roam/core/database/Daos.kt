@@ -813,6 +813,10 @@ interface AlbumDao {
     @Query("DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT albumId FROM tracks)")
     suspend fun pruneOrphans()
 
+    /** Every album, for a sweep that has to visit all of them. */
+    @Query("SELECT id FROM albums ORDER BY sortTitle")
+    suspend fun allIds(): List<Long>
+
     /** First track to yield a cover supplies the album's; the rest inherit. */
     @Query("UPDATE albums SET artworkId = :artworkId WHERE id = :albumId AND artworkId IS NULL")
     suspend fun setArtworkIfMissing(albumId: Long, artworkId: String)

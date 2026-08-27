@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import app.roam.data.catalog.sync.SyncWorker
 import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
+import app.roam.data.catalog.metadata.ConsolidateWorker
 import app.roam.data.catalog.metadata.LyricsWorker
 import app.roam.data.catalog.tags.TagWorker
 import app.roam.data.source.drive.DriveAuth
@@ -62,6 +63,25 @@ data class LyricsSweepUi(
     val finished: Boolean,
 )
 
+/** What Consolidate is doing, or what it did. */
+data class ConsolidateUi(
+    val running: Boolean,
+    val finished: Boolean,
+    /** Documents the library holds. Zero is the answer that offers to create. */
+    val found: Int,
+    val read: Int,
+    val applied: Int,
+    val unreadable: Int,
+    /** Files written, when this run was creating rather than reading. */
+    val written: Int,
+    val done: Int,
+    val total: Int,
+    val error: String?,
+) {
+    /** Only meaningful while creating; reading has no per-item total. */
+    val fraction: Float? get() = if (total > 0) done.toFloat() / total else null
+}
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     app: Application,
@@ -99,6 +119,49 @@ class SettingsViewModel @Inject constructor(
     /** Just the number, for the row that leads to the page listing them. */
     val hiddenCount = trackDao.hiddenCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /**
+     * How a consolidate run is going, or how the last one went.
+     *
+     * Shaped like lyricsSweep: progress while running, the output data once it
+     * has finished, so the result stays on screen rather than vanishing at the
+     * moment somebody looks up.
+     */
+    val consolidate: StateFlow<ConsolidateUi?> =
+        WorkManager.getInstance(getApplication())
+            .getWorkInfosForUniqueWorkFlow(ConsolidateWorker.NAME)
+            .map { infos ->
+                val info = infos.lastOrNull() ?: return@map null
+                val finished = info.state == WorkInfo.State.SUCCEEDED
+                val data = if (finished) info.outputData else info.progress
+                ConsolidateUi(
+                    running = info.state == WorkInfo.State.RUNNING ||
+                        info.state == WorkInfo.State.ENQUEUED,
+                    finished = finished,
+                    found = data.getInt(ConsolidateWorker.KEY_FOUND, 0),
+                    read = data.getInt(ConsolidateWorker.KEY_READ, 0),
+                    applied = data.getInt(ConsolidateWorker.KEY_APPLIED, 0),
+                    unreadable = data.getInt(ConsolidateWorker.KEY_UNREADABLE, 0),
+                    written = data.getInt(ConsolidateWorker.KEY_WRITTEN, 0),
+                    done = data.getInt(ConsolidateWorker.KEY_DONE, 0),
+                    total = data.getInt(ConsolidateWorker.KEY_TOTAL, 0),
+                    error = if (info.state == WorkInfo.State.FAILED) {
+                        info.outputData.getString(ConsolidateWorker.KEY_ERROR) ?: "Could not finish"
+                    } else {
+                        null
+                    },
+                )
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun consolidateMetadata(mode: String) = viewModelScope.launch {
+        val root = settings.settings.first().driveFolderId
+        if (root == null) {
+            _tagMessage.value = "Choose a music folder first"
+            return@launch
+        }
+        ConsolidateWorker.enqueue(getApplication(), root, mode)
+    }
 
     /** Tracks marked as hand-edited on files whose tags were never read. */
     val frozenCount = trackDao.frozenOnGuessCount()
