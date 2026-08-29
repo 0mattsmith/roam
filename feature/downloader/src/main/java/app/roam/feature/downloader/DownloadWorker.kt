@@ -56,6 +56,13 @@ class DownloadWorker @AssistedInject constructor(
         val trackNo = inputData.getInt(KEY_TRACK_NO, 0)
         val expectedMs = inputData.getLong(KEY_DURATION_MS, 0L)
         val coverUrl = inputData.getString(KEY_COVER_URL)
+        val placement = AlbumPlacement(
+            artist = inputData.getString(KEY_ARTIST).orEmpty(),
+            album = inputData.getString(KEY_ALBUM).orEmpty(),
+            albumArtist = inputData.getString(KEY_ALBUM_ARTIST).orEmpty(),
+            year = inputData.getInt(KEY_YEAR, 0).takeIf { it > 0 },
+            compilation = inputData.getBoolean(KEY_COMPILATION, false),
+        )
 
         val root = settings.settings.first().driveFolderId
             ?: return Result.failure(reason("No music folder chosen - set one in Settings"))
@@ -122,10 +129,17 @@ class DownloadWorker @AssistedInject constructor(
                 append(file.extension.ifBlank { "m4a" })
             }
 
+            // Asked rather than assumed. An album may already live under a
+            // different spelling -- "100 Hits: 80s Pop" beside "100 Hits - 80s
+            // Pop" is one record in two half-folders that nothing will merge --
+            // and a compilation files under Various Artists rather than growing
+            // an artist folder per guest.
+            val segments = placement.folderSegments(provider, root)
+
             // create = true here, unlike the artwork passes: a download is
             // explicitly asking for a new album, so making the folder is the
             // point rather than an accident.
-            provider.write(root, listOf(artist, album), name, file)
+            provider.write(root, segments, name, file)
 
             // Cover art goes in the FOLDER, not into every track.
             //
@@ -139,7 +153,7 @@ class DownloadWorker @AssistedInject constructor(
             // Never overwrites: the first track to land supplies the cover and
             // the rest find it already there. A cover the user put there by
             // hand always wins (invariant 6d).
-            coverUrl?.let { runCatching { seedCover(provider, root, artist, album, it) } }
+            coverUrl?.let { runCatching { seedCover(provider, root, segments, it) } }
 
             // The catalogue learns about it the same way it learns about
             // anything else.
@@ -194,11 +208,11 @@ class DownloadWorker @AssistedInject constructor(
     private suspend fun seedCover(
         provider: SourceProvider,
         root: String,
-        artist: String,
-        album: String,
+        /** The folder the track was just written to, not a fresh guess at it. */
+        segments: List<String>,
         coverUrl: String,
     ) {
-        val folder = provider.resolveFolder(root, listOf(artist, album), create = false) ?: return
+        val folder = provider.resolveFolder(root, segments, create = false) ?: return
         if (provider.findInFolder(folder, ArtworkFiles.ALBUM_NAMES) != null) return
 
         val bytes = withContext(Dispatchers.IO) {
@@ -212,7 +226,7 @@ class DownloadWorker @AssistedInject constructor(
             writeBytes(bytes)
         }
         try {
-            provider.write(root, listOf(artist, album), ArtworkFiles.ALBUM_UPLOAD_NAME, temp)
+            provider.write(root, segments, ArtworkFiles.ALBUM_UPLOAD_NAME, temp)
         } finally {
             temp.delete()
         }
@@ -238,6 +252,9 @@ class DownloadWorker @AssistedInject constructor(
         /** What the catalogue says the track should be, for the duration guard. */
         const val KEY_DURATION_MS = "duration_ms"
         const val KEY_COVER_URL = "cover_url"
+        const val KEY_ALBUM_ARTIST = "album_artist"
+        const val KEY_YEAR = "year"
+        const val KEY_COMPILATION = "compilation"
 
         /** yt-dlp's "search and take the best one" form, which carries no id. */
         const val SEARCH_PREFIX = "ytsearch1:"
@@ -306,6 +323,9 @@ class DownloadWorker @AssistedInject constructor(
                         .putInt(KEY_TRACK_NO, request.trackNo ?: 0)
                         .putLong(KEY_DURATION_MS, request.durationMs ?: 0L)
                         .putString(KEY_COVER_URL, request.coverUrl)
+                        .putString(KEY_ALBUM_ARTIST, request.albumArtist)
+                        .putInt(KEY_YEAR, request.year ?: 0)
+                        .putBoolean(KEY_COMPILATION, request.compilation)
                         .build()
                 )
                 .build()
@@ -349,4 +369,23 @@ data class DownloadRequest(
     val durationMs: Long? = null,
     /** Seeds cover.jpg in the album folder; not embedded in the track. */
     val coverUrl: String? = null,
-)
+    /**
+     * Where this belongs, as answered before the download started.
+     *
+     * Carried rather than derived: by the time the worker runs, the search
+     * result is all it has, and a channel name is not an album artist.
+     */
+    val albumArtist: String = "",
+    val year: Int? = null,
+    val compilation: Boolean = false,
+) {
+    /** The five answers, back in the shape that decides a folder. */
+    val placement: AlbumPlacement
+        get() = AlbumPlacement(
+            artist = artist,
+            album = album,
+            albumArtist = albumArtist,
+            year = year,
+            compilation = compilation,
+        )
+}

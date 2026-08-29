@@ -178,6 +178,14 @@ class DriveSourceProvider @Inject constructor(
         return listImages(folderId).firstOrNull { it.name.lowercase() in wanted }
     }
 
+    override suspend fun listFolders(parentId: String): List<String> =
+        api.list(
+            q = "'$parentId' in parents and mimeType = '$FOLDER_MIME' and trashed = false",
+            fields = FIELD_MASK,
+            pageSize = 1000,
+            pageToken = null,
+        ).files.map { it.name }
+
     override suspend fun listImages(folderId: String): List<RemoteFile> =
         api.list(
             q = "'$folderId' in parents and mimeType contains 'image/' and trashed = false",

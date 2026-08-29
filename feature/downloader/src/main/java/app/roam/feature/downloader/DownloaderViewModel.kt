@@ -327,6 +327,77 @@ class DownloaderViewModel @Inject constructor(
 
     private var remaining: List<YoutubeResult> = emptyList()
 
+    /**
+     * A download waiting on somebody to confirm where it goes.
+     *
+     * The requests are built first and the placement is applied to them on
+     * confirm, rather than the dialog handing back a lambda: this is state that
+     * survives a rotation, and a lambda is not.
+     */
+    private val _pending = MutableStateFlow<PendingDownload?>(null)
+    val pending: StateFlow<PendingDownload?> = _pending.asStateFlow()
+
+    fun cancelPlacement() {
+        _pending.value = null
+    }
+
+    /**
+     * Applies the confirmed placement to every request and queues them.
+     *
+     * One answer for the whole batch, which is the point -- an album is one
+     * album however many tracks it has, and asking per track would be forty
+     * dialogs to say the same thing forty times.
+     */
+    fun confirmPlacement(placement: AlbumPlacement) = viewModelScope.launch {
+        val waiting = _pending.value ?: return@launch
+        _pending.value = null
+
+        val wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers
+
+        // A BATCH is an album, and an album's per-track credits came from the
+        // catalogue -- overwriting them with one typed name would flatten every
+        // guest feature on the record. A single track is the opposite case: the
+        // person is looking at one row and correcting the channel name YouTube
+        // gave it, so what they typed is the better answer.
+        val single = waiting.requests.size == 1
+
+        waiting.requests.forEach { request ->
+            DownloadWorker.enqueue(
+                app,
+                wifiOnly = wifiOnly,
+                request = request.copy(
+                    // The track keeps its own credit unless there is only
+                    // one of them. On a compilation this difference is the
+                    // whole feature: the folder is Various Artists and every
+                    // track still says who actually performed it.
+                    artist = if (single) {
+                        placement.trackArtist(request.artist)
+                    } else {
+                        request.artist.ifBlank { placement.filingArtist }
+                    },
+                    album = placement.albumOrSingles,
+                    albumArtist = placement.filingArtist,
+                    year = placement.year,
+                    compilation = placement.compilation,
+                ),
+            )
+        }
+        _state.update {
+            it.copy(
+                message = if (waiting.requests.size > 1) {
+                    "Adding ${waiting.requests.size} tracks"
+                } else {
+                    "Adding ${waiting.requests.firstOrNull()?.title.orEmpty()}"
+                }
+            )
+        }
+    }
+
+    private fun ask(placement: AlbumPlacement, requests: List<DownloadRequest>) {
+        if (requests.isEmpty()) return
+        _pending.value = PendingDownload(placement, requests)
+    }
+
     fun showMore() = showNextBatch(firstPage = false)
 
     private fun showNextBatch(firstPage: Boolean) {
@@ -378,17 +449,17 @@ class DownloaderViewModel @Inject constructor(
     }
 
     /**
-     * Queues a download with the best guess at where it belongs.
+     * Asks where this belongs, then queues it.
      *
-     * yt-dlp gives a title and an artist and nothing resembling an album, so
-     * singles go to a folder of that name. The review sheet is where this gets
-     * corrected before it is queued.
+     * A search result is the weakest starting point there is -- yt-dlp gives a
+     * title, a channel name where an artist belongs, and nothing resembling an
+     * album -- so this is the case the dialog earns its place on. Queued from an
+     * album page it is usually just a confirmation.
      */
-    fun download(result: YoutubeResult) = viewModelScope.launch {
-        DownloadWorker.enqueue(
-            app,
-            wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers,
-            request = DownloadRequest(
+    fun download(result: YoutubeResult) {
+        ask(
+            AlbumPlacement.from(result),
+            listOf(DownloadRequest(
                 url = result.url,
                 title = result.title,
                 artist = result.artist.ifBlank { "Unknown Artist" },
@@ -407,12 +478,29 @@ class DownloaderViewModel @Inject constructor(
                 // archive, so a wrong cover.jpg is a mess that stays. The
                 // catalogue-backed album page is the only place art is known
                 // well enough to write.
-            ),
+            )),
         )
-        _state.update { it.copy(message = "Adding ${result.title}") }
     }
 
     // ---- the album page -----------------------------------------------------
+
+    /**
+     * What the catalogue already answered, so the dialog is a confirmation.
+     *
+     * The selected release carries the artist, the year and the compilation
+     * flag; falling back to the album's own fields covers a release that was
+     * opened before the candidate list arrived.
+     */
+    private fun AlbumUiState.placement(): AlbumPlacement {
+        val match = candidates.firstOrNull { it.id == selectedId }
+        if (match != null) return AlbumPlacement.from(match)
+        return AlbumPlacement(
+            artist = artist,
+            album = title,
+            albumArtist = artist,
+            year = year,
+        )
+    }
 
     private val _album = MutableStateFlow<AlbumUiState?>(null)
     val album: StateFlow<AlbumUiState?> = _album.asStateFlow()
@@ -609,12 +697,11 @@ class DownloaderViewModel @Inject constructor(
     }
 
     /** Queues one track off the album page, searched for by name and artist. */
-    fun downloadTrack(track: ReleaseTrack) = viewModelScope.launch {
-        val album = _album.value ?: return@launch
-        DownloadWorker.enqueue(
-            app,
-            wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers,
-            request = DownloadRequest(
+    fun downloadTrack(track: ReleaseTrack) {
+        val album = _album.value ?: return
+        ask(
+            album.placement(),
+            listOf(DownloadRequest(
                 // Searched rather than addressed: the catalogue knows what the
                 // track IS, YouTube has to be asked where it is. Built through
                 // searchUrlFor so the queued-state check compares like for like.
@@ -628,10 +715,20 @@ class DownloaderViewModel @Inject constructor(
                 // the album lands on Drive with no art beside it.
                 durationMs = track.durationMs,
                 coverUrl = album.coverUrl,
-            ),
+            )),
         )
-        _state.update { it.copy(message = "Adding ${track.title}") }
     }
+
+    /** The same request, without the ask -- for batching a whole album. */
+    private fun requestFor(track: ReleaseTrack, album: AlbumUiState) = DownloadRequest(
+        url = searchUrlFor(track, album.artist),
+        title = track.title,
+        artist = track.artist.ifBlank { album.artist },
+        album = album.title,
+        trackNo = track.position,
+        durationMs = track.durationMs,
+        coverUrl = album.coverUrl,
+    )
 
     /**
      * Queues only what is missing.
@@ -648,8 +745,10 @@ class DownloaderViewModel @Inject constructor(
             _state.update { it.copy(message = "You already have all of these") }
             return
         }
-        missing.forEach { downloadTrack(it) }
-        _state.update { it.copy(message = "Adding ${missing.size} tracks") }
+        // Asked ONCE for the batch. An album is one album however many
+        // tracks it has, and a dialog per track would be forty ways of saying
+        // the same thing.
+        ask(album.placement(), missing.map { requestFor(it, album) })
     }
 
     /**
@@ -674,17 +773,17 @@ class DownloaderViewModel @Inject constructor(
             return@launch
         }
 
-        DownloadWorker.enqueue(
-            app,
-            wifiOnly = settings.settings.first().wifiOnlyForLargeTransfers,
-            request = DownloadRequest(
-                url = result.url,
-                title = result.title,
-                artist = result.artist.ifBlank { "Unknown Artist" },
-                album = result.album?.ifBlank { null } ?: "Singles",
+        ask(
+            AlbumPlacement.from(result),
+            listOf(
+                DownloadRequest(
+                    url = result.url,
+                    title = result.title,
+                    artist = result.artist.ifBlank { "Unknown Artist" },
+                    album = result.album?.ifBlank { null } ?: "Singles",
+                )
             ),
         )
-        _state.update { it.copy(message = "Adding ${result.title}") }
     }
 
     /** yt-dlp goes stale and quietly stops returning results when it does. */

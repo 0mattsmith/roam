@@ -70,6 +70,20 @@ fun DownloaderRoute(
     vm: DownloaderViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val pending by vm.pending.collectAsStateWithLifecycle()
+
+    // Asked before anything is written, because the worker cannot ask later:
+    // all it has by then is a search result, and a channel name is not an
+    // album artist.
+    pending?.let { waiting ->
+        PlacementDialog(
+            initial = waiting.placement,
+            trackCount = waiting.trackCount,
+            onDismiss = vm::cancelPlacement,
+            onConfirm = vm::confirmPlacement,
+        )
+    }
+
     val downloads by vm.downloads.collectAsStateWithLifecycle()
     val album by vm.album.collectAsStateWithLifecycle()
     val artist by vm.artist.collectAsStateWithLifecycle()

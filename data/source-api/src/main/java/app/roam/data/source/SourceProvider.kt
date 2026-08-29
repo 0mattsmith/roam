@@ -111,6 +111,16 @@ interface SourceProvider {
      */
     suspend fun resolveFolder(root: String, pathSegments: List<String>, create: Boolean = false): String?
 
+    /**
+     * Every child FOLDER of [folderId], by name.
+     *
+     * For deciding whether an album already has a home under some other
+     * spelling. Roam cannot ask "is there a folder like this one" -- it has to
+     * see them all and judge, because the difference it is looking past is
+     * punctuation and the difference it must not look past is a digit.
+     */
+    suspend fun listFolders(parentId: String): List<String>
+
     /** First non-folder child of [folderId] matching any of [names]. */
     suspend fun findInFolder(folderId: String, names: List<String>): RemoteFile?
 
