@@ -35,19 +35,29 @@ data class AlbumPlacement(
     val compilation: Boolean = false,
 ) {
     /**
-     * Who the album files under.
+     * Who the album files under. The ALBUM ARTIST decides, not the flag.
      *
-     * The compilation flag wins outright: it is the whole reason the flag
-     * exists, and letting a typed artist through here is exactly how a
-     * compilation scatters across every guest performer.
+     * These were wired together and should not have been: a greatest-hits by
+     * one act is a compilation with a perfectly good album artist, and filing
+     * it under Various Artists is wrong. What must not happen -- a hundred
+     * artist folders for a hundred-track collection -- is prevented by the
+     * album artist saying "Various Artists", which is what the catalogues
+     * actually report for one.
+     *
+     * So the flag is left to mean what it means in a tag, and the folder
+     * follows the field that names a folder.
      */
     val filingArtist: String
         get() = when {
-            compilation -> FolderNames.VARIOUS_ARTISTS
             albumArtist.isNotBlank() -> albumArtist.trim()
+            compilation -> FolderNames.VARIOUS_ARTISTS
             artist.isNotBlank() -> artist.trim()
             else -> UNKNOWN_ARTIST
         }
+
+    /** Whether this files under the shared folder rather than an artist's own. */
+    val filesUnderVariousArtists: Boolean
+        get() = FolderNames.key(filingArtist) == FolderNames.key(FolderNames.VARIOUS_ARTISTS)
 
     /** What goes in the track's own metadata, which is not the same question. */
     fun trackArtist(fallback: String): String =
@@ -72,17 +82,30 @@ data class AlbumPlacement(
          * collection. Retyping what a catalogue already told us is how a
          * dialog becomes something people dismiss without reading.
          *
-         * A compilation blanks the artist deliberately -- that is the state
-         * the field is supposed to be in, and pre-filling it with "Various
-         * Artists" would make it look like a value worth keeping.
+         * The artist is blanked ONLY when the credit really is "Various
+         * Artists", never merely because the compilation flag is set. Keying
+         * it on the flag emptied the field for every greatest-hits and every
+         * release whose catalogue entry carries the flag loosely -- throwing
+         * away a name the catalogue had supplied, on a screen whose whole job
+         * is to show what it supplied.
          */
-        fun from(match: ReleaseMatch): AlbumPlacement = AlbumPlacement(
-            artist = if (match.isCompilation) "" else match.artist,
-            album = match.title,
-            albumArtist = if (match.isCompilation) FolderNames.VARIOUS_ARTISTS else match.artist,
-            year = match.year,
-            compilation = match.isCompilation,
-        )
+        fun from(match: ReleaseMatch): AlbumPlacement {
+            val credit = match.artist.trim()
+            val various = FolderNames.key(credit) ==
+                FolderNames.key(FolderNames.VARIOUS_ARTISTS)
+
+            return AlbumPlacement(
+                artist = if (various) "" else credit,
+                album = match.title,
+                // Canonically spelled when it is the shared folder. Catalogues
+                // write it several ways and this names a directory, so taking
+                // the credit verbatim would put "various artists" beside
+                // "Various Artists" the first time a source disagreed.
+                albumArtist = if (various) FolderNames.VARIOUS_ARTISTS else credit,
+                year = match.year,
+                compilation = match.isCompilation,
+            )
+        }
 
         /**
          * Filled in from a search result, which knows much less.

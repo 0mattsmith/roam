@@ -93,25 +93,32 @@ fun PlacementDialog(
                     color = MaterialTheme.colorScheme.primary,
                 )
 
+                // Ticking OFFERS Various Artists rather than imposing it. Most
+                // compilations are various-artists ones, so filling the field
+                // in saves the typing -- but a greatest-hits is a compilation
+                // with a real album artist, and the folder follows that field
+                // now rather than the flag. Untick and the suggestion is taken
+                // back, so the box stays something you can change your mind
+                // about.
+                fun setCompilation(on: Boolean) {
+                    compilation = on
+                    if (on && albumArtist.isBlank()) {
+                        albumArtist = FolderNames.VARIOUS_ARTISTS
+                    } else if (!on && albumArtist.trim() == FolderNames.VARIOUS_ARTISTS) {
+                        albumArtist = artist.trim()
+                    }
+                }
+
                 Row(
-                    Modifier.fillMaxWidth().clickable { compilation = !compilation },
+                    Modifier.fillMaxWidth().clickable { setCompilation(!compilation) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Checkbox(checked = compilation, onCheckedChange = { compilation = it })
+                    Checkbox(checked = compilation, onCheckedChange = { setCompilation(it) })
                     Column {
                         Text("Compilation", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            // One track off a compilation is still a compilation,
-                            // so this is not an album-only question -- but "one
-                            // folder per artist" describes nothing when there is
-                            // only one of them.
-                            if (many) {
-                                "Files under ${FolderNames.VARIOUS_ARTISTS} instead of one " +
-                                    "folder per artist"
-                            } else {
-                                "Files under ${FolderNames.VARIOUS_ARTISTS} instead of the " +
-                                    "artist's own folder"
-                            },
+                            "Tags it as one, and suggests ${FolderNames.VARIOUS_ARTISTS} " +
+                                "as the album artist",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -125,20 +132,22 @@ fun PlacementDialog(
                     supportingText = {
                         Text(
                             when {
-                                // Not disabled, because a disabled field looks
-                                // broken. Saying why is better than greying out.
+                                // Keyed on where the album actually files, not
+                                // on the compilation flag -- a greatest-hits is
+                                // a compilation that files under its own artist,
+                                // and telling someone to leave the field blank
+                                // there would be wrong.
                                 //
-                                // The advice INVERTS on a single track, and
-                                // getting this backwards is how a track lands
+                                // The advice also INVERTS on a single track, and
+                                // getting that backwards is how a track lands
                                 // credited to a YouTube channel. In a batch the
-                                // field has nothing to decide -- every track
-                                // already carries its own credit and the folder
-                                // is Various Artists. Alone, it is the only place
-                                // that credit can come from.
-                                compilation && many ->
+                                // field has nothing to decide, because every
+                                // track already carries its own credit. Alone,
+                                // it is the only place that credit can come from.
+                                placement.filesUnderVariousArtists && many ->
                                     "Leave blank — each track keeps its own artist, and the " +
                                         "folder is ${FolderNames.VARIOUS_ARTISTS}"
-                                compilation ->
+                                placement.filesUnderVariousArtists ->
                                     "Who performed this one. The folder is still " +
                                         "${FolderNames.VARIOUS_ARTISTS} — blank keeps the " +
                                         "credit it arrived with, which is often a channel name"
@@ -164,6 +173,11 @@ fun PlacementDialog(
                         value = albumArtist,
                         onValueChange = { albumArtist = it },
                         label = { Text("Album artist") },
+                        // This is the field that names the folder, so it says
+                        // so. It used to be decided by the compilation box,
+                        // which meant the one value that mattered was the one
+                        // nothing explained.
+                        supportingText = { Text("Names the folder") },
                         singleLine = true,
                         modifier = Modifier.weight(2f),
                     )

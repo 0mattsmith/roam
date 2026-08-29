@@ -11,6 +11,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -73,6 +74,16 @@ class YoutubeSource @Inject constructor(private val app: Application) {
      * connection pool and a thread pool, so one per download would be worse
      * than the problem being solved here.
      */
+    /**
+     * Consecutive failures of the direct fetch, capped at the give-up point.
+     *
+     * Volatile rather than guarded: several download jobs read and write this
+     * at once, and the worst a race costs is one extra attempt. A lock here
+     * would be a lock more than the thing is worth.
+     */
+    @Volatile
+    private var directFailures = 0
+
     private val http: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
@@ -139,22 +150,31 @@ class YoutubeSource @Inject constructor(private val app: Application) {
     suspend fun search(query: String, limit: Int = SEARCH_LIMIT): Result<List<YoutubeResult>> =
         runCatching {
             ensureStarted()
-            withContext(Dispatchers.IO) {
-                runLock.withLock {
-                    val music = runCatching {
-                        query("https://music.youtube.com/search?q=${query.urlEncoded()}", limit)
-                    }.getOrNull()
-
-                    // A music search page is built from shelves -- Songs,
-                    // Videos, Albums, Artists -- so a short or ambiguous query
-                    // can come back as sections containing nothing flat.
-                    // ytsearch always returns plain videos, so it is the
-                    // fallback rather than the first choice.
-                    if (!music.isNullOrEmpty()) music
-                    else query("ytsearch$limit:$query", limit)
-                }
-            }
+            // BOUNDED, because the alternative is a spinner that never stops.
+            //
+            // Everything that runs yt-dlp queues behind one mutex, and a queue
+            // of downloads can hold it for a long time -- so a search typed
+            // while the library is filling up waits, with nothing on screen
+            // saying why. yt-dlp can also simply hang. Both look identical from
+            // here and both are better reported than waited on.
+            withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
+                withContext(Dispatchers.IO) { searchLocked(query, limit) }
+            } ?: error("Search timed out - Roam may be busy adding to your library")
         }.rethrowCancellation()
+
+    private suspend fun searchLocked(query: String, limit: Int): List<YoutubeResult> =
+        runLock.withLock {
+            val music = runCatching {
+                query("https://music.youtube.com/search?q=${query.urlEncoded()}", limit)
+            }.getOrNull()
+
+            // A music search page is built from shelves -- Songs, Videos,
+            // Albums, Artists -- so a short or ambiguous query can come back as
+            // sections containing nothing flat. ytsearch always returns plain
+            // videos, so it is the fallback rather than the first choice.
+            if (!music.isNullOrEmpty()) music
+            else query("ytsearch$limit:$query", limit)
+        }
 
     /**
      * The expensive half: a real extraction per id, which is the only way to
@@ -378,12 +398,26 @@ class YoutubeSource @Inject constructor(private val app: Application) {
             into.deleteRecursively()
             into.mkdirs()
 
-            val stream = runCatching { runLock.withLock { resolve(url) } }
-                .rethrowCancellation()
-                .getOrNull()
+            // Once the direct path has failed twice running, stop paying for
+            // it. Resolving is a whole yt-dlp process holding the shared lock,
+            // so an approach that does not work in this environment otherwise
+            // costs every download an extra turn at the one resource the
+            // interactive search also needs -- making a broken fetch look like
+            // a broken app. Reset on success, and on restart.
+            val stream = if (directFailures < DIRECT_FETCH_ATTEMPTS) {
+                runCatching { runLock.withLock { resolve(url) } }
+                    .rethrowCancellation()
+                    .getOrNull()
+            } else null
 
             val direct = stream?.let {
                 runCatching { fetch(it, into, onProgress) }.rethrowCancellation().getOrNull()
+            }
+
+            if (direct != null) {
+                directFailures = 0
+            } else if (directFailures < DIRECT_FETCH_ATTEMPTS) {
+                directFailures++
             }
 
             direct ?: runLock.withLock { fetchWithYoutubeDl(url, into, onProgress) }
@@ -528,6 +562,18 @@ class YoutubeSource @Inject constructor(private val app: Application) {
 
         /** Big enough that the read loop is not the cost; small enough to cancel promptly. */
         const val BUFFER_BYTES = 64 * 1024
+
+        /**
+         * How long a search may wait before saying so.
+         *
+         * Generous, because a cold yt-dlp start is genuinely slow and cutting
+         * off a search that was about to answer is worse than the wait. It is
+         * here to turn "forever" into a sentence, not to be a tight bound.
+         */
+        const val SEARCH_TIMEOUT_MS = 45_000L
+
+        /** Consecutive direct-fetch failures before it stops being attempted. */
+        const val DIRECT_FETCH_ATTEMPTS = 2
 
         /**
          * Ids are cheap to collect and only ever enriched a batch at a time,

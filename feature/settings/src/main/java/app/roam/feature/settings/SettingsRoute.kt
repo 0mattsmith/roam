@@ -485,7 +485,10 @@ private fun ConsolidateSection(vm: SettingsViewModel) {
         )
     }
 
-    SectionHeader("Metadata files")
+    // Named for the ACTION, not the subject. "Metadata files" describes what
+    // the section is about and is therefore invisible to anyone looking for the
+    // thing they were told to run.
+    SectionHeader("Consolidate metadata")
 
     Row(
         Modifier.fillMaxWidth().padding(bottom = 4.dp),
