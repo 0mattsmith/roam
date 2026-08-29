@@ -106,11 +106,16 @@ class YoutubeSource @Inject constructor(private val app: Application) {
      * real artist and album where plain YouTube gives whatever the uploader
      * typed, and they skip the lyric videos and hour-long compilations.
      *
-     * The cheap half. One request, ids only -- deliberately separate from
-     * [enrich], because the whole point of the split is that this is fast and
-     * that is not.
+     * The cheap half, and now the only one the first screenful waits for.
+     *
+     * A flat listing already carries the title, the channel, the duration and a
+     * thumbnail -- everything a result ROW draws. Roam used to throw all of
+     * that away, keep the ids, and then pay for a full extraction of every one
+     * before showing anything, so the list appeared at the speed of the slow
+     * call rather than the fast one. Now the rows are built from the flat
+     * entries and [enrich] fills in the album and the year behind them.
      */
-    suspend fun searchIds(query: String, limit: Int = SEARCH_LIMIT): Result<List<String>> =
+    suspend fun search(query: String, limit: Int = SEARCH_LIMIT): Result<List<YoutubeResult>> =
         runCatching {
             ensureStarted()
             withContext(Dispatchers.IO) {
@@ -215,7 +220,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
         return best
     }
 
-    private fun query(target: String, limit: Int): List<String> {
+    private fun query(target: String, limit: Int): List<YoutubeResult> {
         val request = YoutubeDLRequest(target)
             .addOption("--flat-playlist")
             .addOption("--dump-single-json")
@@ -231,7 +236,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
         return flatten(json, depth = 0).take(limit)
     }
 
-    private fun flatten(node: JSONObject, depth: Int): List<String> {
+    private fun flatten(node: JSONObject, depth: Int): List<YoutubeResult> {
         if (depth > MAX_SHELF_DEPTH) return emptyList()
         val entries = node.optJSONArray("entries") ?: return emptyList()
 
@@ -243,7 +248,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
                 // Anything that is not an 11-character video id is a browse id
                 // belonging to a shelf header, not something that plays.
                 val id = entry.optString("id")
-                if (id.length == VIDEO_ID_LENGTH) listOf(id) else emptyList()
+                if (id.length == VIDEO_ID_LENGTH) listOf(toResult(entry)) else emptyList()
             }
         }
     }
@@ -278,16 +283,19 @@ class YoutubeSource @Inject constructor(private val app: Application) {
         expectedMs: Long,
         toleranceMs: Long = DURATION_TOLERANCE_MS,
     ): Result<String?> = runCatching {
-        val ids = searchIds(query, limit = DURATION_CANDIDATES).getOrThrow()
+        val flat = search(query, limit = DURATION_CANDIDATES).getOrThrow()
 
         // THROWN, not returned as null. "Nothing came back" is a failed search
         // and deserves a retry; "these came back and none fits" is a verdict
         // about the recording and must not be retried. Collapsing the two
         // reports a bad connection as a duration mismatch, which sends anyone
         // reading the queue looking in entirely the wrong place.
-        if (ids.isEmpty()) error("No search results for \"$query\"")
+        if (flat.isEmpty()) error("No search results for \"$query\"")
 
-        val candidates = enrich(ids.take(DURATION_CANDIDATES)).getOrThrow()
+        // Enriched deliberately, even though the flat rows carry a duration:
+        // this decides whether a file is downloaded at all, and a flat listing's
+        // duration comes from the search page rather than from the recording.
+        val candidates = enrich(flat.take(DURATION_CANDIDATES).map { it.videoId }).getOrThrow()
         if (candidates.isEmpty()) error("Could not read details for \"$query\"")
 
         candidates.firstOrNull { candidate ->
@@ -303,7 +311,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
     ): Result<File> = runCatching {
         ensureStarted()
         withContext(Dispatchers.IO) {
-            // SERIALISED, exactly like searchIds and enrich.
+            // SERIALISED, exactly like search and enrich.
             //
             // This was the one yt-dlp entry point running outside the lock, and
             // it did not matter while downloads were a chain. Independent jobs

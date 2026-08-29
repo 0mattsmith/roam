@@ -260,9 +260,7 @@ class DownloaderViewModel @Inject constructor(
         localJob?.cancel()
         remoteJob?.cancel()
 
-        prefetchJob?.cancel()
         remaining = emptyList()
-        prefetched = null
 
         if (query.isBlank()) {
             _state.update {
@@ -298,8 +296,8 @@ class DownloaderViewModel @Inject constructor(
             delay(REMOTE_DEBOUNCE_MS)
             _state.update { it.copy(youtube = emptyList()) }
 
-            val ids = youtube.searchIds(query)
-            val failure = ids.exceptionOrNull()
+            val found = youtube.search(query)
+            val failure = found.exceptionOrNull()
             if (failure != null) {
                 _state.update {
                     // The real message, not a polite summary of it. yt-dlp says
@@ -311,39 +309,31 @@ class DownloaderViewModel @Inject constructor(
                 return@launch
             }
 
-            remaining = ids.getOrDefault(emptyList())
-            prefetched = null
+            // Shown from the flat listing, immediately. The album and the
+            // year arrive afterwards; a title, a channel and a duration are
+            // enough to choose from, and waiting for an extraction of sixty
+            // videos before drawing anything is what made this feel slow.
+            remaining = found.getOrDefault(emptyList())
             showNextBatch(firstPage = true)
         }
     }
 
     // ---- batching -----------------------------------------------------------
     //
-    // Ids are cheap and arrive all at once; turning one into a row costs a real
-    // extraction. So a page is fetched, shown, and then the FOLLOWING page is
-    // fetched immediately in the background -- by the time "Show more" is
-    // pressed the answer is usually already here, and the wait lands while the
-    // person is still reading rather than after they ask.
+    // The whole search arrives flat in one call, so paging is now slicing a
+    // list rather than fetching anything. What used to make this complicated --
+    // an extraction per page, prefetched ahead so the wait landed while the
+    // person was still reading -- is gone, because the wait is gone.
 
-    private var remaining: List<String> = emptyList()
-    private var prefetched: List<YoutubeResult>? = null
-    private var prefetchJob: Job? = null
+    private var remaining: List<YoutubeResult> = emptyList()
 
-    fun showMore() = viewModelScope.launch { showNextBatch(firstPage = false) }
+    fun showMore() = showNextBatch(firstPage = false)
 
-    private suspend fun showNextBatch(firstPage: Boolean) {
-        val ready = prefetched
-        prefetched = null
-
-        val batch = if (ready != null) {
-            ready
-        } else {
-            // Nothing waiting: either this is the first page, or the person
-            // asked faster than the network answered.
-            _state.update { it.copy(searchingYoutube = firstPage, loadingMore = !firstPage) }
-            val ids = takeBatch()
-            youtube.enrich(ids).getOrDefault(emptyList())
-        }
+    private fun showNextBatch(firstPage: Boolean) {
+        // Flat rows, ready to draw. There is nothing to wait for any more --
+        // the extraction that used to gate this runs behind them instead, so
+        // the prefetching that used to hide its cost has nothing left to hide.
+        val batch = takeBatch()
 
         _state.update {
             it.copy(
@@ -354,17 +344,34 @@ class DownloaderViewModel @Inject constructor(
             )
         }
 
-        prefetchJob?.cancel()
-        if (remaining.isNotEmpty()) {
-            prefetchJob = viewModelScope.launch {
-                val ids = takeBatch()
-                prefetched = youtube.enrich(ids).getOrDefault(emptyList())
-                _state.update { it.copy(hasMore = it.hasMore || prefetched?.isNotEmpty() == true) }
-            }
+        // The album and the year, filled in under the rows already on screen.
+        // NOT cancelled when the next page is asked for: each batch enriches
+        // its own rows, and cancelling would leave whatever is above still
+        // showing a channel name where an artist belongs.
+        viewModelScope.launch { enrichInPlace(batch) }
+    }
+
+    /**
+     * Replaces rows in place once the real extraction answers.
+     *
+     * Matched on the video id rather than on position, because the person can
+     * press "Show more" while this is in flight and the row's index will have
+     * moved. A failure is silent on purpose: the flat row is already drawn and
+     * perfectly usable, and an error message about metadata nobody asked for
+     * would be noise.
+     */
+    private suspend fun enrichInPlace(rows: List<YoutubeResult>) {
+        if (rows.isEmpty()) return
+        val better = youtube.enrich(rows.map { it.videoId }).getOrNull().orEmpty()
+        if (better.isEmpty()) return
+
+        val byId = better.associateBy { it.videoId }
+        _state.update { current ->
+            current.copy(youtube = current.youtube.map { byId[it.videoId] ?: it })
         }
     }
 
-    private fun takeBatch(): List<String> {
+    private fun takeBatch(): List<YoutubeResult> {
         val batch = remaining.take(BATCH)
         remaining = remaining.drop(BATCH)
         return batch
