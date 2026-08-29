@@ -167,7 +167,7 @@ class DocBuilderTest {
         val order = Regex("^  \"(\\w+)\"", RegexOption.MULTILINE).findAll(json).map { it.groupValues[1] }.toList()
         assertEquals(
             listOf(
-                "schema", "album_artist", "album_title", "year", "genres",
+                "schema", "modified", "album_artist", "album_title", "year", "genres",
                 "is_compilation", "total_discs", "total_tracks", "cover_art", "tracks",
             ),
             order,
@@ -526,13 +526,37 @@ class DocBuilderTest {
     }
 
     @Test
+    fun `every document says when it was written`() {
+        val at = "2026-08-27T12:00:00Z"
+        assertEquals(at, JSONObject(DocBuilder.albumDocument(null, listOf(row()), at)).getString("modified"))
+        assertEquals(at, JSONObject(DocBuilder.trackDocument(null, row(), at)).getString("modified"))
+        // ...and reads it back, so whoever is deciding which copy is newer has
+        // something better than a filesystem timestamp to go on.
+        assertEquals(at, LibraryDocs.album(DocBuilder.albumDocument(null, listOf(row()), at))!!.modified)
+        assertEquals(at, LibraryDocs.track(DocBuilder.trackDocument(null, row(), at))!!.modified)
+    }
+
+    @Test
+    fun `patching the artwork history restamps the document`() {
+        // The patch IS a write. A reader comparing two copies has to see it.
+        val doc = JSONObject("""{ "schema": 1, "modified": "2020-01-01T00:00:00Z", "album_artist": "A", "album_title": "B" }""")
+        val out = JSONObject(
+            DocBuilder.withRetiredArtwork(doc, "cover1.jpg", DocBuilder.ALBUM_KEYS, "2026-08-27T12:00:00Z")!!
+        )
+        assertEquals("2026-08-27T12:00:00Z", out.getString("modified"))
+    }
+
+    @Test
     fun `a document round-trips without drifting`() {
         // Written, read, written again: the second pass must be byte-identical
         // or every save would show a diff and nobody could tell a real change
         // from noise.
         val rows = listOf(row(), row(id = 2, trackNo = 2, fileName = "02 Shaker.mp3", title = "Shakermaker"))
-        val once = DocBuilder.albumDocument(null, rows)
-        val twice = DocBuilder.albumDocument(JSONObject(once), rows)
+        // The stamp is pinned, because two saves a second apart SHOULD differ
+        // by that line -- what must not differ is everything else.
+        val at = "2026-08-27T12:00:00Z"
+        val once = DocBuilder.albumDocument(null, rows, at)
+        val twice = DocBuilder.albumDocument(JSONObject(once), rows, at)
         assertEquals(once, twice)
     }
 }

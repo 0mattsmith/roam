@@ -63,6 +63,7 @@ arise — Roam always does.
 ```json
 {
   "schema": 1,
+  "modified": "2026-08-27T14:32:05Z",
   "artist_name": "Oasis",
   "active_from": 1991,
   "active_to": null,
@@ -119,6 +120,7 @@ conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
 ```json
 {
   "schema": 1,
+  "modified": "2026-08-27T14:32:05Z",
   "album_artist": "Oasis",
   "album_title": "Definitely Maybe (Deluxe Version)",
   "year": 1994,
@@ -188,6 +190,7 @@ by `01 Rock 'n' Roll Star.json`.
 ```json
 {
   "schema": 1,
+  "modified": "2026-08-27T14:32:05Z",
   "title": "Rock 'n' Roll Star",
   "track_number": 1,
   "disc_number": 1,
@@ -303,6 +306,31 @@ No edit mode, because a mode is a thing to be in and get out of.
 
 ---
 
+## `modified`
+
+Every document carries one, directly after `schema`:
+
+```json
+"modified": "2026-08-27T14:32:05Z"
+```
+
+ISO 8601, UTC, to the second. **Whoever writes the file sets it to the moment
+they wrote it** — Roam does, and anything else editing these should too.
+
+It exists so two copies can be compared. Filesystem mtime answers the same
+question right up until a transport that does not preserve it, and by then the
+wrong copy has already won. A field inside the document survives whatever
+carries it.
+
+It is not authoritative about anything except itself. A reader deciding which of
+two copies is newer should prefer this, fall back to mtime, and treat a missing
+value as "older than anything that has one" rather than refusing to act.
+
+A patch counts as a write: replacing a cover restamps `album.json`, because that
+edit has to be visible to whatever is comparing.
+
+---
+
 ## How this maps onto tags
 
 Every key below one line is also a real tag in the audio file. That is the
@@ -336,6 +364,29 @@ The same table lives in code as `TagMap` in `:core:model`, read by the tag
 reader, the document writer and the editor's tag-name toggle. Three copies of
 it would eventually disagree about something like ALBUMARTISTSORT, and nobody
 would notice until a round-trip put a field in the wrong frame.
+
+### Why the mapping is not in the documents
+
+It would be self-describing, which is tempting, and it is the wrong shape.
+
+**The mapping belongs to the schema, not to the instance.** `title` maps to TIT2
+for every track that has ever existed; it does not vary by album or by file. A
+library of ten thousand tracks would carry ten thousand identical copies of a
+constant — tens of megabytes of pure boilerplate, and a diff on any of them
+would be mostly mapping.
+
+**A second copy can disagree with the first.** If a file claimed `title` maps to
+TIT3, either a reader believes it — and one typo corrupts every write to that
+album — or it does not, in which case the field is decoration that looks
+authoritative. Neither is good.
+
+**It would go stale.** Add a field in schema 2 and every document written before
+it holds an incomplete map, with nothing to say so.
+
+`"schema": 1` is already the pointer: it names which mapping applies, in one
+character rather than eight hundred. What a tool actually needs is a
+machine-readable copy of the table, once — `docs/examples/tagmap.json` is that
+file, generated from `TagMap` so it cannot drift from the code.
 
 ### The sort fields
 
@@ -702,6 +753,7 @@ playlist states a rule and Roam works out the answer.
 ```json
 {
   "schema": 1,
+  "modified": "2026-08-27T14:32:05Z",
   "name": "90s Grunge",
   "kind": "smart",
   "description": "Seattle, mostly",

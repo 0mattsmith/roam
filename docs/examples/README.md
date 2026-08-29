@@ -23,6 +23,16 @@ Oasis/
 Only three of the forty-four `<track>.json` files are here — the first track of
 each disc, enough to show the shape.
 
+Alongside them:
+
+- **`tagmap.json`** — every document key and what it is called in ID3v2, MP4 and
+  Vorbis. Generated from `TagMap` in `:core:model`, so it cannot drift from what
+  Roam actually reads and writes. This is the file a tag editor wants; the
+  documents themselves do not repeat the mapping, because it belongs to the
+  schema rather than to any one instance.
+- **`PLAYLISTS/`** — one smart playlist and one manual, showing both shapes of
+  the same format.
+
 ## What this album demonstrates
 
 **The album folder is worked out, not configured.** These tracks live in three
@@ -69,6 +79,15 @@ Also worth knowing: the folder beside this one is named *Standing on the
 Shoulders of Giants*, and the record is *Standing on the Shoulder of Giants*.
 Once that album has an `album.json`, the document is what Roam shows and the
 folder name stops mattering. That is the whole point of these files.
+
+## `modified`
+
+Every document carries one, immediately after `schema`, in UTC to the second.
+Whoever writes the file sets it. It exists so two copies can be compared without
+relying on filesystem mtime, which not every transport preserves — and by the
+time it has been lost, the wrong copy has already won.
+
+A patch counts as a write: replacing a cover restamps `album.json`.
 
 ## Where the numbers come from
 

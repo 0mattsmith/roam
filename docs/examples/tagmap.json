@@ -1,0 +1,218 @@
+{
+  "schema": 1,
+  "modified": "2026-08-27T14:32:05Z",
+  "description": "How each key in Roam's metadata documents maps onto the tag formats. Generated from TagMap in :core:model. This file describes schema 1 of artist.json, album.json and <track>.json -- the documents themselves do not repeat it, because the mapping belongs to the schema rather than to any one instance.",
+  "formats": [
+    {
+      "id": "id3v2",
+      "applies_to": [
+        "mp3"
+      ],
+      "name": "ID3v2 frame"
+    },
+    {
+      "id": "mp4",
+      "applies_to": [
+        "m4a",
+        "mp4",
+        "aac"
+      ],
+      "name": "MP4 atom"
+    },
+    {
+      "id": "vorbis",
+      "applies_to": [
+        "flac",
+        "ogg",
+        "opus"
+      ],
+      "name": "Vorbis comment"
+    }
+  ],
+  "fields": [
+    {
+      "key": "title",
+      "label": "Title",
+      "id3v2": "TIT2",
+      "mp4": "\u00a9nam",
+      "vorbis": "TITLE",
+      "roam_only": false
+    },
+    {
+      "key": "artist",
+      "label": "Artist",
+      "id3v2": "TPE1",
+      "mp4": "\u00a9ART",
+      "vorbis": "ARTIST",
+      "roam_only": false
+    },
+    {
+      "key": "album",
+      "label": "Album",
+      "id3v2": "TALB",
+      "mp4": "\u00a9alb",
+      "vorbis": "ALBUM",
+      "roam_only": false
+    },
+    {
+      "key": "album_artist",
+      "label": "Album artist",
+      "id3v2": "TPE2",
+      "mp4": "aART",
+      "vorbis": "ALBUMARTIST",
+      "roam_only": false
+    },
+    {
+      "key": "track_number",
+      "label": "Track",
+      "id3v2": "TRCK",
+      "mp4": "trkn",
+      "vorbis": "TRACKNUMBER",
+      "roam_only": false
+    },
+    {
+      "key": "total_tracks",
+      "label": "of",
+      "id3v2": "TRCK",
+      "mp4": "trkn",
+      "vorbis": "TRACKTOTAL",
+      "roam_only": false
+    },
+    {
+      "key": "disc_number",
+      "label": "Disc",
+      "id3v2": "TPOS",
+      "mp4": "disk",
+      "vorbis": "DISCNUMBER",
+      "roam_only": false
+    },
+    {
+      "key": "total_discs",
+      "label": "of",
+      "id3v2": "TPOS",
+      "mp4": "disk",
+      "vorbis": "DISCTOTAL",
+      "roam_only": false
+    },
+    {
+      "key": "year",
+      "label": "Year",
+      "id3v2": "TDRC",
+      "mp4": "\u00a9day",
+      "vorbis": "DATE",
+      "roam_only": false
+    },
+    {
+      "key": "genres",
+      "label": "Genres",
+      "id3v2": "TCON",
+      "mp4": "\u00a9gen",
+      "vorbis": "GENRE",
+      "roam_only": false
+    },
+    {
+      "key": "composer",
+      "label": "Composer",
+      "id3v2": "TCOM",
+      "mp4": "\u00a9wrt",
+      "vorbis": "COMPOSER",
+      "roam_only": false
+    },
+    {
+      "key": "grouping",
+      "label": "Grouping",
+      "id3v2": "TIT1",
+      "mp4": "\u00a9grp",
+      "vorbis": "GROUPING",
+      "roam_only": false
+    },
+    {
+      "key": "is_compilation",
+      "label": "Compilation",
+      "id3v2": "TCMP",
+      "mp4": "cpil",
+      "vorbis": "COMPILATION",
+      "roam_only": false
+    },
+    {
+      "key": "title_sort",
+      "label": "Title sort",
+      "id3v2": "TSOT",
+      "mp4": "sonm",
+      "vorbis": "TITLESORT",
+      "roam_only": false
+    },
+    {
+      "key": "artist_sort",
+      "label": "Artist sort",
+      "id3v2": "TSOP",
+      "mp4": "soar",
+      "vorbis": "ARTISTSORT",
+      "roam_only": false
+    },
+    {
+      "key": "album_sort",
+      "label": "Album sort",
+      "id3v2": "TSOA",
+      "mp4": "soal",
+      "vorbis": "ALBUMSORT",
+      "roam_only": false
+    },
+    {
+      "key": "album_artist_sort",
+      "label": "Album artist sort",
+      "id3v2": "TSO2",
+      "mp4": "soaa",
+      "vorbis": "ALBUMARTISTSORT",
+      "roam_only": false
+    },
+    {
+      "key": "composer_sort",
+      "label": "Composer sort",
+      "id3v2": "TSOC",
+      "mp4": "soco",
+      "vorbis": "COMPOSERSORT",
+      "roam_only": false
+    },
+    {
+      "key": "cover_art",
+      "label": "Cover art",
+      "id3v2": "APIC",
+      "mp4": "covr",
+      "vorbis": "METADATA_BLOCK_PICTURE",
+      "roam_only": false
+    },
+    {
+      "key": "start_at",
+      "label": "Start at",
+      "id3v2": null,
+      "mp4": null,
+      "vorbis": null,
+      "roam_only": true
+    },
+    {
+      "key": "end_at",
+      "label": "End at",
+      "id3v2": null,
+      "mp4": null,
+      "vorbis": null,
+      "roam_only": true
+    },
+    {
+      "key": "group_artist",
+      "label": "Group artist",
+      "id3v2": null,
+      "mp4": null,
+      "vorbis": null,
+      "roam_only": true
+    },
+    {
+      "key": "lyrics_file",
+      "label": "Lyrics",
+      "id3v2": null,
+      "mp4": null,
+      "vorbis": null,
+      "roam_only": true
+    }
+  ]
+}

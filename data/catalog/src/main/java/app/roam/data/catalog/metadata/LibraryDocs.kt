@@ -17,6 +17,14 @@ import org.json.JSONObject
 const val DOC_SCHEMA = 1
 
 data class ArtistDoc(
+    /**
+     * When this document was last written, ISO 8601 in UTC.
+     *
+     * For whoever has to decide which of two copies is newer. Filesystem mtime
+     * answers that too, right up until a transport that does not preserve it --
+     * and by then the wrong copy has already won.
+     */
+    val modified: String?,
     val artistName: String?,
     val activeFrom: Int?,
     val activeTo: Int?,
@@ -62,6 +70,14 @@ data class AlbumTrackEntry(
 }
 
 data class AlbumDoc(
+    /**
+     * When this document was last written, ISO 8601 in UTC.
+     *
+     * For whoever has to decide which of two copies is newer. Filesystem mtime
+     * answers that too, right up until a transport that does not preserve it --
+     * and by then the wrong copy has already won.
+     */
+    val modified: String?,
     val albumArtist: String,
     val albumTitle: String,
     val year: Int?,
@@ -96,6 +112,14 @@ data class AlbumDoc(
 }
 
 data class TrackDoc(
+    /**
+     * When this document was last written, ISO 8601 in UTC.
+     *
+     * For whoever has to decide which of two copies is newer. Filesystem mtime
+     * answers that too, right up until a transport that does not preserve it --
+     * and by then the wrong copy has already won.
+     */
+    val modified: String?,
     val title: String?,
     val trackNumber: Int?,
     val discNumber: Int?,
@@ -151,6 +175,7 @@ object LibraryDocs {
 
     fun artist(json: String): ArtistDoc? = parse(json) { o ->
         ArtistDoc(
+            modified = o.stringOrNull("modified"),
             artistName = o.stringOrNull("artist_name"),
             activeFrom = o.intOrNull("active_from"),
             activeTo = o.intOrNull("active_to"),
@@ -173,6 +198,7 @@ object LibraryDocs {
         val albumTitle = o.stringOrNull("album_title") ?: return@parse null
 
         AlbumDoc(
+            modified = o.stringOrNull("modified"),
             albumArtist = albumArtist,
             albumTitle = albumTitle,
             year = o.intOrNull("year"),
@@ -191,6 +217,7 @@ object LibraryDocs {
 
     fun track(json: String): TrackDoc? = parse(json) { o ->
         TrackDoc(
+            modified = o.stringOrNull("modified"),
             title = o.stringOrNull("title"),
             trackNumber = o.intOrNull("track_number"),
             discNumber = o.intOrNull("disc_number"),

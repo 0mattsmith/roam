@@ -29,14 +29,14 @@ object DocBuilder {
      * and the two documents do not share one.
      */
     val ALBUM_KEYS = listOf(
-        "schema", "album_artist", "album_title", "year", "original_year",
+        "schema", "modified", "album_artist", "album_title", "year", "original_year",
         "genres", "is_compilation", "total_discs", "total_tracks",
         "album_sort", "album_artist_sort", "cover_art", "previous_artwork", "tracks",
     )
 
     /** Key order for `artist.json`. Roam does not build these yet; it patches them. */
     val ARTIST_KEYS = listOf(
-        "schema", "artist_name", "active_from", "active_to", "debut_album",
+        "schema", "modified", "artist_name", "active_from", "active_to", "debut_album",
         "debut_album_year", "total_studio_albums", "artist_info", "artist_image",
         "artist_logo", "artist_banner", "previous_artwork", "sort_as",
     )
@@ -48,7 +48,7 @@ object DocBuilder {
     )
 
     private val TRACK_KEYS = listOf(
-        "schema", "title", "track_number", "disc_number", "artist", "album",
+        "schema", "modified", "title", "track_number", "disc_number", "artist", "album",
         "album_artist", "year", "original_year", "genres", "composer", "grouping",
         "is_compilation", "total_tracks", "total_discs",
         "title_sort", "artist_sort", "album_sort", "album_artist_sort", "composer_sort",
@@ -100,7 +100,17 @@ object DocBuilder {
     /** `01 Rock.mp3` describes itself in `01 Rock.json`. */
     fun trackDocName(fileName: String): String = "${fileName.substringBeforeLast('.', fileName)}.json"
 
-    fun albumDocument(existing: JSONObject?, rows: List<DocTrackRow>): String {
+    /**
+     * @param modified stamped into the document. Passed in rather than read
+     *   from the clock here so this stays a pure function of its inputs -- a
+     *   builder that quietly consulted the time could not be tested for
+     *   round-trip stability at all.
+     */
+    fun albumDocument(
+        existing: JSONObject?,
+        rows: List<DocTrackRow>,
+        modified: String = isoNow(),
+    ): String {
         val folder = albumFolder(rows)
         val first = rows.first()
 
@@ -153,6 +163,7 @@ object DocBuilder {
         val document = Json.Obj(
             buildList<Pair<String, Json>> {
                 add("schema" to Json.Num(DOC_SCHEMA.toLong()))
+                add("modified" to Json.Str(modified))
                 add("album_artist" to Json.Str(first.albumArtistName))
                 add("album_title" to Json.Str(first.albumTitle))
                 first.year.json()?.let { add("year" to it) }
@@ -179,11 +190,16 @@ object DocBuilder {
         return document.render()
     }
 
-    fun trackDocument(existing: JSONObject?, row: DocTrackRow): String {
+    fun trackDocument(
+        existing: JSONObject?,
+        row: DocTrackRow,
+        modified: String = isoNow(),
+    ): String {
         val genres = splitGenres(row.genre)
         val document = Json.Obj(
             buildList<Pair<String, Json>> {
                 add("schema" to Json.Num(DOC_SCHEMA.toLong()))
+                add("modified" to Json.Str(modified))
                 add("title" to Json.Str(row.title))
                 row.trackNo.json()?.let { add("track_number" to it) }
                 add("disc_number" to Json.Num((row.discNo ?: 1).toLong()))
@@ -238,7 +254,12 @@ object DocBuilder {
      * Returns null when there is nothing to do -- no document, or this image is
      * already listed -- so the caller can skip the upload entirely.
      */
-    fun withRetiredArtwork(existing: JSONObject?, retired: String, keyOrder: List<String>): String? {
+    fun withRetiredArtwork(
+        existing: JSONObject?,
+        retired: String,
+        keyOrder: List<String>,
+        modified: String = isoNow(),
+    ): String? {
         if (existing == null) return null
         val name = retired.trim().takeIf { it.isNotEmpty() } ?: return null
 
@@ -256,6 +277,9 @@ object DocBuilder {
             for (key in keyOrder) {
                 when {
                     key == PREVIOUS_ARTWORK -> add(key to updated)
+                    // Restamped: this IS a write, and a reader comparing two
+                    // copies has to see that it happened.
+                    key == "modified" -> add(key to Json.Str(modified))
                     existing.has(key) -> add(key to fromJson(existing.opt(key)))
                 }
             }
@@ -284,6 +308,10 @@ object DocBuilder {
             "%d:%02d".format(total / 60, total % 60)
         }
     }
+
+    /** Now, in UTC, to the second. The stamp a writer puts on a document. */
+    fun isoNow(at: Long = System.currentTimeMillis()): String =
+        DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochSecond(at / 1000))
 
     fun isoDate(epochMillis: Long): String =
         DateTimeFormatter.ISO_LOCAL_DATE.format(

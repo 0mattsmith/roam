@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "modified": "2026-08-27T14:32:05Z",
+  "name": "Driving",
+  "kind": "manual",
+  "description": "For the M6",
+  "pinned": false,
+  "tracks": [
+    {
+      "artist": "Oasis",
+      "album": "Definitely Maybe (Chasing the Sun Edition)",
+      "title": "Rock 'n' Roll Star",
+      "path": "Oasis/Definitely Maybe (Chasing the Sun Edition) (1994)/Disc 1 - Remastered Album/01 Rock 'n' Roll Star.mp3"
+    },
+    {
+      "artist": "Oasis",
+      "album": "Definitely Maybe (Chasing the Sun Edition)",
+      "title": "Supersonic",
+      "path": "Oasis/Definitely Maybe (Chasing the Sun Edition) (1994)/Disc 1 - Remastered Album/06 Supersonic.mp3"
+    }
+  ]
+}
