@@ -13,13 +13,19 @@ import app.roam.data.source.SourceProvider
  */
 data class AlbumPlacement(
     /**
-     * The performer. Left blank on a compilation, deliberately.
+     * The performer. Never the filing name on a compilation.
      *
-     * With [compilation] set the album artist is Various Artists, and that is
-     * what the folder takes -- so this field has nothing left to decide and the
-     * dialog says to leave it. Each track still keeps its own artist in its own
-     * metadata; what must not happen is a hundred artist folders appearing for
-     * a hundred-track compilation.
+     * With [compilation] set the album artist is Various Artists and that is
+     * what the folder takes, so this cannot send a track anywhere -- which is
+     * why it is safe to leave blank on an album, where every track already
+     * carries its own credit. What must not happen is a hundred artist folders
+     * appearing for a hundred-track compilation.
+     *
+     * A SINGLE track off a compilation is the same question with the opposite
+     * answer: one track is a compilation too, and here this field is the only
+     * place its performer can come from, because blank falls through to
+     * whatever the search result was called. The dialog says so; see
+     * [trackArtist].
      */
     val artist: String = "",
     val album: String = "",

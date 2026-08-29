@@ -59,6 +59,10 @@ fun PlacementDialog(
     var compilation by rememberSaveable(initial) { mutableStateOf(initial.compilation) }
     var expanded by rememberSaveable { mutableStateOf(false) }
 
+    // Whether the artist field has anything to decide. Read it as "is this an
+    // album", because that is the only difference that changes the answers.
+    val many = trackCount > 1
+
     fun collect() = AlbumPlacement(
         artist = artist,
         album = album,
@@ -97,8 +101,17 @@ fun PlacementDialog(
                     Column {
                         Text("Compilation", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Files under ${FolderNames.VARIOUS_ARTISTS} instead of one " +
-                                "folder per artist",
+                            // One track off a compilation is still a compilation,
+                            // so this is not an album-only question -- but "one
+                            // folder per artist" describes nothing when there is
+                            // only one of them.
+                            if (many) {
+                                "Files under ${FolderNames.VARIOUS_ARTISTS} instead of one " +
+                                    "folder per artist"
+                            } else {
+                                "Files under ${FolderNames.VARIOUS_ARTISTS} instead of the " +
+                                    "artist's own folder"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -111,13 +124,25 @@ fun PlacementDialog(
                     label = { Text("Artist") },
                     supportingText = {
                         Text(
-                            if (compilation) {
+                            when {
                                 // Not disabled, because a disabled field looks
                                 // broken. Saying why is better than greying out.
-                                "Leave blank — each track keeps its own artist, and the " +
-                                    "folder is ${FolderNames.VARIOUS_ARTISTS}"
-                            } else {
-                                "The performer"
+                                //
+                                // The advice INVERTS on a single track, and
+                                // getting this backwards is how a track lands
+                                // credited to a YouTube channel. In a batch the
+                                // field has nothing to decide -- every track
+                                // already carries its own credit and the folder
+                                // is Various Artists. Alone, it is the only place
+                                // that credit can come from.
+                                compilation && many ->
+                                    "Leave blank — each track keeps its own artist, and the " +
+                                        "folder is ${FolderNames.VARIOUS_ARTISTS}"
+                                compilation ->
+                                    "Who performed this one. The folder is still " +
+                                        "${FolderNames.VARIOUS_ARTISTS} — blank keeps the " +
+                                        "credit it arrived with, which is often a channel name"
+                                else -> "The performer"
                             }
                         )
                     },
