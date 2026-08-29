@@ -377,6 +377,22 @@ private fun JSONObject.genres(): List<String> {
         .distinctBy { it.lowercase() }
 }
 
+/**
+ * A plain array of strings, cleaned the way every other reader here cleans one.
+ *
+ * Absent and empty give the same answer, because nothing asking for a list of
+ * files needs to tell "no such key" from "nothing in it". The `"null"` filter
+ * is not paranoia: org.json's optString returns the four characters n-u-l-l for
+ * a JSON null, so a hand-edited file with a stray null in an array would
+ * otherwise contribute a cover called "null".
+ */
+private fun JSONObject.strings(key: String): List<String> =
+    optJSONArray(key)
+        ?.let { arr -> (0 until arr.length()).map { arr.optString(it) } }
+        .orEmpty()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && it != "null" }
+
 private fun JSONArray?.objects(): List<JSONObject> {
     if (this == null) return emptyList()
     return (0 until length()).mapNotNull { optJSONObject(it) }

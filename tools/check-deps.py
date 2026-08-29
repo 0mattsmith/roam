@@ -384,6 +384,245 @@ def duplicate_declarations() -> dict[str, set[str]]:
     return problems
 
 
+def _decomment(text: str) -> str:
+    """
+    Code only: comments and string CONTENTS blanked, everything else in place.
+
+    Both have to go. A KDoc sentence and a filename in a test fixture read
+    exactly like code to a regex -- "Disc 1/01 Track.mp3" was reported as an
+    unimported `Track` until strings were included here.
+
+    Every character is replaced by a space rather than deleted, and newlines
+    are kept, so offsets and line numbers still refer to the real file. A
+    scrubber that shortens the text reports the wrong line, which is worse
+    than not reporting at all.
+    """
+    out = list(text)
+    i = 0
+    n = len(text)
+
+    def blank(start: int, end: int) -> None:
+        for k in range(start, min(end, n)):
+            if out[k] != "\n":
+                out[k] = " "
+
+    while i < n:
+        two = text[i : i + 2]
+        if two == "//":
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+        elif two == "/*":
+            depth = 1
+            j = i + 2
+            while j < n and depth:                  # Kotlin block comments nest
+                if text[j : j + 2] == "/*":
+                    depth += 1
+                    j += 2
+                elif text[j : j + 2] == "*/":
+                    depth -= 1
+                    j += 2
+                else:
+                    j += 1
+            blank(i, j)
+            i = j
+        elif text[i : i + 3] == '"""':
+            j = text.find('"""', i + 3)
+            j = n if j < 0 else j + 3
+            blank(i, j)
+            i = j
+        elif text[i] == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                if text[j] == "\\":
+                    j += 1
+                if text[j : j + 1] == "\n":         # unterminated: do not run on
+                    break
+                j += 1
+            blank(i, min(j + 1, n))
+            i = j + 1
+        else:
+            i += 1
+    return "".join(out)
+
+
+def _arg_text(src: str, open_paren: int) -> tuple[str | None, int]:
+    """The text inside the parens starting at [open_paren], nesting-aware."""
+    depth = 0
+    i = open_paren
+    out: list[str] = []
+    while i < len(src):
+        ch = src[i]
+        if ch == '"':                       # a string may hold any bracket
+            out.append(ch)
+            i += 1
+            while i < len(src) and src[i] != '"':
+                if src[i] == "\\":
+                    out.append(src[i])
+                    i += 1
+                if i < len(src):
+                    out.append(src[i])
+                    i += 1
+            if i < len(src):
+                out.append(src[i])
+                i += 1
+            continue
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0:
+                return "".join(out)[1:], i
+        out.append(ch)
+        i += 1
+    return None, i
+
+
+def _split_args(text: str) -> list[str]:
+    """Top-level comma split -- a nested call's commas are not ours."""
+    parts: list[str] = []
+    depth = 0
+    cur = ""
+    for ch in text:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
+    return [p for p in parts if p.strip()]
+
+
+HAS_DEFAULT = re.compile(r"(?<![=!<>])=(?!=)")
+PARAM_NAME = re.compile(r"(?:vararg\s+)?(?:\w+\s+)*?([A-Za-z_]\w*)\s*:")
+NAMED_ARG = re.compile(r"\s*([A-Za-z_]\w*)\s*=(?!=)")
+CALL = re.compile(r"(?<![\w.])(?:[A-Za-z_]\w*\.)?([a-z]\w*)\s*\(")
+DECL = re.compile(r"\bfun\s+(?:<[^>]+>\s*)?(?:[A-Za-z_][\w.]*\.)?([a-z]\w*)\s*\(")
+
+# Below this, a name is far more likely to collide with a library function of
+# the same name than to be the one meant -- BrowseTree.item(id) against
+# LazyGridScope.item(span). Wide functions are also where this bug actually
+# lives: nobody forgets an argument to a function that takes two.
+MIN_PARAMS_TO_JUDGE = 4
+
+
+def missing_arguments() -> dict[str, set[str]]:
+    """
+    A fully-named call that does not pass every required parameter.
+
+    Kotlin says "No value passed for parameter 'x'", which is perfectly clear
+    -- once CI has run. The mistake behind it is widening a signature and
+    missing one of its call sites, and a DAO method called from two places is
+    exactly the shape that hides one: `applyUserEdit` grew to sixteen
+    parameters and the bulk-album path kept passing nine.
+
+    Only fully-named calls are judged, because a positional call cannot be
+    matched to parameters without resolving types, and only names declared
+    exactly once in the repo, because an overload set needs the same. Both
+    limits cost recall and buy silence, which is what makes a check like this
+    worth running.
+    """
+    declared: dict[str, list[tuple[str, set[str]]]] = collections.defaultdict(list)
+    for kt, lines in sources().items():
+        src = _decomment("\n".join(lines))
+        for m in DECL.finditer(src):
+            params, _ = _arg_text(src, m.end() - 1)
+            if params is None:
+                continue
+            required = {
+                name.group(1)
+                for param in _split_args(params)
+                if param.strip() and not HAS_DEFAULT.search(param)
+                for name in [PARAM_NAME.match(param.strip())]
+                if name
+            }
+            declared[m.group(1)].append((kt, required))
+
+    problems: dict[str, set[str]] = collections.defaultdict(set)
+    for kt, lines in sources().items():
+        src = _decomment("\n".join(lines))
+        for m in CALL.finditer(src):
+            name = m.group(1)
+            if len(declared.get(name, [])) != 1:
+                continue
+            _, required = declared[name][0]
+            if len(required) < MIN_PARAMS_TO_JUDGE:
+                continue
+            args, _ = _arg_text(src, m.end() - 1)
+            if args is None:
+                continue
+            parts = _split_args(args)
+            passed = {n.group(1) for p in parts for n in [NAMED_ARG.match(p)] if n}
+            if not parts or len(passed) != len(parts):
+                continue                    # positional somewhere: not ours to judge
+            missing = required - passed
+            if missing:
+                line = src[: m.start()].count("\n") + 1
+                problems[kt].add(
+                    f"line {line}: {name}(...) does not pass "
+                    f"{', '.join(sorted(missing))}"
+                )
+    return problems
+
+
+def unimported_types() -> dict[str, set[str]]:
+    """
+    A repo type used by name that the file never imported.
+
+    "Unresolved reference 'Genres'" is the compiler's version, and the mistake
+    behind it is always the same: a helper object gets used in a second file
+    and the import does not follow it there. Cheap to check exactly, because
+    every declaration in this repo has a known package.
+
+    A name declared in the file itself, reachable through its own package, or
+    imported from anywhere at all -- including a library package that happens
+    to share the name, as kotlinx's Json does with ours -- is left alone.
+    """
+    home: dict[str, set[str]] = collections.defaultdict(set)
+    for kt, lines in sources().items():
+        text = "\n".join(lines)
+        pkg = re.search(r"^package\s+([\w.]+)", text, re.M)
+        if not pkg:
+            continue
+        for m in re.finditer(
+            r"^(?:public\s+)?(?:sealed\s+|data\s+|enum\s+|annotation\s+)?"
+            r"(?:object|class|interface)\s+([A-Z]\w*)",
+            text,
+            re.M,
+        ):
+            home[m.group(1)].add(pkg.group(1))
+
+    problems: dict[str, set[str]] = collections.defaultdict(set)
+    for kt, lines in sources().items():
+        text = "\n".join(lines)
+        pkg_match = re.search(r"^package\s+([\w.]+)", text, re.M)
+        package = pkg_match.group(1) if pkg_match else ""
+        imports = set(re.findall(r"^import\s+([\w.]+)", text, re.M))
+        imported_names = {i.rsplit(".", 1)[-1] for i in imports}
+        stars = {i[:-2] for i in imports if i.endswith(".*")}
+
+        src = _decomment(text)
+        local = set(re.findall(r"\b(?:object|class|interface|enum class)\s+(\w+)", src))
+        for m in re.finditer(r"(?<![\w.])([A-Z]\w*)\.[a-z]", src):
+            name = m.group(1)
+            if name in local or name in imported_names or name not in home:
+                continue
+            packages = home[name]
+            if package in packages or (packages & stars):
+                continue
+            line = src[: m.start()].count("\n") + 1
+            problems[kt].add(
+                f"line {line}: '{name}' is used but not imported "
+                f"(declared in {sorted(packages)[0]})"
+            )
+    return problems
+
+
 def main() -> int:
     problems: dict[str, set[str]] = collections.defaultdict(set)
 
@@ -409,10 +648,19 @@ def main() -> int:
     for path, issues in duplicate_declarations().items():
         problems[path] |= issues
 
+    for path, issues in missing_arguments().items():
+        problems[path] |= issues
+
+    for path, issues in unimported_types().items():
+        problems[path] |= issues
+
     problems = {m: v for m, v in problems.items() if v}
 
     if not problems:
-        print("check-deps: no dependency, supertype, smart-cast, visibility or duplicate problems detected")
+        print(
+            "check-deps: no dependency, supertype, smart-cast, visibility, "
+            "duplicate, argument or import problems detected"
+        )
         return 0
 
     print("check-deps: possible problems\n")

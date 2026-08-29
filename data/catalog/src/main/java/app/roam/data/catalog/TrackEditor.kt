@@ -414,6 +414,13 @@ class TrackEditor @Inject constructor(
                             )
                         )
 
+                        // Every field the bulk form does not offer is written
+                        // back AS IT WAS. applyUserEdit sets each column
+                        // named in its UPDATE, so an omitted argument would
+                        // not be left alone -- it would land as null. Renaming
+                        // an album would then quietly strip the composer and
+                        // the sort names off every track in it, which is
+                        // invariant 3a wearing different clothes.
                         tracks.applyUserEdit(
                             id = row.id,
                             title = row.title,
@@ -421,9 +428,16 @@ class TrackEditor @Inject constructor(
                             albumId = newAlbumId,
                             albumArtist = albumArtistName,
                             trackNo = row.trackNo,
+                            trackTotal = row.trackTotal,
                             discNo = edits.discNo ?: row.discNo,
+                            discTotal = row.discTotal,
                             year = edits.year ?: row.year,
+                            originalYear = row.originalYear,
                             genre = edits.genre?.ifBlank { null } ?: row.genre.takeIf { edits.genre == null },
+                            composer = row.composer,
+                            grouping = row.grouping,
+                            titleSort = row.titleSort,
+                            composerSort = row.composerSort,
                         )
                     }
 

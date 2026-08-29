@@ -10,6 +10,7 @@ import app.roam.core.database.DocRevisionEntity
 import app.roam.core.database.FolderTrackRow
 import app.roam.core.database.RoamDatabase
 import app.roam.core.database.TrackDao
+import app.roam.core.model.Genres
 import app.roam.core.model.Ids
 import app.roam.data.source.RemoteFile
 import app.roam.data.source.SourceProvider
