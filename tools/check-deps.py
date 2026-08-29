@@ -429,7 +429,17 @@ def _decomment(text: str) -> str:
             i = j
         elif text[i : i + 3] == '"""':
             j = text.find('"""', i + 3)
-            j = n if j < 0 else j + 3
+            if j < 0:
+                j = n
+            else:
+                j += 3
+                # A raw string ends at the LAST quote of a run, not the first
+                # three: `""""x""""` is a raw string whose content is `"x"`.
+                # Stopping early leaves a stray quote that opens a string over
+                # the code after it -- which is how ten closing parens in
+                # LibraryDocsTest went missing.
+                while j < n and text[j] == '"':
+                    j += 1
             blank(i, j)
             i = j
         elif text[i] == '"':
@@ -442,6 +452,20 @@ def _decomment(text: str) -> str:
                 j += 1
             blank(i, min(j + 1, n))
             i = j + 1
+        elif text[i] == "'":
+            # A char literal, which Kotlin has and which holds brackets:
+            # out.indexOf('{') is a real line in this repo, and counting that
+            # brace made a balanced file look one short.
+            j = i + 1
+            while j < n and text[j] != "'" and text[j] != "\n":
+                if text[j] == "\\":
+                    j += 1
+                j += 1
+            if j < n and text[j] == "'":
+                blank(i, j + 1)
+                i = j + 1
+            else:
+                i += 1                              # a stray quote, not a literal
         else:
             i += 1
     return "".join(out)

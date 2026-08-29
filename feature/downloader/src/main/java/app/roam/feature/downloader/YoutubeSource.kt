@@ -6,11 +6,16 @@ import com.yausername.youtubedl_android.YoutubeDLRequest
 import com.yausername.ffmpeg.FFmpeg
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -58,6 +63,22 @@ class YoutubeSource @Inject constructor(private val app: Application) {
 
     private val initLock = Mutex()
     private var started = false
+
+    /**
+     * For moving bytes, which is all this client ever does.
+     *
+     * No call timeout, because a whole album track legitimately takes minutes;
+     * the read timeout is what catches a stream that has actually stalled, and
+     * it is the one that matters. Built once -- an OkHttpClient owns a
+     * connection pool and a thread pool, so one per download would be worse
+     * than the problem being solved here.
+     */
+    private val http: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
 
     /**
      * yt-dlp is ONE native process with one working directory, and its execute
@@ -304,54 +325,196 @@ class YoutubeSource @Inject constructor(private val app: Application) {
         }?.videoId
     }.rethrowCancellation()
 
+    /**
+     * Where the audio actually lives, once yt-dlp has worked it out.
+     *
+     * [headers] is carried rather than reconstructed. The stream URL is signed
+     * for whichever InnerTube client yt-dlp resolved as, and the CDN checks the
+     * User-Agent against it -- fetching the same URL with OkHttp's default
+     * header gets a 403 that looks exactly like a stale extractor.
+     */
+    private data class StreamRef(
+        val url: String,
+        val ext: String,
+        val expectedBytes: Long,
+        val headers: Map<String, String>,
+    )
+
+    /**
+     * Fetches the audio, holding the yt-dlp lock only long enough to find it.
+     *
+     * yt-dlp is one native binary with one working directory, so everything
+     * that runs it is serialised -- and while a DOWNLOAD held that lock, one
+     * album blocked search and every other download for as long as it took to
+     * move the bytes. The bytes are the slow part and the only part that needs
+     * no yt-dlp at all: resolving is a few seconds of cipher work, transferring
+     * is minutes of plain HTTP.
+     *
+     * So the lock covers the resolve, and OkHttp does the transfer outside it.
+     * Downloads now run in parallel with each other and with searching, which
+     * is the trade the comment here used to describe as unavoidable.
+     *
+     * A failed direct fetch falls back to letting yt-dlp do the whole thing,
+     * lock and all. Resolved URLs are signed, IP-bound and short-lived, so
+     * there are real ways for this to fail that have nothing to do with the
+     * network -- and the worst case has to be today's behaviour, not a broken
+     * download.
+     */
     suspend fun download(
         url: String,
         into: File,
         onProgress: (Float) -> Unit = {},
     ): Result<File> = runCatching {
         ensureStarted()
+
+        // A directory of its own per download, emptied first.
+        //
+        // The output used to be found by pulling the video id out of the URL,
+        // which breaks the moment the URL is a SEARCH -- an album page asks for
+        // "ytsearch1:artist title" and there is no id in it to parse. Whatever
+        // lands in an empty directory is the answer, whichever form the request
+        // took.
         withContext(Dispatchers.IO) {
-            // SERIALISED, exactly like search and enrich.
-            //
-            // This was the one yt-dlp entry point running outside the lock, and
-            // it did not matter while downloads were a chain. Independent jobs
-            // changed that: WorkManager happily runs several at once, so adding
-            // an album started four processes against one native binary with
-            // one working directory, and they killed each other. The symptom is
-            // a queue that waits and then fails for no stated reason.
-            //
-            // A download therefore blocks searching while it runs. That is the
-            // honest trade: yt-dlp is a single binary, and pretending otherwise
-            // is what broke.
-            runLock.withLock {
-                // A directory of its own per download, emptied first.
-                //
-                // The output used to be found by pulling the video id out of the
-                // URL, which breaks the moment the URL is a SEARCH -- an album
-                // page asks for "ytsearch1:artist title" and there is no id in it
-                // to parse. Whatever lands in an empty directory is the answer,
-                // whichever form the request took.
-                into.deleteRecursively()
-                into.mkdirs()
+            into.deleteRecursively()
+            into.mkdirs()
 
-                val request = YoutubeDLRequest(url)
-                    .addOption("-f", "bestaudio[ext=m4a]/bestaudio")
-                    .addOption("--no-playlist")
-                    .addOption("--no-warnings")
-                    .addOption("-o", "${into.absolutePath}/%(id)s.%(ext)s")
+            val stream = runCatching { runLock.withLock { resolve(url) } }
+                .rethrowCancellation()
+                .getOrNull()
 
-                YoutubeDL.getInstance().execute(request) { progress, _, _ ->
-                    onProgress(progress.coerceIn(0f, 100f) / 100f)
+            val direct = stream?.let {
+                runCatching { fetch(it, into, onProgress) }.rethrowCancellation().getOrNull()
             }
 
-            into.listFiles()
-                // yt-dlp leaves .part files behind on a partial fetch.
-                ?.filterNot { it.extension == "part" }
-                ?.maxByOrNull { it.length() }
-                ?: error("yt-dlp reported success but wrote no file")
-            }
+            direct ?: runLock.withLock { fetchWithYoutubeDl(url, into, onProgress) }
         }
     }.rethrowCancellation()
+
+    /** The cipher work, and nothing else. Brief, and the only part yt-dlp owes us. */
+    private fun resolve(target: String): StreamRef {
+        val request = YoutubeDLRequest(target)
+            .addOption("-f", "bestaudio[ext=m4a]/bestaudio")
+            .addOption("--no-playlist")
+            .addOption("--no-warnings")
+            .addOption("-J")
+
+        val out = YoutubeDL.getInstance().execute(request).out
+        val json = JSONObject(out.substring(out.indexOf('{').coerceAtLeast(0)))
+
+        // With a format selector, yt-dlp reports the chosen one under
+        // requested_downloads; a single video without one answers at the top
+        // level. Both shapes turn up depending on whether the target was a URL
+        // or a search, so neither can be assumed.
+        val chosen = json.optJSONArray("requested_downloads")?.optJSONObject(0) ?: json
+
+        val streamUrl = chosen.optString("url").ifBlank { null }
+            ?: error("yt-dlp resolved no stream URL")
+
+        val headers = chosen.optJSONObject("http_headers")?.let { h ->
+            h.keys().asSequence().associateWith { h.optString(it) }
+        }.orEmpty().filterValues { it.isNotBlank() }
+
+        return StreamRef(
+            url = streamUrl,
+            ext = chosen.optString("ext").ifBlank { "m4a" },
+            expectedBytes = chosen.optLong("filesize")
+                .takeIf { it > 0 }
+                ?: chosen.optLong("filesize_approx"),
+            headers = headers,
+        )
+    }
+
+    /** Plain HTTP, no lock held, cancellable between chunks. */
+    private suspend fun fetch(
+        stream: StreamRef,
+        into: File,
+        onProgress: (Float) -> Unit,
+    ): File {
+        val request = Request.Builder()
+            .url(stream.url)
+            .apply { stream.headers.forEach { (name, value) -> header(name, value) } }
+            .build()
+
+        val target = into.resolve("audio.${stream.ext}")
+
+        http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("HTTP ${response.code} fetching the audio")
+            val body = response.body ?: error("No body fetching the audio")
+            val total = body.contentLength().takeIf { it > 0 } ?: stream.expectedBytes
+
+            val buffer = ByteArray(BUFFER_BYTES)
+            var moved = 0L
+            var lastPercent = -1
+
+            body.byteStream().use { source ->
+                target.outputStream().buffered().use { sink ->
+                    while (true) {
+                        // Cancelling a WorkManager job has to actually stop the
+                        // transfer; a blocking read loop otherwise runs to
+                        // completion writing a file nobody asked for any more.
+                        currentCoroutineContext().ensureActive()
+
+                        val read = source.read(buffer)
+                        if (read < 0) break
+                        sink.write(buffer, 0, read)
+                        moved += read
+
+                        if (total <= 0) continue
+                        // Whole percents only. Each call posts to WorkManager,
+                        // and a 5 MB track at 64 KB a time is otherwise eighty
+                        // writes to say the same four things.
+                        val percent = (moved * 100 / total).toInt()
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            onProgress((percent / 100f).coerceIn(0f, 1f))
+                        }
+                    }
+                }
+            }
+
+            if (moved <= 0) error("The audio stream was empty")
+            // A truncated body is a success as far as HTTP is concerned. Left
+            // alone it becomes a half-length track on Drive, which is worse
+            // than a failure because nothing ever says so.
+            if (total > 0 && moved < total) {
+                error("The audio stream stopped at ${moved * 100 / total}%")
+            }
+        }
+
+        return target
+    }
+
+    /**
+     * The whole job through yt-dlp, exactly as it worked before the split.
+     *
+     * Kept as the fallback rather than deleted: this is the path that is known
+     * to work when a signed URL will not, and the cost of keeping it is a
+     * function nobody calls on a good day.
+     */
+    private fun fetchWithYoutubeDl(
+        url: String,
+        into: File,
+        onProgress: (Float) -> Unit,
+    ): File {
+        into.deleteRecursively()
+        into.mkdirs()
+
+        val request = YoutubeDLRequest(url)
+            .addOption("-f", "bestaudio[ext=m4a]/bestaudio")
+            .addOption("--no-playlist")
+            .addOption("--no-warnings")
+            .addOption("-o", "${into.absolutePath}/%(id)s.%(ext)s")
+
+        YoutubeDL.getInstance().execute(request) { progress, _, _ ->
+            onProgress(progress.coerceIn(0f, 100f) / 100f)
+        }
+
+        return into.listFiles()
+            // yt-dlp leaves .part files behind on a partial fetch.
+            ?.filterNot { it.extension == "part" }
+            ?.maxByOrNull { it.length() }
+            ?: error("yt-dlp reported success but wrote no file")
+    }
 
     private fun String.urlEncoded(): String =
         java.net.URLEncoder.encode(this, "UTF-8")
@@ -362,6 +525,9 @@ class YoutubeSource @Inject constructor(private val app: Application) {
 
         /** Anything else in an entry list is a browse id, not something playable. */
         const val VIDEO_ID_LENGTH = 11
+
+        /** Big enough that the read loop is not the cost; small enough to cancel promptly. */
+        const val BUFFER_BYTES = 64 * 1024
 
         /**
          * Ids are cheap to collect and only ever enriched a batch at a time,
