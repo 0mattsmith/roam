@@ -132,6 +132,41 @@ object LibraryQueries {
             arrayOf(artistId, artistId),
         )
 
+    /**
+     * Albums this artist has tracks on but is not credited for.
+     *
+     * The gap that made compilation-only artists look empty. The artist page is
+     * album-centric and [albumsForArtist] matches `al.artistId` alone, so
+     * somebody whose only appearance is one track on a various-artists record
+     * had no albums at all and opened on nothing -- even though their track was
+     * sitting right there in the library and `tracksForArtist` could find it.
+     *
+     * A QUERY, deliberately, and not a duplicated row. Ids are content-derived
+     * and re-sync must be idempotent (invariant 7), so a "mirror" track would
+     * either collide with the real one or be rediscovered as a new file -- and
+     * `recomputeRollups` would count it twice either way.
+     *
+     * The NOT EXISTS is what keeps this list to genuine guest appearances: an
+     * artist's own albums are already above, and listing them twice would be
+     * worse than not listing them at all.
+     */
+    fun appearsOnForArtist(artistId: Long): SupportSQLiteQuery =
+        SimpleSQLiteQuery(
+            """
+            $ALBUM_COLUMNS
+            WHERE al.artistId != ?
+              AND al.artistId NOT IN (SELECT id FROM artists WHERE groupArtistId = ?)
+              AND EXISTS (
+                SELECT 1 FROM tracks t
+                WHERE t.albumId = al.id AND t.hidden = 0 AND t.missing = 0
+                  AND (t.artistId = ?
+                    OR t.artistId IN (SELECT id FROM artists WHERE groupArtistId = ?))
+              )
+            ORDER BY al.year DESC, al.sortTitle
+            """,
+            arrayOf(artistId, artistId, artistId, artistId),
+        )
+
     fun recentAlbums(limit: Int): SupportSQLiteQuery =
         SimpleSQLiteQuery("$ALBUM_COLUMNS ORDER BY al.addedAt DESC LIMIT $limit")
 

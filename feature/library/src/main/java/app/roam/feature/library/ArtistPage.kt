@@ -66,6 +66,19 @@ import app.roam.data.catalog.artwork.ArtworkProvider
 import coil.compose.AsyncImage
 
 /** Everything the landing page draws that is not an album row. */
+/**
+ * Everything the artist page draws, in one value.
+ *
+ * A Pair until there were three things in it. Named, because "first" and
+ * "second" stop meaning anything the moment a third arrives, and the two lists
+ * here are the ones it would be easiest to get the wrong way round.
+ */
+data class ArtistPageContent(
+    val detail: ArtistDetail,
+    val albums: List<AlbumListItem>,
+    val appearsOn: List<AlbumListItem>,
+)
+
 data class ArtistDetail(
     val id: Long,
     val name: String,
@@ -87,6 +100,12 @@ data class ArtistDetail(
 fun ArtistPage(
     detail: ArtistDetail,
     albums: List<AlbumListItem>,
+    /**
+     * Records they play on but are not credited for -- a guest verse, a track
+     * on a compilation. Shown under their own discography rather than mixed
+     * into it, because "made this" and "is on this" are different claims.
+     */
+    appearsOn: List<AlbumListItem>,
     viewMode: ViewMode,
     listState: LazyListState,
     gridState: LazyGridState,
@@ -121,7 +140,7 @@ fun ArtistPage(
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
 
-            if (albums.isEmpty()) {
+            if (albums.isEmpty() && appearsOn.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { NothingYet() }
             }
 
@@ -135,10 +154,27 @@ fun ArtistPage(
                     modifier = Modifier.padding(horizontal = 6.dp),
                 )
             }
+
+            if (appearsOn.isNotEmpty()) {
+                // Only when there is something under it. A heading over an
+                // empty section reads as a section that failed to load.
+                item(span = { GridItemSpan(maxLineSpan) }) { AppearsOnHeader() }
+                items(appearsOn.size, key = { "guest-" + appearsOn[it].id }) { index ->
+                    val album = appearsOn[index]
+                    AlbumCell(
+                        album = album,
+                        dense = viewMode.columns >= 5,
+                        onClick = { onOpenAlbum(album) },
+                        onLongClick = { onAlbumLongPress(album) },
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                    )
+                }
+            }
         }
     } else {
         ArtistPageList(
             albums = albums,
+            appearsOn = appearsOn,
             listState = listState,
             header = header,
             onOpenAlbum = onOpenAlbum,
@@ -151,6 +187,7 @@ fun ArtistPage(
 @Composable
 private fun ArtistPageList(
     albums: List<AlbumListItem>,
+    appearsOn: List<AlbumListItem>,
     listState: LazyListState,
     header: @Composable () -> Unit,
     onOpenAlbum: (AlbumListItem) -> Unit,
@@ -159,7 +196,7 @@ private fun ArtistPageList(
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         item { header() }
 
-        if (albums.isEmpty()) {
+        if (albums.isEmpty() && appearsOn.isEmpty()) {
             item { NothingYet() }
         }
 
@@ -171,7 +208,37 @@ private fun ArtistPageList(
                 onLongClick = { onAlbumLongPress(album) },
             )
         }
+
+        if (appearsOn.isNotEmpty()) {
+            item { AppearsOnHeader() }
+            // Keyed apart from the discography above: the same album can be
+            // both for an artist who guests on a record they also released,
+            // and two identical keys in one LazyColumn is a crash.
+            items(appearsOn.size, key = { "guest-" + appearsOn[it].id }) { index ->
+                val album = appearsOn[index]
+                ArtistAlbumRow(
+                    album = album,
+                    onClick = { onOpenAlbum(album) },
+                    onLongClick = { onAlbumLongPress(album) },
+                )
+            }
+        }
     }
+}
+
+/**
+ * Says why a record nobody credited them for is on their page.
+ *
+ * Without it the compilations read as a discography, which is a worse kind of
+ * wrong than the empty page this replaced: it looks like an answer.
+ */
+@Composable
+private fun AppearsOnHeader() {
+    Text(
+        "Appears on",
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
+    )
 }
 
 @Composable

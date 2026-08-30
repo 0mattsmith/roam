@@ -221,8 +221,8 @@ class LibraryViewModel @Inject constructor(
      * Null when not on an artist. Loaded rather than paged -- an artist has
      * tens of albums, and a Pager for that is machinery without a payoff.
      */
-    private val _artistPage = MutableStateFlow<Pair<ArtistDetail, List<AlbumListItem>>?>(null)
-    val artistPage: StateFlow<Pair<ArtistDetail, List<AlbumListItem>>?> = _artistPage.asStateFlow()
+    private val _artistPage = MutableStateFlow<ArtistPageContent?>(null)
+    val artistPage: StateFlow<ArtistPageContent?> = _artistPage.asStateFlow()
 
     private fun loadArtistPage(id: Long) = viewModelScope.launch {
         val row = artists.byId(id) ?: return@launch
@@ -230,14 +230,22 @@ class LibraryViewModel @Inject constructor(
         // another module.
         val logo = row.logoArtworkId
         val photo = row.artworkId
-        _artistPage.value = ArtistDetail(
+        val detail = ArtistDetail(
             id = row.id,
             name = row.name,
             avatarArtworkId = if (row.preferLogo) logo ?: photo else photo ?: logo,
             bannerArtworkId = row.bannerArtworkId,
             albumCount = row.albumCount,
             trackCount = row.trackCount,
-        ) to albums.listItemsRaw(LibraryQueries.albumsForArtist(id))
+        )
+        _artistPage.value = ArtistPageContent(
+            detail = detail,
+            albums = albums.listItemsRaw(LibraryQueries.albumsForArtist(id)),
+            // Second query rather than a wider first one: an artist's own
+            // records and the ones they merely play on are different claims,
+            // and a single list would have to be split again to say so.
+            appearsOn = albums.listItemsRaw(LibraryQueries.appearsOnForArtist(id)),
+        )
 
         // Three albums is a screen and a half and you still know where you are.
         // At four the tracks stop being a list you read and start being one you
@@ -296,7 +304,7 @@ class LibraryViewModel @Inject constructor(
 
     /** Everything by the artist whose page is open. */
     fun playArtist(shuffled: Boolean) = viewModelScope.launch {
-        val id = _artistPage.value?.first?.id ?: return@launch
+        val id = _artistPage.value?.detail?.id ?: return@launch
         val queue = tracks.listItemsRaw(
             LibraryQueries.tracksForArtistLimited(id, TrackSort.ALBUM, QUEUE_LIMIT)
         )
@@ -338,21 +346,21 @@ class LibraryViewModel @Inject constructor(
     // moving underneath it.
 
     fun setArtistBanner(picked: Uri) = viewModelScope.launch {
-        val detail = _artistPage.value?.first ?: return@launch
+        val detail = _artistPage.value?.detail ?: return@launch
         _photoMessage.value = photos.setArtistBanner(detail.id, detail.name, picked)
             .fold({ it }, { "Could not update: ${it.message}" })
         loadArtistPage(detail.id)
     }
 
     fun saveBannerToDevice() = viewModelScope.launch {
-        val detail = _artistPage.value?.first ?: return@launch
+        val detail = _artistPage.value?.detail ?: return@launch
         val artworkId = detail.bannerArtworkId ?: return@launch
         _photoMessage.value = photos.saveToGallery(artworkId, "${detail.name} banner")
             .fold({ it }, { "Could not save: ${it.message}" })
     }
 
     fun clearArtistBanner() = viewModelScope.launch {
-        val detail = _artistPage.value?.first ?: return@launch
+        val detail = _artistPage.value?.detail ?: return@launch
         _photoMessage.value = photos.clearArtistBanner(detail.id)
             .fold({ it }, { "Could not remove: ${it.message}" })
         loadArtistPage(detail.id)
@@ -370,7 +378,7 @@ class LibraryViewModel @Inject constructor(
         if (current is Drill.Album && _artistPage.value != null) {
             drill.value = null
             _state.update {
-                it.copy(drillTitle = _artistPage.value?.first?.name, openAlbumId = null)
+                it.copy(drillTitle = _artistPage.value?.detail?.name, openAlbumId = null)
             }
             return true
         }

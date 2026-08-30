@@ -180,11 +180,12 @@ fun LibraryRoute(
                 // stale artistPage from outliving the drill it belonged to.
                 artistPage != null && state.openAlbumId == null &&
                     state.drillTitle != null ->
-                    key(artistPage?.first?.id) {
-                        val (detail, artistAlbums) = artistPage!!
+                    key(artistPage?.detail?.id) {
+                        val page = artistPage!!
                         ArtistPage(
-                            detail = detail,
-                            albums = artistAlbums,
+                            detail = page.detail,
+                            albums = page.albums,
+                            appearsOn = page.appearsOn,
                             viewMode = state.artistAlbumViewMode,
                             listState = rememberLazyListState(),
                             gridState = rememberLazyGridState(),
