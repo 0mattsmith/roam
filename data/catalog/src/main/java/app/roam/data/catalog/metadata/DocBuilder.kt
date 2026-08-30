@@ -29,14 +29,16 @@ object DocBuilder {
      * and the two documents do not share one.
      */
     val ALBUM_KEYS = listOf(
-        "schema", "modified", "album_artist", "album_title", "year", "original_year",
+        "schema", "modified", "musicbrainz_release_id", "discogs_release_id",
+        "album_artist", "album_title", "year", "original_year",
         "genres", "is_compilation", "total_discs", "total_tracks",
         "album_sort", "album_artist_sort", "cover_art", "previous_artwork", "tracks",
     )
 
     /** Key order for `artist.json`. Roam does not build these yet; it patches them. */
     val ARTIST_KEYS = listOf(
-        "schema", "modified", "artist_name", "active_from", "active_to", "debut_album",
+        "schema", "modified", "musicbrainz_artist_id", "discogs_artist_id",
+        "artist_name", "active_from", "active_to", "debut_album",
         "debut_album_year", "total_studio_albums", "artist_info", "artist_image",
         "artist_logo", "artist_banner", "previous_artwork", "sort_as",
     )
@@ -48,7 +50,8 @@ object DocBuilder {
     )
 
     private val TRACK_KEYS = listOf(
-        "schema", "modified", "title", "track_number", "disc_number", "artist", "album",
+        "schema", "modified", "musicbrainz_recording_id",
+        "title", "track_number", "disc_number", "artist", "album",
         "album_artist", "year", "original_year", "genres", "composer", "grouping",
         "is_compilation", "total_tracks", "total_discs",
         "title_sort", "artist_sort", "album_sort", "album_artist_sort", "composer_sort",

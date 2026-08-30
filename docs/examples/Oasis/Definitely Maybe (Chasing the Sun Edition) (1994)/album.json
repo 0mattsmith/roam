@@ -15,139 +15,178 @@
   "is_compilation": false,
   "total_discs": 3,
   "total_tracks": 44,
+  "album_sort": null,
   "album_artist_sort": "Oasis",
   "cover_art": "cover.jpg",
+  "previous_artwork": [],
   "tracks": [
     {
       "disc": 1,
       "track": 1,
       "title": "Rock 'n' Roll Star",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/01 Rock 'n' Roll Star.mp3",
-      "track_meta": "Disc 1 - Remastered Album/01 Rock 'n' Roll Star.json"
+      "track_meta": "Disc 1 - Remastered Album/01 Rock 'n' Roll Star.json",
+      "lyrics": "Disc 1 - Remastered Album/01 Rock 'n' Roll Star.lrc"
     },
     {
       "disc": 1,
       "track": 2,
       "title": "Shakermaker",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/02 Shakermaker.mp3",
-      "track_meta": "Disc 1 - Remastered Album/02 Shakermaker.json"
+      "track_meta": "Disc 1 - Remastered Album/02 Shakermaker.json",
+      "lyrics": null
     },
     {
       "disc": 1,
       "track": 3,
       "title": "Live Forever",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/03 Live Forever.mp3",
-      "track_meta": "Disc 1 - Remastered Album/03 Live Forever.json"
+      "track_meta": "Disc 1 - Remastered Album/03 Live Forever.json",
+      "lyrics": null
     },
     {
       "disc": 1,
       "track": 4,
       "title": "Up In The Sky",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/04 Up In The Sky.mp3",
-      "track_meta": "Disc 1 - Remastered Album/04 Up In The Sky.json"
+      "track_meta": "Disc 1 - Remastered Album/04 Up In The Sky.json",
+      "lyrics": null
     },
     {
       "disc": 1,
       "track": 5,
       "title": "Columbia",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/05 Columbia.mp3",
-      "track_meta": "Disc 1 - Remastered Album/05 Columbia.json"
+      "track_meta": "Disc 1 - Remastered Album/05 Columbia.json",
+      "lyrics": null
     },
     {
       "disc": 1,
       "track": 6,
       "title": "Supersonic",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/06 Supersonic.mp3",
-      "track_meta": "Disc 1 - Remastered Album/06 Supersonic.json"
+      "track_meta": "Disc 1 - Remastered Album/06 Supersonic.json",
+      "lyrics": null
     },
     {
       "disc": 1,
       "track": 7,
       "title": "Bring It On Down",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/07 Bring It On Down.mp3",
-      "track_meta": "Disc 1 - Remastered Album/07 Bring It On Down.json"
+      "track_meta": "Disc 1 - Remastered Album/07 Bring It On Down.json",
+      "lyrics": null
     },
     {
       "disc": 1,
       "track": 8,
       "title": "Cigarettes & Alcohol",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/08 Cigarettes & Alcohol.mp3",
-      "track_meta": "Disc 1 - Remastered Album/08 Cigarettes & Alcohol.json"
+      "track_meta": "Disc 1 - Remastered Album/08 Cigarettes & Alcohol.json",
+      "lyrics": null
     },
     {
       "disc": 1,
       "track": 9,
       "title": "Digsy's Dinner",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/09 Digsy's Dinner.mp3",
-      "track_meta": "Disc 1 - Remastered Album/09 Digsy's Dinner.json"
+      "track_meta": "Disc 1 - Remastered Album/09 Digsy's Dinner.json",
+      "lyrics": null
     },
     {
       "disc": 1,
       "track": 10,
       "title": "Slide Away",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/10 Slide Away.mp3",
-      "track_meta": "Disc 1 - Remastered Album/10 Slide Away.json"
+      "track_meta": "Disc 1 - Remastered Album/10 Slide Away.json",
+      "lyrics": null
     },
     {
       "disc": 1,
       "track": 11,
       "title": "Married With Children",
+      "artist": "Oasis",
       "file": "Disc 1 - Remastered Album/11 Married With Children.mp3",
-      "track_meta": "Disc 1 - Remastered Album/11 Married With Children.json"
+      "track_meta": "Disc 1 - Remastered Album/11 Married With Children.json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 1,
       "title": "Columbia (White Label Demo)",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/01 Columbia (White Label Demo).mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/01 Columbia (White Label Demo).json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/01 Columbia (White Label Demo).json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 2,
       "title": "Cigarettes & Alcohol (Demo)",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/02 Cigarettes & Alcohol (Demo).mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/02 Cigarettes & Alcohol (Demo).json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/02 Cigarettes & Alcohol (Demo).json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 3,
       "title": "Sad Song",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/03 Sad Song.mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/03 Sad Song.json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/03 Sad Song.json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 4,
       "title": "I Will Believe (Live)",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/04 I Will Believe (Live).mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/04 I Will Believe (Live).json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/04 I Will Believe (Live).json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 5,
       "title": "Take Me Away",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/05 Take Me Away.mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/05 Take Me Away.json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/05 Take Me Away.json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 6,
       "title": "Alive (Demo)",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/06 Alive (Demo).mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/06 Alive (Demo).json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/06 Alive (Demo).json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 7,
       "title": "D'Yer Wanna Be A Spaceman",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/07 D'Yer Wanna Be A Spaceman.mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/07 D'Yer Wanna Be A Spaceman.json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/07 D'Yer Wanna Be A Spaceman.json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 8,
       "title": "Supersonic (Live)",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/08 Supersonic (Live).mp3",
       "track_meta": "Disc 2 - B-Sides & Extra Tracks/08 Supersonic (Live).json",
       "lyrics": "Disc 2 - B-Sides & Extra Tracks/08 Supersonic (Live).lrc"
@@ -156,97 +195,124 @@
       "disc": 2,
       "track": 9,
       "title": "Up In The Sky (Acoustic)",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/09 Up In The Sky (Acoustic).mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/09 Up In The Sky (Acoustic).json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/09 Up In The Sky (Acoustic).json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 10,
       "title": "Cloudburst",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/10 Cloudburst.mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/10 Cloudburst.json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/10 Cloudburst.json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 11,
       "title": "Fade Away",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/11 Fade Away.mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/11 Fade Away.json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/11 Fade Away.json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 12,
       "title": "Listen Up",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/12 Listen Up.mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/12 Listen Up.json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/12 Listen Up.json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 13,
       "title": "I Am The Walrus (Live, Glasgow Cathouse, June '94)",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/13 I Am The Walrus (Live, Glasgow Cathouse, June '94).mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/13 I Am The Walrus (Live, Glasgow Cathouse, June '94).json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/13 I Am The Walrus (Live, Glasgow Cathouse, June '94).json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 14,
       "title": "Whatever",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/14 Whatever.mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/14 Whatever.json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/14 Whatever.json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 15,
       "title": "(It's Good) To Be Free",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/15 (It's Good) To Be Free.mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/15 (It's Good) To Be Free.json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/15 (It's Good) To Be Free.json",
+      "lyrics": null
     },
     {
       "disc": 2,
       "track": 16,
       "title": "Half The World Away",
+      "artist": "Oasis",
       "file": "Disc 2 - B-Sides & Extra Tracks/16 Half The World Away.mp3",
-      "track_meta": "Disc 2 - B-Sides & Extra Tracks/16 Half The World Away.json"
+      "track_meta": "Disc 2 - B-Sides & Extra Tracks/16 Half The World Away.json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 1,
       "title": "Supersonic (Live At Glasgow Tramshed)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/01 Supersonic (Live At Glasgow Tramshed).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/01 Supersonic (Live At Glasgow Tramshed).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/01 Supersonic (Live At Glasgow Tramshed).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 2,
       "title": "Rock 'N' Roll Star (Demo)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/02 Rock 'N' Roll Star (Demo).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/02 Rock 'N' Roll Star (Demo).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/02 Rock 'N' Roll Star (Demo).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 3,
       "title": "Shakermaker (Live Paris Instore)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/03 Shakermaker (Live Paris Instore).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/03 Shakermaker (Live Paris Instore).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/03 Shakermaker (Live Paris Instore).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 4,
       "title": "Columbia (Eden Studios Mix)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/04 Columbia (Eden Studios Mix).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/04 Columbia (Eden Studios Mix).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/04 Columbia (Eden Studios Mix).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 5,
       "title": "Cloudburst (Demo)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/05 Cloudburst (Demo).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/05 Cloudburst (Demo).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/05 Cloudburst (Demo).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 6,
       "title": "Strange Thing (Demo)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/06 Strange Thing (Demo).mp3",
       "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/06 Strange Thing (Demo).json",
       "lyrics": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/06 Strange Thing (Demo).lrc"
@@ -255,78 +321,100 @@
       "disc": 3,
       "track": 7,
       "title": "Live Forever (Live Paris Instore)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/07 Live Forever (Live Paris Instore).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/07 Live Forever (Live Paris Instore).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/07 Live Forever (Live Paris Instore).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 8,
       "title": "Cigarettes & Alcohol (Live At Manchester Academy)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/08 Cigarettes & Alcohol (Live At Manchester Academy).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/08 Cigarettes & Alcohol (Live At Manchester Academy).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/08 Cigarettes & Alcohol (Live At Manchester Academy).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 9,
       "title": "D'Yer Wanna Be A Spaceman (Live At Manchester Academy)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/09 D'Yer Wanna Be A Spaceman (Live At Manchester Academy).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/09 D'Yer Wanna Be A Spaceman (Live At Manchester Academy).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/09 D'Yer Wanna Be A Spaceman (Live At Manchester Academy).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 10,
       "title": "Fade Away (Demo)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/10 Fade Away (Demo).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/10 Fade Away (Demo).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/10 Fade Away (Demo).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 11,
       "title": "Take Me Away (Live At Manchester Academy)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/11 Take Me Away (Live At Manchester Academy).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/11 Take Me Away (Live At Manchester Academy).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/11 Take Me Away (Live At Manchester Academy).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 12,
       "title": "Sad Song (Live At Manchester Academy)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/12 Sad Song (Live At Manchester Academy).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/12 Sad Song (Live At Manchester Academy).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/12 Sad Song (Live At Manchester Academy).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 13,
       "title": "Half The World Away (Live, Tokyo Hotel Room)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/13 Half The World Away (Live, Tokyo Hotel Room).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/13 Half The World Away (Live, Tokyo Hotel Room).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/13 Half The World Away (Live, Tokyo Hotel Room).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 14,
       "title": "Digsy's Dinner (Live Paris Instore)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/14 Digsy's Dinner (Live Paris Instore).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/14 Digsy's Dinner (Live Paris Instore).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/14 Digsy's Dinner (Live Paris Instore).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 15,
       "title": "Married With Children (Demo)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/15 Married With Children (Demo).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/15 Married With Children (Demo).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/15 Married With Children (Demo).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 16,
       "title": "Up In The Sky (Live Paris Instore)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/16 Up In The Sky (Live Paris Instore).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/16 Up In The Sky (Live Paris Instore).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/16 Up In The Sky (Live Paris Instore).json",
+      "lyrics": null
     },
     {
       "disc": 3,
       "track": 17,
       "title": "Whatever (Strings)",
+      "artist": "Oasis",
       "file": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/17 Whatever (Strings).mp3",
-      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/17 Whatever (Strings).json"
+      "track_meta": "Disc 3 - Unreleased Demos, Out-Takes & Live Recordings/17 Whatever (Strings).json",
+      "lyrics": null
     }
   ]
 }

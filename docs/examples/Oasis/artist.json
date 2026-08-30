@@ -13,5 +13,6 @@
   "artist_image": "artist.jpg",
   "artist_logo": "logo.png",
   "artist_banner": "banner.jpg",
+  "previous_artwork": [],
   "sort_as": "Oasis"
 }
