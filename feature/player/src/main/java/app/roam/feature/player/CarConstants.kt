@@ -20,6 +20,15 @@ object CarConstants {
      * simpler units advertise fewer and your tabs silently vanish.
      */
     const val ROOT_HINT_CHILDREN_LIMIT = "androidx.media.MediaBrowserCompat.Extras.KEY_ROOT_CHILDREN_LIMIT"
+
+    /**
+     * Told to the head unit on the root, not asked of it.
+     *
+     * Without this the car never offers the microphone for Roam, and the search
+     * callbacks are perfectly correct and never once called -- which is a
+     * miserable thing to debug, because nothing anywhere reports an error.
+     */
+    const val ROOT_HINT_SEARCH_SUPPORTED = "android.media.browse.SEARCH_SUPPORTED"
     const val DEFAULT_ROOT_TABS = 4
 
     /** Keeps prev/next from being pushed out by custom actions. */

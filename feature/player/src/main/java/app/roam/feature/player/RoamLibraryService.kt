@@ -23,6 +23,10 @@ import app.roam.core.database.TrackDao
 import app.roam.core.datastore.PlaybackStateStore
 import app.roam.core.datastore.SavedPlayback
 import app.roam.core.model.SourceType
+import app.roam.data.catalog.LibraryQueries
+import app.roam.core.model.TrackSort
+import app.roam.data.catalog.VoiceQuery
+import app.roam.data.catalog.VoiceRanking
 import app.roam.data.source.SourceProvider
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -156,7 +160,17 @@ class RoamLibraryService : MediaLibraryService() {
                 params?.extras?.getInt(CarConstants.ROOT_HINT_CHILDREN_LIMIT, 0)?.takeIf { it > 0 }
                     ?: CarConstants.DEFAULT_ROOT_TABS
 
-            return Futures.immediateFuture(LibraryResult.ofItem(browseTree.rootItem(), params))
+            // Declared, or the head unit never offers the microphone for Roam
+            // at all -- the callbacks below would be perfectly correct and
+            // never once called.
+            val searchable = LibraryParams.Builder()
+                .setExtras(Bundle().apply {
+                    putBoolean(CarConstants.ROOT_HINT_SEARCH_SUPPORTED, true)
+                    params?.extras?.let { putAll(it) }
+                })
+                .build()
+
+            return Futures.immediateFuture(LibraryResult.ofItem(browseTree.rootItem(), searchable))
         }
 
         override fun onGetChildren(
@@ -198,10 +212,16 @@ class RoamLibraryService : MediaLibraryService() {
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> = scope.future {
             mediaItems.flatMap { item ->
-                // An item that already carries a URI came from the phone UI and
-                // is ready to play as-is.
-                if (item.localConfiguration != null) listOf(item)
-                else queueBuilder.resolve(MediaId.parse(item.mediaId))
+                val spoken = item.requestMetadata.searchQuery
+                when {
+                    // An item that already carries a URI came from the phone UI
+                    // and is ready to play as-is.
+                    item.localConfiguration != null -> listOf(item)
+                    // Some controllers add rather than set for a spoken
+                    // request, so both paths have to understand one.
+                    spoken != null -> voiceSearch(spoken, item.requestMetadata.extras)
+                    else -> queueBuilder.resolve(MediaId.parse(item.mediaId))
+                }
             }.toMutableList()
         }
 
@@ -218,6 +238,18 @@ class RoamLibraryService : MediaLibraryService() {
             startPositionMs: Long,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
             val single = mediaItems.singleOrNull()
+
+            // "Play Wonderwall by Oasis" arrives HERE, not through onSearch --
+            // as one item carrying a searchQuery and no media id at all.
+            // Checked before the media-id path because MediaId.parse would be
+            // handed an empty string, and implementing only the browse
+            // callbacks is how voice ends up silently doing nothing.
+            val spoken = single?.requestMetadata?.searchQuery
+            if (spoken != null) {
+                val found = voiceSearch(spoken, single.requestMetadata.extras)
+                return@future MediaSession.MediaItemsWithStartPosition(found, 0, startPositionMs)
+            }
+
             if (single != null && single.localConfiguration == null) {
                 val queue = queueBuilder.resolveWithStart(MediaId.parse(single.mediaId))
                 MediaSession.MediaItemsWithStartPosition(
@@ -280,9 +312,66 @@ class RoamLibraryService : MediaLibraryService() {
             else -> Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
         }
 
-        // TODO(phase2): onSearch / onGetSearchResult over the FTS index. Voice
-        //   is the only search available in the car -- there is no keyboard
-        //   while driving. Needs an FTS table, which does not exist yet.
+        /**
+         * The car asked to search. Answer is "how many", not "what".
+         *
+         * Media3 splits this in two on purpose: this callback only reports that
+         * results exist, and the browser then pages through them via
+         * [onGetSearchResult]. Returning without calling notifySearchResultChanged
+         * leaves the car waiting forever, which looks exactly like a search that
+         * found nothing.
+         */
+        override fun onSearch(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<Void>> = scope.future {
+            val found = voiceSearch(query, params?.extras)
+            session.notifySearchResultChanged(browser, query, found.size, params)
+            LibraryResult.ofVoid()
+        }
+
+        override fun onGetSearchResult(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
+            val found = voiceSearch(query, params?.extras)
+            val window = found.drop(page * pageSize).take(pageSize)
+            LibraryResult.ofItemList(ImmutableList.copyOf(window), params)
+        }
+    }
+
+    /**
+     * Runs a spoken query and turns it into playable items.
+     *
+     * Gathers with LIKE and ranks in Kotlin rather than through an FTS table.
+     * The assistant sends the artist, album and title as SEPARATE extras, so the
+     * common case is matching known fields against known columns and there is
+     * little free text left to index -- and an FTS table that drifts out of step
+     * with `tracks` fails by hiding music, which is worse than a query that
+     * takes a few milliseconds longer.
+     *
+     * An empty query is not a failed search. It is "play music", and the answer
+     * is the whole library.
+     */
+    private suspend fun voiceSearch(query: String, extras: Bundle?): List<MediaItem> {
+        val spoken = VoiceQuery.from(
+            raw = query,
+            extras = VOICE_EXTRAS.associateWith { extras?.getString(it) },
+        )
+
+        if (spoken.isEmpty) return queueBuilder.resolve(MediaId.ShuffleAll)
+
+        val candidates = tracks.listItemsRaw(
+            LibraryQueries.search(spoken.searchTerm, TrackSort.ARTIST, VOICE_CANDIDATES)
+        )
+        val ranked = VoiceRanking.rank(spoken, candidates, VOICE_RESULTS)
+        return queueBuilder.itemsForIds(ranked.map { it.id })
     }
 
     // ---- resuming where we left off ------------------------------------------
@@ -535,5 +624,28 @@ class RoamLibraryService : MediaLibraryService() {
     private companion object {
         const val SAVE_DEBOUNCE_MS = 400L
         const val SAVE_INTERVAL_MS = 10_000L
+
+        /** The assistant's structured fields, read instead of parsing a sentence. */
+        val VOICE_EXTRAS = listOf(
+            VoiceQuery.EXTRA_ARTIST,
+            VoiceQuery.EXTRA_ALBUM,
+            VoiceQuery.EXTRA_TITLE,
+            VoiceQuery.EXTRA_GENRE,
+        )
+
+        /**
+         * How many rows the LIKE gathers before ranking chooses between them.
+         *
+         * Generous, because the filter is crude and the ranking is not: the
+         * right answer only has to be somewhere in here for the scoring to find
+         * it. Scoring a few hundred rows in memory is not measurable.
+         */
+        const val VOICE_CANDIDATES = 300
+
+        /**
+         * How many make it back. Enough to be a queue rather than one song, few
+         * enough that a misheard word does not play for an hour.
+         */
+        const val VOICE_RESULTS = 50
     }
 }
