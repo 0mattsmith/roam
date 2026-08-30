@@ -115,7 +115,22 @@ class SyncWorker @AssistedInject constructor(
             )
         }
 
-        catalog.finish(provider.sourceId, seen, known)
+        // Refused rather than applied when the listing looks like a failure
+        // that did not raise one -- Drive answers a stale folder id with an
+        // empty list and a 200. Said out loud, because a pass that decides to
+        // change nothing is otherwise indistinguishable from one that found
+        // nothing wrong.
+        val reconciled = catalog.finish(provider.sourceId, seen, known)
+        if (reconciled == CatalogWriter.REFUSED) {
+            return Result.failure(
+                workDataOf(
+                    KEY_FOUND to found,
+                    KEY_WRITTEN to written,
+                    KEY_ERROR to "Only $found of ${known.size} files came back, so nothing " +
+                        "was removed. Check the music folder in Settings, then sync again.",
+                )
+            )
+        }
 
         // The metadata files, before the tag pass rather than after it. Both
         // write the same columns and the document is meant to win, so the order

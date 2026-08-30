@@ -30,10 +30,14 @@ object LibraryQueries {
         -- The album's own artist, which is what album-major views group by.
         -- Without this join a compilation fragments across every guest artist.
         JOIN artists aar ON aar.id = al.artistId
-        -- Hidden tracks are excluded HERE rather than at each call site, so a
-        -- new query cannot forget to do it. Every caller below therefore
-        -- appends AND, never WHERE.
-        WHERE t.hidden = 0
+        -- Hidden and missing tracks are excluded HERE rather than at each call
+        -- site, so a new query cannot forget to do it. Every caller below
+        -- therefore appends AND, never WHERE.
+        --
+        -- Two flags because they mean different things: hidden is the person's
+        -- decision and survives a sync, missing is Roam's observation and is
+        -- cleared the moment the file is seen again.
+        WHERE t.hidden = 0 AND t.missing = 0
     """
 
     fun tracks(sort: TrackSort): SupportSQLiteQuery =

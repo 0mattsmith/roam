@@ -612,6 +612,22 @@ interface TrackDao {
     @Query("DELETE FROM tracks WHERE sourceId = :sourceId AND remoteId IN (:remoteIds)")
     suspend fun deleteRemote(sourceId: String, remoteIds: List<String>)
 
+    /**
+     * The file was not in the last crawl. Roam's observation, not the user's.
+     *
+     * Kept apart from `hidden` because they are cleared by different things:
+     * this one goes the moment the file is seen again, and `hidden` must
+     * survive every sync for as long as the person wants it gone.
+     */
+    @Query("UPDATE tracks SET missing = 1 WHERE sourceId = :sourceId AND remoteId IN (:remoteIds)")
+    suspend fun markMissing(sourceId: String, remoteIds: List<String>)
+
+    @Query("UPDATE tracks SET missing = 0 WHERE sourceId = :sourceId AND remoteId IN (:remoteIds) AND missing = 1")
+    suspend fun clearMissing(sourceId: String, remoteIds: List<String>)
+
+    @Query("SELECT COUNT(*) FROM tracks WHERE missing = 1")
+    fun missingCount(): Flow<Int>
+
     /** Disconnecting a source removes its catalogue entirely. */
     @Query("DELETE FROM tracks WHERE sourceId = :sourceId")
     suspend fun deleteAllForSource(sourceId: String)
@@ -862,21 +878,21 @@ interface AlbumDao {
     @Query("UPDATE albums SET artworkId = NULL WHERE id = :albumId")
     suspend fun clearArtwork(albumId: Long)
 
-    // hidden = 0 throughout: a count that includes tracks the list will not
+    // hidden = 0 AND missing = 0 throughout: a count that includes tracks the list will not
     // show is how an album ends up claiming twelve tracks and displaying ten.
     @Query("""
         UPDATE albums SET
-          trackCount = (SELECT COUNT(*) FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0),
+          trackCount = (SELECT COUNT(*) FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0 AND tracks.missing = 0),
           -- Clipped length, not file length: an album whose tracks each skip a
           -- minute of silence is genuinely shorter than the sum of its files.
           durationMs = (
             SELECT COALESCE(SUM(COALESCE(endMs, durationMs) - COALESCE(startMs, 0)), 0)
-            FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0
+            FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0 AND tracks.missing = 0
           ),
           -- Counted from the tracks rather than trusted from a tag: plenty of
           -- rips carry no discTotal at all, and this is what decides whether
           -- the album view shows disc headings.
-          discTotal = (SELECT COALESCE(MAX(discNo), 1) FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0)
+          discTotal = (SELECT COALESCE(MAX(discNo), 1) FROM tracks WHERE tracks.albumId = albums.id AND tracks.hidden = 0 AND tracks.missing = 0)
     """)
     suspend fun recomputeRollups()
 }
@@ -1019,7 +1035,7 @@ interface ArtistDao {
           trackCount = (
             SELECT COUNT(*) FROM tracks t
             JOIN albums al ON al.id = t.albumId
-            WHERE t.hidden = 0
+            WHERE t.hidden = 0 AND t.missing = 0
               AND (t.artistId = artists.id
                OR al.artistId = artists.id
                OR t.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id)

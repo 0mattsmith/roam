@@ -149,25 +149,97 @@ class CatalogWriter @Inject constructor(
     }
 
     /**
-     * Removes rows for files that are no longer in the source, then recomputes
-     * counts.
+     * Reconciles what the crawl saw against what Roam held, then recomputes.
      *
-     * IMPORTANT: this only deletes tracks the crawl did not see. It never
-     * rewrites loved / playCount / lastPlayedAt on surviving rows -- those
-     * belong to the user, and a re-scan that clears them is unforgivable.
+     * Files the crawl did not see are FLAGGED, never deleted -- invariant 3c,
+     * arrived at the hard way. A deleted row loses the loved flag, the play
+     * count and every correction with it, and the next crawl rediscovers the
+     * file as brand new, so a wrong deletion is not merely a wrong deletion:
+     * it is permanent and it is silent. A flag costs a column and is reversible
+     * by the thing that set it.
+     *
+     * It is a SEPARATE column from `hidden` on purpose. Hidden is the person's
+     * decision and must survive a re-sync; missing is Roam's observation and
+     * must be cleared the moment the file turns up again. One flag doing both
+     * jobs would have a re-sync silently restore everything they removed.
+     *
+     * @return how many rows were newly flagged, or -1 when the crawl was
+     * refused as implausible.
      */
-    suspend fun finish(sourceId: String, seenRemoteIds: Set<String>, known: Map<String, RevisionRow>) {
-        val gone = known.keys - seenRemoteIds
-        gone.chunked(500).forEach { tracks.deleteRemote(sourceId, it) }
+    suspend fun finish(
+        sourceId: String,
+        seenRemoteIds: Set<String>,
+        known: Map<String, RevisionRow>,
+    ): Int {
+        // Anything the crawl DID see is present, whatever Roam believed a
+        // moment ago. Done first, so a file that comes back is restored even
+        // if the pass is about to be refused.
+        seenRemoteIds.chunked(CHUNK).forEach { tracks.clearMissing(sourceId, it) }
 
+        val gone = known.keys - seenRemoteIds
+        if (!isPlausible(seen = seenRemoteIds.size, known = known.size, gone = gone.size)) {
+            // Refused, and the counts still get recomputed: what was cleared
+            // above is real, and leaving the rollups stale would show the wrong
+            // numbers for a pass that decided to change nothing.
+            recount()
+            return REFUSED
+        }
+
+        gone.chunked(CHUNK).forEach { tracks.markMissing(sourceId, it) }
+        recount()
+        return gone.size
+    }
+
+    /**
+     * Whether a crawl looks like a real listing rather than a failed one.
+     *
+     * Drive answers `files.list` for a folder id that no longer exists with an
+     * empty list and a 200 -- not an error -- so "your library is gone" and
+     * "nothing came back" are the same response. Reconciling against that
+     * removes everything. The same reasoning already governs Consolidate, which
+     * refuses a partial listing outright because absence is what it concludes
+     * deletions from; sync simply never had the guard.
+     *
+     * The threshold is deliberately blunt. Losing most of a library at once is
+     * something a person does deliberately and can repeat, while a bad pass
+     * happens by itself and repeats on its own -- so refusing a real mass
+     * deletion until the next sync costs a sync, and accepting a bad one costs
+     * the library.
+     */
+    private fun isPlausible(seen: Int, known: Int, gone: Int): Boolean = when {
+        // Nothing was known: a first run cannot delete anything anyway.
+        known == 0 -> true
+        // Nothing came back at all. Never a real answer for a library that had
+        // files a moment ago.
+        seen == 0 -> false
+        // Most of it vanished in one pass. Possible, but far likelier to be a
+        // crawl that stopped without saying so.
+        gone > known * MAX_LOSS_PERCENT / 100 -> false
+        else -> true
+    }
+
+    private suspend fun recount() {
         albums.pruneOrphans()
         artists.pruneOrphans()
         albums.recomputeRollups()
         artists.recomputeRollups()
     }
 
-    private companion object {
-        const val UNKNOWN_ARTIST = "Unknown artist"
-        const val UNKNOWN_ALBUM = "Unknown album"
+    companion object {
+        private const val UNKNOWN_ARTIST = "Unknown artist"
+        private const val UNKNOWN_ALBUM = "Unknown album"
+        private const val CHUNK = 500
+
+        /**
+         * Above this share of the library disappearing at once, refuse.
+         *
+         * Blunt on purpose, and cheap to get wrong now that nothing is deleted:
+         * a refused pass costs one sync, and a wrongly accepted one only hides
+         * rows until the next good crawl clears the flag.
+         */
+        private const val MAX_LOSS_PERCENT = 50
+
+        /** What [finish] returns when it would not trust the listing. */
+        const val REFUSED = -1
     }
 }

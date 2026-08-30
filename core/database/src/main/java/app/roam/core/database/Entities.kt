@@ -179,6 +179,22 @@ data class TrackEntity(
      * sync must never clear it, or every hidden track returns on the next scan.
      */
     val hidden: Boolean = false,
+
+    /**
+     * The last crawl did not find the file. Roam's observation, not a decision.
+     *
+     * Sync used to DELETE these rows, which broke invariant 3c in the one place
+     * nobody was looking: a deleted row takes the loved flag, the play count and
+     * every correction with it, and the next crawl rediscovers the file as new.
+     * That makes a wrong deletion permanent and silent -- and a crawl can be
+     * wrong, because Drive answers a stale folder id with an empty list and a
+     * 200 rather than an error.
+     *
+     * Separate from [hidden] because they are cleared by different things. This
+     * one goes the moment the file is seen again; [hidden] must survive every
+     * sync, or removing a track would only last until the next one.
+     */
+    val missing: Boolean = false,
     /**
      * Where playback should actually begin and end, in milliseconds.
      *
