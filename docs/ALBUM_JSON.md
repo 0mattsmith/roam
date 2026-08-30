@@ -28,6 +28,76 @@ however the release makes sense; nothing depends on their names.
 
 ---
 
+## Catalogue ids
+
+Every document may carry the id its release has in MusicBrainz and Discogs.
+All are optional; a document without them is valid and always will be, because
+requiring them would reject every file written before they existed.
+
+| File | Fields |
+| --- | --- |
+| `artist.json` | `musicbrainz_artist_id`, `discogs_artist_id` |
+| `album.json` | `musicbrainz_release_id`, `discogs_release_id` |
+| `<track>.json` | `musicbrainz_recording_id` |
+
+They exist because a **name is not an identity and a folder name is less than
+that**. "D:Ream" cannot be a folder — the colon is illegal — so it becomes
+`D - Ream`, or `DReam`, or `D Ream`, depending on who wrote it. *Now That's What
+I Call Music!* loses the exclamation mark on one platform, gains a comma on
+another. Matching those by string is guesswork, and guessing wrong files an
+album into a folder that already belongs to a different one.
+
+### What actually resolves a folder
+
+No API can tell Roam where a folder is on your Drive. What makes an id useful
+is that **the crawl already reads every `album.json`** — it is the one document
+carried out of the listing for free. So sync can build an index of release id →
+folder as it goes, and the downloader can then ask "do I already have this
+release?" and get an exact answer instead of comparing punctuation.
+
+The resolution ladder, in order:
+
+1. **By id**, against the index sync built. Exact, and immune to spelling.
+2. **By name**, through `FolderNames`. For the albums that have no document yet,
+   which is most of a library on the day this ships.
+3. **Create it**, and write an `album.json` carrying the id, so the next lookup
+   takes step 1.
+
+### Releases, not release groups
+
+`musicbrainz_release_id` is a *release* and `discogs_release_id` is a *release*,
+never a release group or a Discogs master. A group conflates the 1994
+*Definitely Maybe* with the 2014 Chasing the Sun edition: different folders,
+different track counts, different covers. The whole point is telling those
+apart, so the id has to be the one that does.
+
+`musicbrainz_recording_id` is the opposite case, deliberately. A recording is
+shared by every release that carries it, which is what makes it worth having —
+it answers "do I already own this?" when a compilation offers you forty tracks
+you half-recognise. It cannot identify *this track in this folder*, so it never
+becomes a matching key: `file` remains the identity of an entry.
+
+### A wrong id is worse than a wrong name
+
+A misspelled folder is visible. A transposed id is not: it resolves cleanly to
+somebody else's album and files music there, and nothing anywhere looks broken.
+
+So an id is checked, never merely trusted. With both present, the two are
+resolved and compared — they should describe the same artist and title, and if
+they do not, that is the strongest signal available that one is wrong. The
+person is asked which, and picks from what each catalogue actually returned.
+
+Two caveats worth knowing. Disagreement is not always an error: someone filling
+the fields from two lookups can easily pair a MusicBrainz id for the original
+with a Discogs id for the reissue, and both are correct. So the comparison is on
+the resolved artist and title, not on whether they describe the same pressing.
+And often only one id is present at all — Discogs refuses search without a
+token — in which case the check degrades to comparing the resolved name against
+the folder name, which is still exactly the case where a typo would otherwise go
+unnoticed.
+
+---
+
 ## Which file is read when
 
 **`album.json` is the index, and the only file read to browse.** It carries
@@ -64,6 +134,8 @@ arise — Roam always does.
 {
   "schema": 1,
   "modified": "2026-08-27T14:32:05Z",
+  "musicbrainz_artist_id": "75359c91-10f4-4cfe-8e7c-a4947fb7e868",
+  "discogs_artist_id": 140140,
   "artist_name": "Oasis",
   "active_from": 1991,
   "active_to": null,
@@ -121,6 +193,8 @@ conventions it already uses: `artist.jpg`, `folder.jpg`, `banner.jpg`,
 {
   "schema": 1,
   "modified": "2026-08-27T14:32:05Z",
+  "musicbrainz_release_id": "6b3734b0-a035-4674-bf18-fcbeffdc7d4f",
+  "discogs_release_id": 5716584,
   "album_artist": "Oasis",
   "album_title": "Definitely Maybe (Deluxe Version)",
   "year": 1994,
@@ -191,6 +265,7 @@ by `01 Rock 'n' Roll Star.json`.
 {
   "schema": 1,
   "modified": "2026-08-27T14:32:05Z",
+  "musicbrainz_recording_id": "97e68b31-cf72-4d1e-84ad-e77a111bdf22",
   "title": "Rock 'n' Roll Star",
   "track_number": 1,
   "disc_number": 1,
@@ -219,6 +294,18 @@ by `01 Rock 'n' Roll Star.json`.
 
 Paths here are relative to the **track's own folder**, not the album folder —
 the file describes its neighbours.
+
+> **`total_tracks` does not mean the same thing here as it does in
+> `album.json`.** In the album index it is the whole release — 44. Here it is
+> the DISC — 11, the eleven tracks on disc one. Both are correct: ID3's `TRCK`
+> total has always been per-disc, and an album index describing a release has
+> to count the release. But it is one key name with two scopes in two files
+> that sit beside each other, and anything generating both should treat that as
+> a trap rather than a convention. `total_discs` is the same number in both.
+>
+> `audio_file` here is the same concept as `file` in an album entry. The names
+> differ because the scopes do: one is relative to the track's folder, the
+> other to the album's.
 
 Repeating `album` and `album_artist` is deliberate: it means a file moved
 somewhere else still knows what it is, which is the point of having the file at

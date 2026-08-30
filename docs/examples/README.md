@@ -80,6 +80,27 @@ Shoulders of Giants*, and the record is *Standing on the Shoulder of Giants*.
 Once that album has an `album.json`, the document is what Roam shows and the
 folder name stops mattering. That is the whole point of these files.
 
+## Catalogue ids
+
+`artist.json` carries its MusicBrainz and Discogs artist ids, `album.json` its
+release ids, and the first track its recording id. All optional, and only the
+first track here has one -- the other two are the shape, not a claim.
+
+They are here because a name is not an identity and a folder name is less than
+that. This album's folder could as easily have been written `Definitely Maybe
+(Chasing The Sun Edition)`, and `D:Ream` cannot be a folder at all. What makes
+the ids useful is that the crawl already reads every `album.json`, so sync can
+index release id to folder as it goes and the downloader can ask an exact
+question instead of comparing punctuation.
+
+Note that the release id is a RELEASE, not a release group: this edition and the
+1994 original are different records with different track counts, and telling
+them apart is the entire point. The recording id is the opposite -- shared with
+every other release carrying the same recording, which is what makes it answer
+"do I already own this?" on a compilation.
+
+See `docs/ALBUM_JSON.md` for how a wrong id is caught.
+
 ## `modified`
 
 Every document carries one, immediately after `schema`, in UTC to the second.
