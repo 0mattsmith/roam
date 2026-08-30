@@ -19,7 +19,7 @@ import javax.inject.Singleton
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
         TrackEntity::class, ArtworkEntity::class, DocRevisionEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -198,6 +198,38 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+/**
+ * No schema change -- a recount, which is why the version moves anyway.
+ *
+ * `trackCount` now counts tracks reached through the ALBUM artist as well as
+ * the track artist, and the artists list has started using it to decide whether
+ * an artist is worth showing. An existing database holds the old number, under
+ * which "Various Artists" is zero -- so without this, upgrading would make
+ * every compilation vanish from the Artists tab until the next sync happened to
+ * recompute, and not at all for anyone opening the app offline.
+ *
+ * The SQL is duplicated from ArtistDao rather than called through it on
+ * purpose: a migration has to describe the schema as it was at THIS version,
+ * and a DAO free to change later cannot be trusted to still say the same thing.
+ */
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            UPDATE artists SET trackCount = (
+                SELECT COUNT(*) FROM tracks t
+                JOIN albums al ON al.id = t.albumId
+                WHERE t.hidden = 0
+                  AND (t.artistId = artists.id
+                   OR al.artistId = artists.id
+                   OR t.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id)
+                   OR al.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id))
+            )
+            """
+        )
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -209,6 +241,7 @@ object DatabaseModule {
                 MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                 MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
+                MIGRATION_15_16,
             )
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()

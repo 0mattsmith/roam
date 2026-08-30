@@ -77,7 +77,7 @@ object LibraryQueries {
         SimpleSQLiteQuery(
             """
             $ARTIST_COLUMNS
-            WHERE ar.groupArtistId IS NULL
+            WHERE ar.groupArtistId IS NULL AND $HAS_SOMETHING_TO_SHOW
             ORDER BY ${sort.orderBy}
             """
         )
@@ -101,7 +101,7 @@ object LibraryQueries {
         SimpleSQLiteQuery(
             """
             $ARTIST_COLUMNS
-            WHERE ar.groupArtistId IS NULL
+            WHERE ar.groupArtistId IS NULL AND $HAS_SOMETHING_TO_SHOW
             ORDER BY ${sort.orderBy}
             LIMIT $limit OFFSET $offset
             """
@@ -207,6 +207,22 @@ object LibraryQueries {
         "(t.artistId = ? OR al.artistId = ? " +
             "OR t.artistId IN (SELECT id FROM artists WHERE groupArtistId = ?) " +
             "OR al.artistId IN (SELECT id FROM artists WHERE groupArtistId = ?))"
+
+    /**
+     * An artist worth listing: one whose page would not open empty.
+     *
+     * Hiding a track is not deleting it, so an artist whose every track has
+     * been removed still has a row, an album count and a name -- and used to
+     * still have a place in the list, leading to a page with nothing on it.
+     *
+     * Reads the rollup rather than asking the tracks table, which is what makes
+     * this free at read time. That is only correct because `trackCount` counts
+     * exactly what the page shows -- including tracks reached through the
+     * ALBUM artist, so "Various Artists" is not mistaken for empty -- and
+     * because every path that hides or restores a track recomputes the rollups
+     * before returning. Break either and compilations start disappearing.
+     */
+    private const val HAS_SOMETHING_TO_SHOW = "ar.trackCount > 0"
 
     private const val ARTIST_COLUMNS = """
         SELECT ar.id AS id, ar.name AS name,

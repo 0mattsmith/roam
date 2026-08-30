@@ -1001,14 +1001,29 @@ interface ArtistDao {
     /**
      * Counts include anything grouped into this artist, so the number under a
      * name matches what opening it actually shows.
+     *
+     * "What opening it shows" is the whole specification, and the track count
+     * did not meet it: it matched `t.artistId` only, while the artist PAGE also
+     * matches `al.artistId`. Nothing on a compilation carries "Various Artists"
+     * as its own track artist, so that name sat at zero tracks while its page
+     * listed hundreds -- and any rule reading the count to decide whether an
+     * artist is worth showing would have hidden every compilation in the
+     * library. The album-artist clause is what makes the number mean something
+     * the rest of the app can rely on.
+     *
+     * The OR does not double-count: a normal album satisfies both clauses, but
+     * COUNT is over rows matching the predicate, and a row matches once.
      */
     @Query("""
         UPDATE artists SET
           trackCount = (
             SELECT COUNT(*) FROM tracks t
+            JOIN albums al ON al.id = t.albumId
             WHERE t.hidden = 0
               AND (t.artistId = artists.id
-               OR t.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id))
+               OR al.artistId = artists.id
+               OR t.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id)
+               OR al.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id))
           ),
           albumCount = (
             SELECT COUNT(*) FROM albums al
