@@ -10,6 +10,8 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import androidx.room.withTransaction
+import app.roam.core.database.RoamDatabase
 import app.roam.core.database.AlbumDao
 import app.roam.core.database.ArtistDao
 import app.roam.core.database.TrackDao
@@ -55,6 +57,7 @@ class TagWorker @AssistedInject constructor(
     private val artists: ArtistDao,
     private val artwork: ArtworkStore,
     private val tagExtractor: TagExtractor,
+    private val db: RoamDatabase,
 ) : CoroutineWorker(ctx, params) {
 
     override suspend fun doWork(): Result {
@@ -79,18 +82,40 @@ class TagWorker @AssistedInject constructor(
                 }.awaitAll()
             }
 
-            for (result in results) {
-                if (result == null) { failed++; continue }
-                val (row, tags) = result
-                applyTags(row.id, row.albumId, tags)
-                done++
+            // ONE transaction for the batch, and this is not about speed.
+            //
+            // Room fires an invalidation per completed write, and Paging
+            // answers each one by starting a fresh load. Two writes per track
+            // across a library of two thousand is four thousand invalidations
+            // arriving faster than a page can load, so the list never settles
+            // and shows nothing at all -- while a one-shot query like search
+            // keeps working perfectly, because nothing invalidates it.
+            //
+            // That is the whole bug: the library going blank while the tag
+            // pass runs, and staying blank because WorkManager resumes the pass
+            // after the app is closed. Batched, it is one invalidation per
+            // sixty tracks instead of a hundred and twenty, and Paging has time
+            // to finish between them.
+            //
+            // The artwork write stays OUTSIDE, because it touches the disk and
+            // a filesystem write has no business inside a database transaction.
+            val prepared = results.filterNotNull().map { (row, tags) ->
+                Triple(row, tags, artworkFor(tags))
             }
 
-            setProgress(workDataOf(KEY_DONE to done, KEY_FAILED to failed))
+            db.withTransaction {
+                for ((row, tags, artworkId) in prepared) {
+                    applyTags(row.id, row.albumId, tags, artworkId)
+                }
+                // In the same transaction: marking a batch attempted is part of
+                // the same unit of work, and a second invalidation to say so
+                // would undo half the point.
+                tracks.markTagsAttempted(pending.map { it.id })
+            }
+            done += prepared.size
+            failed += results.count { it == null }
 
-            // Mark everything in this batch as attempted, successful or not, so
-            // a file with no tags is not retried forever.
-            tracks.markTagsAttempted(pending.map { it.id })
+            setProgress(workDataOf(KEY_DONE to done, KEY_FAILED to failed))
         }
 
         albums.recomputeRollups()
@@ -98,40 +123,49 @@ class TagWorker @AssistedInject constructor(
         return Result.success(workDataOf(KEY_DONE to done, KEY_FAILED to failed))
     }
 
-    private suspend fun applyTags(trackId: Long, oldAlbumId: Long, tags: ParsedTags) =
-        withContext(Dispatchers.IO) {
-            val artworkId = tags.artwork?.let {
-                runCatching { artwork.put(it, ArtworkSource.EMBEDDED) }.getOrNull()
-            }
+    /** The disk half, done before the transaction opens. */
+    private suspend fun artworkFor(tags: ParsedTags): String? = withContext(Dispatchers.IO) {
+        tags.artwork?.let { runCatching { artwork.put(it, ArtworkSource.EMBEDDED) }.getOrNull() }
+    }
 
-            // Two writes, because they answer to different owners. What only
-            // the file knows lands unconditionally; what a person or an
-            // album.json may have corrected is refused if either of them has.
-            // One statement for both meant an edited track never learned its
-            // own duration, and the play threshold had nothing to measure.
-            tracks.updateTagFacts(
-                id = trackId,
-                artworkId = artworkId,
-                // Only when the container actually told us. A null leaves
-                // whatever is stored alone rather than zeroing it.
-                durationMs = tags.durationMs?.takeIf { it > 0 },
-                tagState = TagState.OK,
-            )
-            tracks.updateTags(
-                id = trackId,
-                title = tags.title,
-                year = tags.year,
-                genre = tags.genre,
-                trackNo = tags.trackNo,
-                trackTotal = tags.trackTotal,
-                discNo = tags.discNo,
-                discTotal = tags.discTotal,
-            )
+    /**
+     * The database half. Called inside the batch transaction, so it must not
+     * touch the disk or the network -- both are done before it opens.
+     */
+    private suspend fun applyTags(
+        trackId: Long,
+        albumId: Long,
+        tags: ParsedTags,
+        artworkId: String?,
+    ) {
+        // Two writes, because they answer to different owners. What only the
+        // file knows lands unconditionally; what a person or an album.json may
+        // have corrected is refused if either of them has. One statement for
+        // both meant an edited track never learned its own duration, and the
+        // play threshold had nothing to measure.
+        tracks.updateTagFacts(
+            id = trackId,
+            artworkId = artworkId,
+            // Only when the container actually told us. A null leaves whatever
+            // is stored alone rather than zeroing it.
+            durationMs = tags.durationMs?.takeIf { it > 0 },
+            tagState = TagState.OK,
+        )
+        tracks.updateTags(
+            id = trackId,
+            title = tags.title,
+            year = tags.year,
+            genre = tags.genre,
+            trackNo = tags.trackNo,
+            trackTotal = tags.trackTotal,
+            discNo = tags.discNo,
+            discTotal = tags.discTotal,
+        )
 
-            // One cover per album is enough: the first track to yield artwork
-            // supplies it, and the rest inherit.
-            if (artworkId != null) albums.setArtworkIfMissing(oldAlbumId, artworkId)
-        }
+        // One cover per album is enough: the first track to yield artwork
+        // supplies it, and the rest inherit.
+        if (artworkId != null) albums.setArtworkIfMissing(albumId, artworkId)
+    }
 
     companion object {
         const val NAME = "roam_tag_pass"

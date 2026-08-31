@@ -4,7 +4,9 @@ import app.roam.core.database.AlbumDao
 import app.roam.core.database.AlbumEntity
 import app.roam.core.database.ArtistDao
 import app.roam.core.database.ArtistEntity
+import androidx.room.withTransaction
 import app.roam.core.database.RevisionRow
+import app.roam.core.database.RoamDatabase
 import app.roam.core.database.TrackDao
 import app.roam.core.database.TrackEntity
 import app.roam.core.model.Ids
@@ -27,6 +29,7 @@ class CatalogWriter @Inject constructor(
     private val albums: AlbumDao,
     private val artists: ArtistDao,
     private val tagExtractor: TagExtractor,
+    private val db: RoamDatabase,
 ) {
 
     /** md5Checksum by remoteId, so unchanged files can be skipped entirely. */
@@ -103,47 +106,53 @@ class CatalogWriter @Inject constructor(
             )
         }
 
-        // Parents first: tracks reference albums which reference artists.
-        //
-        // insertIgnore, never upsert. An upsert writes every column of the
-        // freshly built entity, so the defaults would land on top of real
-        // data: loved and playCount on a track, artworkId on an album, and
-        // artworkId plus artworkAttemptedAt on an artist. Ids are derived
-        // from names, so a rename produces a new row and there is genuinely
-        // nothing to update on the parents.
-        artists.insertIgnore(artistRows.values.toList())
-        albums.insertIgnore(albumRows.values.toList())
-        tracks.insertIgnore(trackRows)
+        // One transaction for the batch, for the same reason the tag pass has
+        // one: Room invalidates per write and Paging reloads per invalidation,
+        // so a few hundred individual updates during a sync stop the library
+        // list ever settling. A batch is one invalidation.
+        db.withTransaction {
+            // Parents first: tracks reference albums which reference artists.
+            //
+            // insertIgnore, never upsert. An upsert writes every column of the
+            // freshly built entity, so the defaults would land on top of real
+            // data: loved and playCount on a track, artworkId on an album, and
+            // artworkId plus artworkAttemptedAt on an artist. Ids are derived
+            // from names, so a rename produces a new row and there is genuinely
+            // nothing to update on the parents.
+            artists.insertIgnore(artistRows.values.toList())
+            albums.insertIgnore(albumRows.values.toList())
+            tracks.insertIgnore(trackRows)
 
-        // insertIgnore did nothing for rows that already existed, so refresh
-        // those explicitly -- file facts always, path-inferred tags only when
-        // the user has not overridden them.
-        for (row in trackRows) {
-            if (known[row.remoteId] == null) continue
-            // fileName and folderPath ride with the other file facts, so a
-            // track that MOVED on the source stops pointing at where it used
-            // to be. Unconditional, unlike refreshFromPath -- where a file
-            // lives is never the user's edit to lose.
-            tracks.updateFileFacts(
-                id = row.id,
-                remoteRevision = row.remoteRevision,
-                mimeType = row.mimeType,
-                sizeBytes = row.sizeBytes,
-                fileName = row.fileName,
-                folderPath = row.folderPath,
-                // The bytes changed, so the file has to be read again whoever
-                // owns the metadata -- the duration and the embedded cover come
-                // from nowhere else.
-                tagState = row.tagState,
-            )
-            tracks.refreshFromPath(
-                id = row.id,
-                title = row.title,
-                artistId = row.artistId,
-                albumId = row.albumId,
-                albumArtist = row.albumArtist,
-                trackNo = row.trackNo,
-            )
+            // insertIgnore did nothing for rows that already existed, so refresh
+            // those explicitly -- file facts always, path-inferred tags only when
+            // the user has not overridden them.
+            for (row in trackRows) {
+                if (known[row.remoteId] == null) continue
+                // fileName and folderPath ride with the other file facts, so a
+                // track that MOVED on the source stops pointing at where it used
+                // to be. Unconditional, unlike refreshFromPath -- where a file
+                // lives is never the user's edit to lose.
+                tracks.updateFileFacts(
+                    id = row.id,
+                    remoteRevision = row.remoteRevision,
+                    mimeType = row.mimeType,
+                    sizeBytes = row.sizeBytes,
+                    fileName = row.fileName,
+                    folderPath = row.folderPath,
+                    // The bytes changed, so the file has to be read again whoever
+                    // owns the metadata -- the duration and the embedded cover come
+                    // from nowhere else.
+                    tagState = row.tagState,
+                )
+                tracks.refreshFromPath(
+                    id = row.id,
+                    title = row.title,
+                    artistId = row.artistId,
+                    albumId = row.albumId,
+                    albumArtist = row.albumArtist,
+                    trackNo = row.trackNo,
+                )
+            }
         }
         return trackRows.size
     }
