@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import app.roam.core.database.AlbumListItem
@@ -62,6 +63,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import app.roam.data.catalog.artwork.ArtworkProvider
+import kotlinx.coroutines.delay
 import coil.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -322,24 +324,63 @@ private fun SortItem(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * What an empty list actually MEANS, when it is not simply empty.
+ * Draws the reason a list is empty, and returns whether it handled it.
  *
- * One message was doing three jobs: nothing here, still loading, and the query
- * threw. The third is a fault and the copy insisted it was normal -- which is
- * how a library that was fine at the data layer, 2132 rows counted through the
- * same joins, read as gone. Paging knows which of the three it is and nothing
- * was asking.
+ * One message used to do three jobs: nothing here, still loading, and the query
+ * THREW. The third is a fault and the copy insisted it was normal -- which is
+ * how a library that is fine at the data layer, 2132 rows counted through the
+ * very same joins, reads as gone.
  *
- * Returns null when the list is genuinely fine and the caller should carry on.
+ * The retry is the part that matters. **Paging does not recover from a failed
+ * refresh on its own.** One load that fails -- a database busy behind a write,
+ * anything momentary -- leaves the list in Error until something invalidates it
+ * again, which during a quiet period is never. That turns a blip into a library
+ * that is empty until the app is restarted, and it is the shape of the bug
+ * being chased: everything is back, and then it just is not, and it stays that
+ * way.
+ *
+ * So a failed refresh is retried a few times with a widening gap before
+ * anything is said, and what is finally said carries the real message and a
+ * button rather than a shrug.
  */
-private fun pagingFault(refresh: LoadState, itemCount: Int): String? = when {
-    itemCount > 0 -> null
-    refresh is LoadState.Error ->
-        "Could not read your library.\n\n" +
-            (refresh.error.message ?: refresh.error::class.simpleName ?: "Unknown error")
-    refresh is LoadState.Loading -> "Loading…"
-    else -> null
+@Composable
+private fun pagingBlocked(items: LazyPagingItems<*>, emptyMessage: String): Boolean {
+    if (items.itemCount > 0) return false
+
+    return when (val refresh = items.loadState.refresh) {
+        is LoadState.Loading -> { EmptyState("Loading\u2026"); true }
+
+        is LoadState.Error -> {
+            // Keyed on the list, so switching album resets the budget rather
+            // than inheriting the last one's exhausted count.
+            var attempts by remember(items) { mutableIntStateOf(0) }
+            LaunchedEffect(refresh, attempts) {
+                if (attempts < PAGING_RETRIES) {
+                    delay(RETRY_DELAY_MS * (attempts + 1))
+                    attempts++
+                    items.retry()
+                }
+            }
+            if (attempts < PAGING_RETRIES) {
+                EmptyState("Loading\u2026")
+            } else {
+                EmptyState(
+                    "Could not read your library.\n\n" +
+                        (refresh.error.message
+                            ?: refresh.error::class.simpleName
+                            ?: "Unknown error") +
+                        "\n\nTap to try again."
+                ) { attempts = 0; items.retry() }
+            }
+            true
+        }
+
+        else -> { EmptyState(emptyMessage); true }
+    }
 }
+
+private const val PAGING_RETRIES = 3
+private const val RETRY_DELAY_MS = 400L
 
 @Composable
 private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
@@ -353,12 +394,7 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     // was fine at the data layer -- 2132 rows, counted through the same joins
     // -- read as simply gone. Paging knows which of the three it is; nothing
     // was asking it.
-    pagingFault(tracks.loadState.refresh, tracks.itemCount)?.let { EmptyState(it); return }
-
-    if (tracks.itemCount == 0) {
-        EmptyState("No tracks here yet")
-        return
-    }
+    if (pagingBlocked(tracks, "No tracks here yet")) return
 
     var sheetFor by remember { mutableStateOf<TrackListItem?>(null) }
     var sheetEdited by remember { mutableStateOf(false) }
@@ -591,8 +627,7 @@ private fun ArtistList(
     var sheetFor by remember { mutableStateOf<ArtistListItem?>(null) }
     var viewing by remember { mutableStateOf<ArtistListItem?>(null) }
 
-    pagingFault(artists.loadState.refresh, artists.itemCount)?.let { EmptyState(it); return }
-    if (artists.itemCount == 0) { EmptyState("No artists yet"); return }
+    if (pagingBlocked(artists, "No artists yet")) return
 
     if (viewMode.isGrid) {
         // Fixed, not adaptive: how many across is the user's choice now, and an
@@ -660,8 +695,7 @@ private fun AlbumList(vm: LibraryViewModel, listState: LazyListState) {
     var sheetFor by remember { mutableStateOf<AlbumListItem?>(null) }
     var viewing by remember { mutableStateOf<AlbumListItem?>(null) }
 
-    pagingFault(albums.loadState.refresh, albums.itemCount)?.let { EmptyState(it); return }
-    if (albums.itemCount == 0) { EmptyState("No albums yet"); return }
+    if (pagingBlocked(albums, "No albums yet")) return
 
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = albums.itemCount, key = albums.itemKey { it.id }) { index ->
@@ -964,19 +998,32 @@ private fun MiniPlayer(
 }
 
 @Composable
-private fun EmptyState(message: String) {
+private fun EmptyState(message: String, onTap: (() -> Unit)? = null) {
     Column(
-        Modifier.fillMaxSize().padding(32.dp),
+        Modifier
+            .fillMaxSize()
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
+            .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(message, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
         Text(
-            "Connect Google Drive in settings, then refresh your library.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            message,
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
         )
+        // Suppressed when the caller has already explained itself. "Connect
+        // Google Drive" under a database error is advice for a different
+        // problem, and following it would make this one worse.
+        if (onTap == null && !message.contains("Loading")) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Connect Google Drive in settings, then refresh your library.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 
