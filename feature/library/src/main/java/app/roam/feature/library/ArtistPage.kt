@@ -112,6 +112,12 @@ fun ArtistPage(
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     onOpenAlbum: (AlbumListItem) -> Unit,
+    /**
+     * A guest appearance, which opens differently: showing what this artist
+     * plays on rather than the whole record. Separate callback because the
+     * caller is the only thing that knows whose page this is.
+     */
+    onOpenAppearance: (AlbumListItem) -> Unit,
     onAlbumLongPress: (AlbumListItem) -> Unit,
     onBannerPicked: (Uri) -> Unit,
     onBannerSave: () -> Unit,
@@ -164,7 +170,7 @@ fun ArtistPage(
                     AlbumCell(
                         album = album,
                         dense = viewMode.columns >= 5,
-                        onClick = { onOpenAlbum(album) },
+                        onClick = { onOpenAppearance(album) },
                         onLongClick = { onAlbumLongPress(album) },
                         modifier = Modifier.padding(horizontal = 6.dp),
                     )
@@ -178,6 +184,7 @@ fun ArtistPage(
             listState = listState,
             header = header,
             onOpenAlbum = onOpenAlbum,
+            onOpenAppearance = onOpenAppearance,
             onAlbumLongPress = onAlbumLongPress,
         )
     }
@@ -191,6 +198,7 @@ private fun ArtistPageList(
     listState: LazyListState,
     header: @Composable () -> Unit,
     onOpenAlbum: (AlbumListItem) -> Unit,
+    onOpenAppearance: (AlbumListItem) -> Unit,
     onAlbumLongPress: (AlbumListItem) -> Unit,
 ) {
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
@@ -218,7 +226,7 @@ private fun ArtistPageList(
                 val album = appearsOn[index]
                 ArtistAlbumRow(
                     album = album,
-                    onClick = { onOpenAlbum(album) },
+                    onClick = { onOpenAppearance(album) },
                     onLongClick = { onAlbumLongPress(album) },
                 )
             }

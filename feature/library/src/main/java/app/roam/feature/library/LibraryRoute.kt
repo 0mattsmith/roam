@@ -192,6 +192,11 @@ fun LibraryRoute(
                             onPlay = { vm.playArtist(shuffled = false) },
                             onShuffle = { vm.playArtist(shuffled = true) },
                             onOpenAlbum = { vm.openAlbum(it.id, it.title) },
+                            // Carries whose page it was opened from, which is
+                            // what makes the album open on their track.
+                            onOpenAppearance = {
+                                vm.openAlbum(it.id, it.title, focusArtistId = page.detail.id)
+                            },
                             onAlbumLongPress = { vm.openAlbum(it.id, it.title) },
                             onBannerPicked = { vm.setArtistBanner(it) },
                             onBannerSave = { vm.saveBannerToDevice() },
@@ -355,7 +360,9 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                 // Collapsed albums still have to be paged in -- the boundaries
                 // are only visible once the rows are loaded -- so this hides
                 // the tracks rather than skipping the query.
-                val collapsed = grouped && state.albumCollapsed(track.albumId)
+                val collapsed =
+                    if (state.focusedAlbum) !state.albumFocusExpanded
+                    else grouped && state.albumCollapsed(track.albumId)
 
                 if (grouped) {
                     // peek, not get: reading the previous row with the indexed
@@ -379,7 +386,14 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
                             collapsed = collapsed,
                             onPlay = { vm.playFrom(track) },
                             onShuffle = { vm.shuffleAlbum(track.albumId) },
-                            onToggleCollapsed = { vm.toggleAlbumCollapsed(track.albumId) },
+                            onToggleCollapsed = {
+                                // In a focused album the same control means
+                                // "show me the rest of the record" rather than
+                                // "hide these", because there is nothing here
+                                // worth hiding -- it is already the short list.
+                                if (state.focusedAlbum) vm.toggleAlbumFocus()
+                                else vm.toggleAlbumCollapsed(track.albumId)
+                            },
                             onLongPress = { headerSheetFor = track },
                             onToggleLoved = {
                                 val next = albumLoved[track.albumId] != true

@@ -59,6 +59,25 @@ object LibraryQueries {
             arrayOf(artistId, artistId, artistId, artistId),
         )
 
+    /**
+     * One album, narrowed to what a particular artist plays on it.
+     *
+     * For opening a record from an artist's "Appears on": the interesting thing
+     * about a forty-track compilation on somebody's page is the one track that
+     * put it there, and a list of thirty-nine strangers buries it. The album is
+     * still one expand away -- this decides what shows FIRST, not what exists.
+     *
+     * Grouped aliases count, the same as everywhere else an artist is matched.
+     */
+    fun tracksForAlbumByArtist(albumId: Long, artistId: Long): SupportSQLiteQuery =
+        SimpleSQLiteQuery(
+            "$TRACK_COLUMNS AND t.albumId = ? " +
+                "AND (t.artistId = ? " +
+                "OR t.artistId IN (SELECT id FROM artists WHERE groupArtistId = ?)) " +
+                "ORDER BY t.discNo, t.trackNo, t.title",
+            arrayOf(albumId, artistId, artistId),
+        )
+
     fun tracksForAlbum(albumId: Long): SupportSQLiteQuery =
         SimpleSQLiteQuery(
             "$TRACK_COLUMNS AND t.albumId = ? ORDER BY t.discNo, t.trackNo, t.title",

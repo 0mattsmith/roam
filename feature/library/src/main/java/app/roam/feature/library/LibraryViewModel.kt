@@ -67,6 +67,16 @@ data class LibraryUiState(
      * branch and could not be opened at all. Identity, never a display string.
      */
     val openAlbumId: Long? = null,
+    /**
+     * The open album was reached through an artist's "Appears on", so it shows
+     * their tracks first.
+     *
+     * Mirrored out of the drill because the drill is private to the ViewModel
+     * and the header needs to know which thing its expander means.
+     */
+    val focusedAlbum: Boolean = false,
+    /** Whether a focused album is showing the whole record rather than one artist's part. */
+    val albumFocusExpanded: Boolean = false,
     val showingLoved: Boolean = false,
     /**
      * Whether a discography this long reads better as an index of albums.
@@ -102,7 +112,17 @@ class LibraryViewModel @Inject constructor(
 
     private sealed interface Drill {
         data class Artist(val id: Long, val name: String) : Drill
-        data class Album(val id: Long, val title: String) : Drill
+        /**
+         * [focusArtistId] is set when the album was opened from an artist's
+         * "Appears on", and means "show me their tracks first". Part of the
+         * drill rather than of the UI state because it decides which QUERY
+         * runs, and the pager is keyed on the drill.
+         */
+        data class Album(
+            val id: Long,
+            val title: String,
+            val focusArtistId: Long? = null,
+        ) : Drill
         data object Loved : Drill
     }
 
@@ -130,14 +150,21 @@ class LibraryViewModel @Inject constructor(
      * target actually change what is being QUERIED; everything else is
      * presentation and must not disturb the pages already loaded.
      */
-    val pagedTracks = combine(_state, drill) { s, d -> s.trackSort to d }
+    val pagedTracks = combine(_state, drill) { s, d -> Triple(s.trackSort, d, s.albumFocusExpanded) }
         .distinctUntilChanged()
-        .flatMapLatest { (sort, current) ->
+        .flatMapLatest { (sort, current, expanded) ->
             Pager(pagingConfig()) {
                 tracks.pagedListItemsRaw(
                     when (current) {
                         is Drill.Artist -> LibraryQueries.tracksForArtist(current.id, sort)
-                        is Drill.Album -> LibraryQueries.tracksForAlbum(current.id)
+                        is Drill.Album -> {
+                            val focus = current.focusArtistId
+                            if (focus != null && !expanded) {
+                                LibraryQueries.tracksForAlbumByArtist(current.id, focus)
+                            } else {
+                                LibraryQueries.tracksForAlbum(current.id)
+                            }
+                        }
                         Drill.Loved -> LibraryQueries.lovedTracks(sort)
                         null -> LibraryQueries.tracks(sort)
                     }
@@ -207,7 +234,7 @@ class LibraryViewModel @Inject constructor(
             it.copy(
                 tab = tab,
                 drillTitle = null,
-                openAlbumId = null,
+                openAlbumId = null, focusedAlbum = false,
                 showingLoved = false,
                 collapseAlbumsByDefault = false,
                 toggledAlbums = emptySet(),
@@ -262,7 +289,7 @@ class LibraryViewModel @Inject constructor(
         _state.update {
             it.copy(
                 drillTitle = name,
-                openAlbumId = null,
+                openAlbumId = null, focusedAlbum = false,
                 showingLoved = false,
                 trackSort = TrackSort.ALBUM,
                 toggledAlbums = emptySet(),
@@ -285,11 +312,11 @@ class LibraryViewModel @Inject constructor(
         _bulkEditing.value = null
     }
 
-    fun openAlbum(id: Long, title: String) {
+    fun openAlbum(id: Long, title: String, focusArtistId: Long? = null) {
         // Leaves the artist page loaded: opening one of their albums and
         // pressing Back should land you where you were, not at the top level.
         closeOpenForms()
-        drill.value = Drill.Album(id, title)
+        drill.value = Drill.Album(id, title, focusArtistId)
         // One album is never an index of itself.
         _state.update {
             it.copy(
@@ -298,8 +325,24 @@ class LibraryViewModel @Inject constructor(
                 showingLoved = false,
                 collapseAlbumsByDefault = false,
                 toggledAlbums = emptySet(),
+                // A focused album opens showing their tracks; the header's own
+                // expander is what asks for the rest.
+                focusedAlbum = focusArtistId != null,
+                albumFocusExpanded = false,
             )
         }
+    }
+
+    /**
+     * Switches a focused album between their tracks and the whole record.
+     *
+     * The same control as collapsing an album header elsewhere, and
+     * deliberately so -- but here collapsed means "the tracks that put this
+     * record on their page" rather than none at all, because an album with
+     * nothing under it is what made this look broken in the first place.
+     */
+    fun toggleAlbumFocus() {
+        _state.update { it.copy(albumFocusExpanded = !it.albumFocusExpanded) }
     }
 
     /** Everything by the artist whose page is open. */
@@ -331,7 +374,7 @@ class LibraryViewModel @Inject constructor(
         _state.update {
             it.copy(
                 drillTitle = "Loved",
-                openAlbumId = null,
+                openAlbumId = null, focusedAlbum = false,
                 showingLoved = true,
                 collapseAlbumsByDefault = false,
                 toggledAlbums = emptySet(),
@@ -384,7 +427,7 @@ class LibraryViewModel @Inject constructor(
         }
         if (current == null && _artistPage.value != null) {
             _artistPage.value = null
-            _state.update { it.copy(drillTitle = null, openAlbumId = null, showingLoved = false) }
+            _state.update { it.copy(drillTitle = null, openAlbumId = null, focusedAlbum = false, showingLoved = false) }
             return true
         }
         if (current == null) return false
@@ -395,7 +438,7 @@ class LibraryViewModel @Inject constructor(
         // appear to do nothing here and then quit the app on the second press.
         drill.value = null
         _artistPage.value = null
-        _state.update { it.copy(drillTitle = null, openAlbumId = null, showingLoved = false) }
+        _state.update { it.copy(drillTitle = null, openAlbumId = null, focusedAlbum = false, showingLoved = false) }
         return true
     }
 
