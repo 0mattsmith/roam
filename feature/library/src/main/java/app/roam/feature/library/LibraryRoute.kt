@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import app.roam.core.database.AlbumListItem
@@ -320,11 +321,39 @@ private fun SortItem(label: String, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
+/**
+ * What an empty list actually MEANS, when it is not simply empty.
+ *
+ * One message was doing three jobs: nothing here, still loading, and the query
+ * threw. The third is a fault and the copy insisted it was normal -- which is
+ * how a library that was fine at the data layer, 2132 rows counted through the
+ * same joins, read as gone. Paging knows which of the three it is and nothing
+ * was asking.
+ *
+ * Returns null when the list is genuinely fine and the caller should carry on.
+ */
+private fun pagingFault(refresh: LoadState, itemCount: Int): String? = when {
+    itemCount > 0 -> null
+    refresh is LoadState.Error ->
+        "Could not read your library.\n\n" +
+            (refresh.error.message ?: refresh.error::class.simpleName ?: "Unknown error")
+    refresh is LoadState.Loading -> "Loading…"
+    else -> null
+}
+
 @Composable
 private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     val tracks = vm.pagedTracks.collectAsLazyPagingItems()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
+
+    // "No tracks here yet" was being shown for three different things: an
+    // empty list, a list still loading, and a query that THREW. The third is a
+    // fault and the copy claimed it was normal, which is how a library that
+    // was fine at the data layer -- 2132 rows, counted through the same joins
+    // -- read as simply gone. Paging knows which of the three it is; nothing
+    // was asking it.
+    pagingFault(tracks.loadState.refresh, tracks.itemCount)?.let { EmptyState(it); return }
 
     if (tracks.itemCount == 0) {
         EmptyState("No tracks here yet")
@@ -562,6 +591,7 @@ private fun ArtistList(
     var sheetFor by remember { mutableStateOf<ArtistListItem?>(null) }
     var viewing by remember { mutableStateOf<ArtistListItem?>(null) }
 
+    pagingFault(artists.loadState.refresh, artists.itemCount)?.let { EmptyState(it); return }
     if (artists.itemCount == 0) { EmptyState("No artists yet"); return }
 
     if (viewMode.isGrid) {
@@ -630,6 +660,7 @@ private fun AlbumList(vm: LibraryViewModel, listState: LazyListState) {
     var sheetFor by remember { mutableStateOf<AlbumListItem?>(null) }
     var viewing by remember { mutableStateOf<AlbumListItem?>(null) }
 
+    pagingFault(albums.loadState.refresh, albums.itemCount)?.let { EmptyState(it); return }
     if (albums.itemCount == 0) { EmptyState("No albums yet"); return }
 
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
