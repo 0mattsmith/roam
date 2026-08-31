@@ -628,6 +628,42 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks WHERE missing = 1")
     fun missingCount(): Flow<Int>
 
+    /**
+     * Rows that would actually reach a list, counted through the same joins.
+     *
+     * Deliberately mirrors TRACK_COLUMNS rather than counting the table. The
+     * difference between this and [count] is the whole diagnostic: a library
+     * that reads as full in Settings and empty everywhere else is not missing
+     * rows, it is failing a join, and no amount of looking at the tracks table
+     * will show that.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM tracks t
+        JOIN artists ar  ON ar.id  = t.artistId
+        JOIN albums  al  ON al.id  = t.albumId
+        JOIN artists aar ON aar.id = al.artistId
+        WHERE t.hidden = 0 AND t.missing = 0
+    """)
+    fun visibleCount(): Flow<Int>
+
+    /**
+     * Tracks whose parent rows are not there.
+     *
+     * Every list query inner-joins the artist, the album, and the album's OWN
+     * artist. A track missing any of the three vanishes from all of them at
+     * once while still sitting in the table -- silently, and per row, so some
+     * of a library can go while the rest stays. This exact failure is already
+     * written down beside artists.pruneOrphans; nothing had ever counted it.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM tracks t
+        WHERE t.artistId NOT IN (SELECT id FROM artists)
+           OR t.albumId  NOT IN (SELECT id FROM albums)
+           OR COALESCE((SELECT al.artistId FROM albums al WHERE al.id = t.albumId), -1)
+              NOT IN (SELECT id FROM artists)
+    """)
+    fun orphanCount(): Flow<Int>
+
     /** Disconnecting a source removes its catalogue entirely. */
     @Query("DELETE FROM tracks WHERE sourceId = :sourceId")
     suspend fun deleteAllForSource(sourceId: String)

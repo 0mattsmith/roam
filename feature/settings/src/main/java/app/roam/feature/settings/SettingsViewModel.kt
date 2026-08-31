@@ -39,6 +39,18 @@ data class SettingsUiState(
     val folderId: String? = null,
     val syncing: Boolean = false,
     val tracksFound: Int? = null,
+    /**
+     * What a list would actually show, and what cannot reach one.
+     *
+     * Kept beside the raw count on purpose: the gap between them is the only
+     * thing that distinguishes "the library is gone" from "the library is
+     * there and something is dropping it on the way out", and those have
+     * nothing in common except how they look.
+     */
+    val visibleTracks: Int? = null,
+    val hiddenTracks: Int = 0,
+    val missingTracks: Int = 0,
+    val orphanTracks: Int = 0,
     val message: String? = null,
     val busy: Boolean = false,
 
@@ -305,6 +317,10 @@ class SettingsViewModel @Inject constructor(
                 if (!_state.value.syncing) _state.update { it.copy(tracksFound = n) }
             }
         }
+        launch { trackDao.visibleCount().collect { n -> _state.update { it.copy(visibleTracks = n) } } }
+        launch { trackDao.hiddenCount().collect { n -> _state.update { it.copy(hiddenTracks = n) } } }
+        launch { trackDao.missingCount().collect { n -> _state.update { it.copy(missingTracks = n) } } }
+        launch { trackDao.orphanCount().collect { n -> _state.update { it.copy(orphanTracks = n) } } }
 
         // A crawl started earlier may still be running in WorkManager.
         observeSync()

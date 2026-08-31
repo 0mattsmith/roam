@@ -125,6 +125,39 @@ fun SettingsRoute(
                     }
                 }
 
+                // Only when the two disagree. A library where every row reaches
+                // a list has nothing to explain, and a number that is always on
+                // screen is a number nobody reads when it finally matters.
+                val stored = state.tracksFound
+                val visible = state.visibleTracks
+                if (stored != null && visible != null && !state.syncing && visible < stored) {
+                    Text(
+                        buildString {
+                            append("$visible of $stored tracks are reaching your library. ")
+                            if (state.orphanTracks > 0) {
+                                // The one that is a bug rather than a setting.
+                                // Every list joins the artist, the album and the
+                                // album's own artist, and a track missing any of
+                                // the three disappears from all of them while
+                                // still sitting in the table.
+                                append("${state.orphanTracks} have lost their artist or album " +
+                                    "row — that is a fault, not a setting. ")
+                            }
+                            if (state.missingTracks > 0) {
+                                append("${state.missingTracks} were not found on Drive by the " +
+                                    "last sync. ")
+                            }
+                            if (state.hiddenTracks > 0) {
+                                append("${state.hiddenTracks} you removed yourself.")
+                            }
+                        }.trim(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.orphanTracks > 0) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    )
+                }
+
                 SwitchRow(
                     title = "Check for new music on launch",
                     subtitle = "Only changed files are re-read, so this is quick",
