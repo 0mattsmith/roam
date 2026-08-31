@@ -50,8 +50,9 @@ class DownloadWorker @AssistedInject constructor(
         // and a queue full of it is impossible to tell apart from a bug.
         val url = inputData.getString(KEY_URL)
             ?: return Result.failure(reason("Nothing to fetch - the request was empty"))
-        val artist = inputData.getString(KEY_ARTIST)?.sanitised().orEmpty().ifBlank { "Unknown Artist" }
-        val album = inputData.getString(KEY_ALBUM)?.sanitised().orEmpty().ifBlank { "Singles" }
+        // The artist and album are read into the placement below rather than
+        // here: they name a FOLDER, and FolderNames decides that now. They
+        // stopped being part of the file name with "01 Supersonic.m4a".
         val title = inputData.getString(KEY_TITLE)?.sanitised().orEmpty().ifBlank { "Unknown" }
         val trackNo = inputData.getInt(KEY_TRACK_NO, 0)
         val expectedMs = inputData.getLong(KEY_DURATION_MS, 0L)
@@ -120,14 +121,7 @@ class DownloadWorker @AssistedInject constructor(
         }
 
         return try {
-            val name = buildString {
-                if (trackNo > 0) append("%02d ".format(trackNo))
-                append(title)
-                append(" - ")
-                append(artist)
-                append('.')
-                append(file.extension.ifBlank { "m4a" })
-            }
+            val name = TrackFileName.of(trackNo, title, file.extension)
 
             // Asked rather than assumed. An album may already live under a
             // different spelling -- "100 Hits: 80s Pop" beside "100 Hits - 80s

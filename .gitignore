@@ -18,6 +18,6 @@ ci-failure.log
 crash.log
 ci-status.log
 
-# Roam Sync lives here only until it is moved to its own repo. It targets
+# Roam Connect lives here only until it is moved to its own repo. It targets
 # Android 4.0.4 and shares no code, no toolchain and no minSdk with Roam.
-/roam-sync/
+/roam-connect/
