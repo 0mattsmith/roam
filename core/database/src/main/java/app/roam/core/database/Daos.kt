@@ -1066,16 +1066,34 @@ interface ArtistDao {
      * The OR does not double-count: a normal album satisfies both clauses, but
      * COUNT is over rows matching the predicate, and a row matches once.
      */
+    /*
+     * No JOIN in here, and that is the whole point.
+     *
+     * This is a CORRELATED subquery: it runs once per artist row. Joining
+     * tracks to albums inside it made every artist scan the joined product of
+     * both tables -- hundreds of thousands of row evaluations for a library of
+     * two thousand, while holding a write lock. Every list read blocked behind
+     * it, which is a minute of "Loading" across the whole app on a pass that
+     * runs after every sync, every tag pass and every edit.
+     *
+     * The album-artist clause becomes an IN over `tracks.albumId` instead,
+     * which is indexed, against `albums.artistId`, which is also indexed. Same
+     * answer, and SQLite can actually use an index to get it.
+     */
     @Query("""
         UPDATE artists SET
           trackCount = (
             SELECT COUNT(*) FROM tracks t
-            JOIN albums al ON al.id = t.albumId
             WHERE t.hidden = 0 AND t.missing = 0
               AND (t.artistId = artists.id
-               OR al.artistId = artists.id
                OR t.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id)
-               OR al.artistId IN (SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id))
+               OR t.albumId IN (
+                    SELECT al.id FROM albums al
+                    WHERE al.artistId = artists.id
+                       OR al.artistId IN (
+                            SELECT g.id FROM artists g WHERE g.groupArtistId = artists.id
+                          )
+                  ))
           ),
           albumCount = (
             SELECT COUNT(*) FROM albums al

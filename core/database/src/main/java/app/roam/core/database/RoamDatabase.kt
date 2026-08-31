@@ -19,7 +19,7 @@ import javax.inject.Singleton
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
         TrackEntity::class, ArtworkEntity::class, DocRevisionEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -243,6 +243,20 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
+/**
+ * An index the rollups needed and nobody had added.
+ *
+ * Every count subquery resolves grouped aliases by looking up groupArtistId,
+ * once per artist row -- unindexed, that is a full scan of the artists table
+ * squared. The name has to match Room's own convention or its schema
+ * validation rejects the database on open.
+ */
+val MIGRATION_17_18 = object : Migration(17, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_artists_groupArtistId` ON `artists` (`groupArtistId`)")
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -254,7 +268,7 @@ object DatabaseModule {
                 MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                 MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
-                MIGRATION_15_16, MIGRATION_16_17,
+                MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
             )
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()

@@ -20,7 +20,9 @@ data class SourceEntity(
     val enabled: Boolean = true,
 )
 
-@Entity(tableName = "artists", indices = [Index("sortName")])
+// groupArtistId is indexed because the rollups look it up once per artist
+// row, so an unindexed scan there is squared across the table.
+@Entity(tableName = "artists", indices = [Index("sortName"), Index("groupArtistId")])
 data class ArtistEntity(
     @PrimaryKey val id: Long,
     val name: String,
