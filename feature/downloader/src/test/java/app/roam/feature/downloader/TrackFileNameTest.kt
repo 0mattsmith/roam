@@ -44,11 +44,38 @@ class TrackFileNameTest {
     }
 
     @Test
-    fun `the artist is not in the name any more`() {
-        // It was redundant -- the file already lives in Artist/Album (Year)/ --
-        // and on a compilation it named Various Artists, which is nobody.
+    fun `an ordinary album leaves the artist out`() {
+        // It would only repeat the parent folder: the file already lives in
+        // Artist/Album (Year)/, so the suffix says nothing new.
         val name = TrackFileName.of(3, "Never Gonna Give You Up", "mp3")
         assertEquals("03 Never Gonna Give You Up.mp3", name)
+    }
+
+    @Test
+    fun `a compilation names the performer, because the folder cannot`() {
+        // The folder is Various Artists, so this is the only place it appears.
+        assertEquals(
+            "03 Never Gonna Give You Up - Rick Astley.mp3",
+            TrackFileName.of(3, "Never Gonna Give You Up", "mp3", artist = "Rick Astley"),
+        )
+    }
+
+    @Test
+    fun `a blank artist is simply absent, not a dangling separator`() {
+        // "01 Title - .mp3" reads as a name that got cut off.
+        assertEquals("01 Title.mp3", TrackFileName.of(1, "Title", "mp3", artist = ""))
+        assertEquals("01 Title.mp3", TrackFileName.of(1, "Title", "mp3", artist = "   "))
+        assertEquals("01 Title.mp3", TrackFileName.of(1, "Title", "mp3", artist = null))
+        // ... including one that sanitises away to nothing.
+        assertEquals("01 Title.mp3", TrackFileName.of(1, "Title", "mp3", artist = "..."))
+    }
+
+    @Test
+    fun `the performer is sanitised like everything else`() {
+        assertEquals(
+            "01 Thunderstruck - ACDC.mp3",
+            TrackFileName.of(1, "Thunderstruck", "mp3", artist = "AC/DC"),
+        )
     }
 
     @Test

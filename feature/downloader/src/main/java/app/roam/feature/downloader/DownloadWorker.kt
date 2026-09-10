@@ -121,7 +121,15 @@ class DownloadWorker @AssistedInject constructor(
         }
 
         return try {
-            val name = TrackFileName.of(trackNo, title, file.extension)
+            // The performer rides in the NAME only on a compilation, where the
+            // folder is Various Artists and cannot say it. On a normal album it
+            // would repeat the parent folder and nothing more.
+            val name = TrackFileName.of(
+                trackNo = trackNo,
+                title = title,
+                extension = file.extension,
+                artist = inputData.getString(KEY_ARTIST).takeIf { placement.compilation },
+            )
 
             // Asked rather than assumed. An album may already live under a
             // different spelling -- "100 Hits: 80s Pop" beside "100 Hits - 80s

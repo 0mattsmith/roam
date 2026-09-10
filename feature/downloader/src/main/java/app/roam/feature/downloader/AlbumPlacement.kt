@@ -51,7 +51,13 @@ data class AlbumPlacement(
         get() = when {
             albumArtist.isNotBlank() -> albumArtist.trim()
             compilation -> FolderNames.VARIOUS_ARTISTS
-            artist.isNotBlank() -> artist.trim()
+            // Deliberately NOT falling back to [artist]. The album artist is
+            // what names a folder, and letting the performer stand in for it
+            // meant one guest credit on an otherwise ordinary record filed the
+            // whole thing under the guest. The dialog guarantees this field is
+            // filled -- it copies the artist across when it is left blank --
+            // so reaching here means somebody emptied both, and Unknown Artist
+            // is the honest answer rather than a guess dressed up as one.
             else -> UNKNOWN_ARTIST
         }
 

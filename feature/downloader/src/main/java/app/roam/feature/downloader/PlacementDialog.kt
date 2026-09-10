@@ -66,7 +66,12 @@ fun PlacementDialog(
     fun collect() = AlbumPlacement(
         artist = artist,
         album = album,
-        albumArtist = albumArtist,
+        // The album artist is what names the folder, so it must never be
+        // empty. Copied from the performer when it is, which is the right
+        // answer for an ordinary album by one act -- and the "Saving to" line
+        // above reflects it immediately, so the folder shown is the folder used
+        // rather than something worked out later behind the dialog's back.
+        albumArtist = albumArtist.ifBlank { artist },
         year = year.toIntOrNull(),
         compilation = compilation,
     )
