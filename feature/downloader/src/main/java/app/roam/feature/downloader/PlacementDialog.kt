@@ -122,8 +122,14 @@ fun PlacementDialog(
                     Column {
                         Text("Compilation", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Tags it as one, and suggests ${FolderNames.VARIOUS_ARTISTS} " +
-                                "as the album artist",
+                            // Says WHEN, not just what. The flag is not a
+                            // synonym for "collection": Roam defaults the album
+                            // artist to Various Artists when it is set, and that
+                            // name is half the album's content-derived id -- so
+                            // ticking it for a greatest hits by one act does not
+                            // describe the record, it misfiles it.
+                            "A record by different artists — not a greatest hits " +
+                                "by one. Files under ${FolderNames.VARIOUS_ARTISTS}.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
