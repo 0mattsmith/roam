@@ -23,6 +23,12 @@ import app.roam.core.database.TrackDao
 import app.roam.core.datastore.PlaybackStateStore
 import app.roam.core.datastore.SavedPlayback
 import app.roam.core.model.SourceType
+import androidx.sqlite.db.SupportSQLiteQuery
+import app.roam.core.model.Genres
+import app.roam.core.model.Ids
+import app.roam.data.catalog.VoiceAction
+import app.roam.data.catalog.VoiceCommands
+import app.roam.data.catalog.VoiceTarget
 import app.roam.data.catalog.LibraryQueries
 import app.roam.core.model.TrackSort
 import app.roam.data.catalog.VoiceQuery
@@ -360,18 +366,95 @@ class RoamLibraryService : MediaLibraryService() {
      * is the whole library.
      */
     private suspend fun voiceSearch(query: String, extras: Bundle?): List<MediaItem> {
-        val spoken = VoiceQuery.from(
+        val asked = VoiceCommands.parse(
             raw = query,
             extras = VOICE_EXTRAS.associateWith { extras?.getString(it) },
+            // Asked of the library rather than a fixed list: a genre is
+            // whatever this collection calls one, and a word that merely looks
+            // like a genre is far likelier to be a band.
+            knownGenres = Genres.split(tracks.genreStrings().joinToString(Genres.SEPARATOR)),
         )
+        val shuffled = asked.action == VoiceAction.SHUFFLE
 
-        if (spoken.isEmpty) return queueBuilder.resolve(MediaId.ShuffleAll)
+        return when (val target = asked.target) {
+            VoiceTarget.Everything ->
+                // Always shuffled. "Play my music" across ten thousand tracks
+                // in album order is the same four songs every morning.
+                queueBuilder.resolve(MediaId.ShuffleAll)
 
+            VoiceTarget.Loved ->
+                queueBuilder.resolve(if (shuffled) MediaId.ShuffleLoved else MediaId.Loved)
+
+            is VoiceTarget.Genre -> byQuery(
+                LibraryQueries.tracksByGenre(target.name, TrackSort.ARTIST, VOICE_QUEUE),
+                shuffled,
+            )
+
+            is VoiceTarget.Decade -> byQuery(
+                LibraryQueries.tracksByDecade(target.from, target.to, TrackSort.ARTIST, VOICE_QUEUE),
+                shuffled,
+            )
+
+            is VoiceTarget.Named -> named(target, shuffled)
+        }
+    }
+
+    /** A whole-collection request: every row the query returns, in order or not. */
+    private suspend fun byQuery(query: SupportSQLiteQuery, shuffled: Boolean): List<MediaItem> {
+        val rows = tracks.listItemsRaw(query)
+        val ids = rows.map { it.id }
+        return queueBuilder.itemsForIds(if (shuffled) ids.shuffled() else ids)
+    }
+
+    /**
+     * A name, resolved against the library rather than guessed at.
+     *
+     * "Oasis" and "Parklife" are the same shape of word; only the catalogue
+     * knows that one is a band and the other a record. So the best-matching
+     * TRACK is found first, and what it turns out to be is read off that row --
+     * which is also how an album gets played whole rather than as the one song
+     * whose title happened to score highest.
+     */
+    private suspend fun named(target: VoiceTarget.Named, shuffled: Boolean): List<MediaItem> {
+        val spoken = VoiceQuery(
+            raw = target.text,
+            artist = target.artist,
+            album = target.album,
+            title = target.title,
+        )
         val candidates = tracks.listItemsRaw(
             LibraryQueries.search(spoken.searchTerm, TrackSort.ARTIST, VOICE_CANDIDATES)
         )
-        val ranked = VoiceRanking.rank(spoken, candidates, VOICE_RESULTS)
-        return queueBuilder.itemsForIds(ranked.map { it.id })
+        val best = VoiceRanking.rank(spoken, candidates, VOICE_RESULTS)
+        if (best.isEmpty()) return emptyList()
+
+        val top = best.first()
+        val said = Genres.key(target.text)
+
+        // An ALBUM was named -- either the assistant said so, or what was asked
+        // for is the album's own title. Play the record, not the one track.
+        if (target.album != null || Genres.key(top.albumTitle) == said) {
+            val album = top.albumId
+            return queueBuilder.resolve(
+                if (shuffled) MediaId.ShuffleAlbum(album) else MediaId.Album(album)
+            )
+        }
+
+        // An ARTIST, by the same test. Ids are content-derived, so the name is
+        // the id and no lookup is needed.
+        if (target.title == null &&
+            (target.artist != null || Genres.key(top.artistName) == said)
+        ) {
+            val artist = Ids.artist(top.artistName)
+            return queueBuilder.resolve(
+                if (shuffled) MediaId.ShuffleArtist(artist) else MediaId.Artist(artist)
+            )
+        }
+
+        // A song. Its album goes in the queue behind it so playback does not
+        // stop dead after one track.
+        if (!shuffled) return queueBuilder.resolve(MediaId.Track(top.id))
+        return queueBuilder.itemsForIds(best.map { it.id }.shuffled())
     }
 
     // ---- resuming where we left off ------------------------------------------
@@ -647,5 +730,14 @@ class RoamLibraryService : MediaLibraryService() {
          * enough that a misheard word does not play for an hour.
          */
         const val VOICE_RESULTS = 50
+
+        /**
+         * How many a whole-collection request queues -- a genre, a decade.
+         *
+         * Large, because these ARE the collection: capping "shuffle my Britpop"
+         * at fifty would quietly answer a different question. Still capped,
+         * because a queue is built in memory and handed over a Binder.
+         */
+        const val VOICE_QUEUE = 1000
     }
 }

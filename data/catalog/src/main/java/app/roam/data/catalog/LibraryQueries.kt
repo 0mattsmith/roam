@@ -78,6 +78,44 @@ object LibraryQueries {
             arrayOf(albumId, artistId, artistId),
         )
 
+    /**
+     * Everything filed under a genre, matched the way a person says it.
+     *
+     * LIKE against the joined column rather than an equality test, because the
+     * column holds "Britpop; Alternative Rock; Rock" and somebody asking for
+     * Britpop means the first of those as much as a track that carries it
+     * alone. `Genres.key` cannot help here -- it collapses punctuation on a
+     * whole string, and this has to match one item inside one.
+     */
+    fun tracksByGenre(genre: String, sort: TrackSort, limit: Int): SupportSQLiteQuery {
+        val like = "%${genre.trim()}%"
+        return SimpleSQLiteQuery(
+            "$TRACK_COLUMNS AND t.genre LIKE ? ORDER BY ${sort.orderBy} LIMIT $limit",
+            arrayOf(like),
+        )
+    }
+
+    /**
+     * A decade, by when the music was MADE rather than when this copy was sold.
+     *
+     * `COALESCE(t.originalYear, t.year)` is the whole point. A 2011 remaster of
+     * a 1994 record is a 1994 record, and a nineties request that misses it is
+     * wrong in the way people notice immediately -- it is their own album, and
+     * they know what year it is.
+     *
+     * The genre clause is not redundant with the years. Plenty of libraries tag
+     * a decade as a genre and plenty do not, and a track with no year at all
+     * would otherwise be unreachable by the only phrasing that describes it.
+     */
+    fun tracksByDecade(from: Int, to: Int, sort: TrackSort, limit: Int): SupportSQLiteQuery {
+        val tag = "%${from % 100}s%"          // 1980 -> "%80s%"
+        return SimpleSQLiteQuery(
+            "$TRACK_COLUMNS AND (COALESCE(t.originalYear, t.year) BETWEEN ? AND ? " +
+                "OR t.genre LIKE ?) ORDER BY ${sort.orderBy} LIMIT $limit",
+            arrayOf(from, to, tag),
+        )
+    }
+
     fun tracksForAlbum(albumId: Long): SupportSQLiteQuery =
         SimpleSQLiteQuery(
             "$TRACK_COLUMNS AND t.albumId = ? ORDER BY t.discNo, t.trackNo, t.title",
