@@ -33,6 +33,16 @@ data class DocReport(
     val released: Int = 0,
     /** Documents that could not be parsed. Not an error -- they are skipped. */
     val unreadable: Int = 0,
+    /**
+     * Album folder -> the cover file its document names, from `cover_art`.
+     *
+     * Carried out of this pass rather than worked out later, because the
+     * DOCUMENT is the authority on an album's cover and this is the only place
+     * that reads one. A folder holding both cover.jpg and folder.jpg is common,
+     * and picking by a ranked list of filenames is guessing at something the
+     * album.json states outright.
+     */
+    val declaredCovers: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -174,6 +184,13 @@ class DocApplier @Inject constructor(
         }
 
         val matched = local.matched + external
+        // Recorded BEFORE the early return. A document whose entries match
+        // nothing still names a cover, and that claim is worth honouring --
+        // the two failures are unrelated.
+        report = report.copy(
+            declaredCovers = report.declaredCovers + (file.folderPath to doc.coverArt)
+        )
+
         if (matched.isEmpty() && local.orphaned.isEmpty()) return report
 
         val albumArtist = doc.albumArtist

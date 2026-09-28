@@ -24,12 +24,19 @@ data class CoverReport(val found: Int = 0, val applied: Int = 0, val failed: Int
  * download an album and the cover the downloader had just seeded beside it was
  * only ever used if a track happened to carry the same image inside itself.
  *
- * PRECEDENCE. A cover file outranks embedded art, which is why this writes
- * unconditionally where `TagWorker` writes only into a null. A picture chosen
- * by hand is uploaded as `cover.jpg`, so it wins here on its own merits rather
- * than by being pinned to a row that nothing ever refreshes -- and a pin was
- * always the weaker claim, because it could not notice the file changing
- * underneath it.
+ * PRECEDENCE, in order: what `album.json` NAMES in its `cover_art` field, then
+ * the conventional filenames, then whatever was embedded in a track.
+ *
+ * The document comes first for the same reason it outranks tags in 6f -- it is
+ * the only thing that STATES an answer, where a ranked list of filenames is
+ * guessing. A folder holding both cover.jpg and folder.jpg is ordinary, and
+ * without the document the picture would depend on a list's running order.
+ *
+ * Which is why this writes unconditionally where `TagWorker` writes only into a
+ * null. A picture chosen by hand is uploaded as `cover.jpg`, so it wins here on
+ * its own merits rather than by being pinned to a row nothing refreshes -- and
+ * a pin was always the weaker claim, because it could not notice the file
+ * changing underneath it.
  *
  * Costs no requests to FIND anything: the crawl already lists every file in
  * every folder and now carries the covers out, exactly as it does `album.json`.
@@ -41,9 +48,15 @@ class CoverApplier @Inject constructor(
     private val artwork: ArtworkStore,
 ) {
 
+    /**
+     * @param declared album folder -> the cover file its `album.json` names,
+     * straight out of the document pass. Absent for a folder with no document,
+     * which is when the filename convention decides instead.
+     */
     suspend fun apply(
         provider: SourceProvider,
         found: List<RemoteFile>,
+        declared: Map<String, String> = emptyMap(),
         force: Boolean = false,
     ): CoverReport {
         if (found.isEmpty()) return CoverReport()
@@ -52,14 +65,18 @@ class CoverApplier @Inject constructor(
         var applied = 0
         var failed = 0
 
-        // One cover per folder. A folder holding both cover.jpg and folder.jpg
-        // is common, and the order in ArtworkFiles is the preference -- taking
-        // whichever the listing happened to emit first would make the picture
-        // depend on Drive's paging.
+        // One cover per folder, and the document picks it when there is one.
+        // Falling back to the ranked filenames is for albums with no
+        // album.json -- there, taking whichever the listing emitted first would
+        // make the picture depend on Drive's paging.
         val best = found
             .filter { it.folderPath.isNotEmpty() }
             .groupBy { it.folderPath }
-            .mapValues { (_, files) -> files.minByOrNull { rank(it.name) } }
+            .mapValues { (folder, files) ->
+                val named = declared[folder]
+                files.firstOrNull { named != null && it.name.equals(named, ignoreCase = true) }
+                    ?: files.minByOrNull { rank(it.name) }
+            }
 
         for ((folder, file) in best) {
             if (file == null) continue
@@ -105,7 +122,15 @@ class CoverApplier @Inject constructor(
             .map { it.albumId }
             .toSet()
 
-    /** Position in the preference list; anything unrecognised sorts last. */
+    /**
+     * Position in the preference list; anything unrecognised sorts last.
+     *
+     * Only consulted when no document names a cover. One gap worth knowing: a
+     * `cover_art` naming something outside [ArtworkFiles.ALBUM_NAMES] is not
+     * carried by the crawl at all, so it cannot be honoured without a request
+     * per album. The default is `cover.jpg` and the list is wide, so this is
+     * rare -- but it is a limitation rather than a decision.
+     */
     private fun rank(name: String): Int =
         ArtworkFiles.ALBUM_NAMES.indexOf(name.lowercase()).takeIf { it >= 0 } ?: Int.MAX_VALUE
 }

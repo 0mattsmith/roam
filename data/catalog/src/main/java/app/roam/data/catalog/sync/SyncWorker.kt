@@ -163,12 +163,13 @@ class SyncWorker @AssistedInject constructor(
             DocReport(found = documents.size)
         }
 
-        // Folder covers, BEFORE the tag pass, for the same reason the
-        // documents go first: a cover file outranks an embedded one, and
-        // applied afterwards every album would show the picture from inside
-        // its tracks for as long as the tag pass took to be overruled.
+        // Covers, AFTER the documents and before the tag pass. The order is
+        // not a preference: album.json is what NAMES an album's cover, so this
+        // needs the document pass to have run -- and applied after the tag
+        // pass, every album would show the picture from inside its tracks for
+        // as long as that took to be overruled.
         val artwork = try {
-            coverApplier.apply(provider, covers)
+            coverApplier.apply(provider, covers, declared = docs.declaredCovers)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (t: Throwable) {

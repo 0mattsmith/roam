@@ -138,9 +138,13 @@ other — route between them through `:app`.
    rewriting would mean a full download and re-upload of the whole album.
    `CoverApplier` is what makes that true for albums; until it existed the
    sentence above was aspiration, because `ALBUM_NAMES` appeared only in WRITE
-   paths and a `cover.jpg` was never once read back. The file outranks the
-   embedded frame, which is why it writes unconditionally while `TagWorker`
-   writes only into a null -- and a picture chosen by hand wins by BECOMING
+   paths and a `cover.jpg` was never once read back. Precedence is
+   **`album.json`'s `cover_art`, then the conventional filenames, then the
+   embedded frame** -- the document first for the same reason as 6f, because it
+   is the only thing that STATES an answer where a ranked list of names is
+   guessing, and a folder holding both `cover.jpg` and `folder.jpg` is
+   ordinary. The file outranks the embedded frame, which is why it writes
+   unconditionally while `TagWorker` writes only into a null -- and a picture chosen by hand wins by BECOMING
    that file, not by being pinned to a row nothing refreshes. `albums.coverRevision`
    is what stops a re-read every sync and, less obviously, what makes "Remove
    cover" stick: that clears the row and leaves the file, so without a record
@@ -392,6 +396,7 @@ argued about mid-flight:
 | Two cover.jpg files in one folder | A numbered name matched a candidate list. `cover1.jpg` must not appear in `ArtworkFiles.ALBUM_NAMES` |
 | Archive numbering restarts at 1 and collides | `nextArchiveName` must scan the folder for the highest existing number, not count how many replacements this session made |
 | A replaced album cover reverts after a re-tag | `TagWorker` must only ever call `setArtworkIfMissing`; the unconditional `setArtwork` is for user picks and for `CoverApplier`, where the folder file is the authority |
+| The wrong image of two in a folder is used as the cover | `album.json`'s `cover_art` names which, and `DocApplier` carries that out as `declaredCovers`. Without the document the ranked `ALBUM_NAMES` order decides, which is a guess -- if the document is being ignored, check the cover pass runs AFTER the document pass |
 | A cover replaced on Drive never appears in Roam | Before `CoverApplier`, nothing read `cover.jpg` for an album at all -- artwork came from an embedded frame or a pick, and the file was write-only. If it happens again, check `coverRevision` is being stamped: an unstamped album is re-read every sync, a wrongly-stamped one never |
 | Removing a cover puts it back on the next sync | `coverRevision` was cleared along with `artworkId`. The revision is the record of having LOOKED, not of what is shown -- clearing it re-arms the very pass the removal was undoing |
 | The edit form shows the previous track after tapping next | `remember { mutableStateOf(initial.x) }` with no key. remember survives recomposition, so a new `initial` is ignored — key every form field on the id of what is being edited |
