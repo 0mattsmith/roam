@@ -47,6 +47,14 @@ half-way through is half an album; and it recomputes the rollups afterwards.
 outgoing one aside (invariant 6d), so every cover a folder has held is still
 there.
 
+And it no longer needs to be asked what the artwork *is*. `CoverApplier` reads
+`cover.jpg` from the album folder on every crawl, so what the web UI shows is
+the embedded frame or the file on Drive — whichever is current — rather than a
+frozen copy of whatever was last uploaded. The editor's job ends at putting the
+file there. That matters more here than on the phone: editing covers from a
+laptop and having them not match is exactly the confusion this interface exists
+to remove.
+
 A web handler that reached for `TrackDao` directly would reimplement every one
 of those bugs, and would do it in a place nobody thinks to look. **The HTTP
 layer's only job is to turn a request into an editor call and the result into

@@ -12,6 +12,8 @@ import androidx.work.workDataOf
 import app.roam.core.datastore.SettingsRepository
 import app.roam.core.model.SourceType
 import app.roam.data.catalog.artwork.ArtistPhotoWorker
+import app.roam.data.catalog.artwork.CoverApplier
+import app.roam.data.catalog.artwork.CoverReport
 import app.roam.data.catalog.metadata.DocApplier
 import app.roam.data.catalog.metadata.DocReport
 import app.roam.data.catalog.tags.TagWorker
@@ -42,6 +44,7 @@ class SyncWorker @AssistedInject constructor(
     private val providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>,
     private val catalog: CatalogWriter,
     private val docApplier: DocApplier,
+    private val coverApplier: CoverApplier,
     private val settings: SettingsRepository,
 ) : CoroutineWorker(ctx, params) {
 
@@ -69,6 +72,10 @@ class SyncWorker @AssistedInject constructor(
         // folders and a page's order is nobody's promise. One per album, so a
         // ten-thousand-track library holds a few hundred of these.
         val documents = ArrayList<RemoteFile>()
+        // Covers, collected the same way and for the same reason: the listing
+        // already contains them, and asking per album would be a round-trip
+        // each. One per album folder, so this stays small.
+        val covers = ArrayList<RemoteFile>()
         var failure: Throwable? = null
 
         suspend fun flush() {
@@ -82,6 +89,10 @@ class SyncWorker @AssistedInject constructor(
             .collect { file ->
                 if (file.kind == FileKind.DOCUMENT) {
                     documents += file
+                    return@collect
+                }
+                if (file.kind == FileKind.ARTWORK) {
+                    covers += file
                     return@collect
                 }
                 found++
@@ -152,6 +163,20 @@ class SyncWorker @AssistedInject constructor(
             DocReport(found = documents.size)
         }
 
+        // Folder covers, BEFORE the tag pass, for the same reason the
+        // documents go first: a cover file outranks an embedded one, and
+        // applied afterwards every album would show the picture from inside
+        // its tracks for as long as the tag pass took to be overruled.
+        val artwork = try {
+            coverApplier.apply(provider, covers)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (t: Throwable) {
+            // A missing picture is not a reason to fail a sync that has
+            // already written the library correctly.
+            CoverReport(found = covers.size)
+        }
+
         // Second pass: real tags and embedded covers. Separate job so the
         // catalogue is browsable now rather than after every ranged read.
         //
@@ -168,6 +193,7 @@ class SyncWorker @AssistedInject constructor(
                 KEY_WRITTEN to written,
                 KEY_DOCS to docs.read,
                 KEY_DOC_TRACKS to docs.applied,
+                KEY_COVERS to artwork.applied,
             )
         )
     }
@@ -183,6 +209,7 @@ class SyncWorker @AssistedInject constructor(
         /** album.json files read this pass, and the tracks they described. */
         const val KEY_DOCS = "docs"
         const val KEY_DOC_TRACKS = "doc_tracks"
+        const val KEY_COVERS = "covers"
         /** Rows per transaction. Large enough to amortise, small enough to stream. */
         const val BATCH = 250
         const val KEY_ERROR = "error"

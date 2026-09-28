@@ -19,6 +19,16 @@ enum class FileKind {
 
     /** A metadata document sitting beside the music. See docs/ALBUM_JSON.md. */
     DOCUMENT,
+
+    /**
+     * A cover image sitting in an album folder.
+     *
+     * Carried for the same reason as DOCUMENT: the crawl already lists every
+     * file in every folder, so recognising one costs nothing, and asking for it
+     * later would be a round-trip per album -- which is the entire cost of a
+     * crawl.
+     */
+    ARTWORK,
 }
 
 /** A file discovered on a remote source. Cheap -- no tags read yet. */
@@ -61,6 +71,30 @@ object DocNames {
      * is named here because the writer patches it in place.
      */
     const val ARTIST = "artist.json"
+}
+
+/**
+ * Album cover filenames the crawl recognises.
+ *
+ * Lives here rather than in `:data:catalog` because the crawl needs it and the
+ * dependency runs the other way. `ArtworkFiles.ALBUM_NAMES` delegates to this,
+ * so the automatic pass and the manual one cannot disagree about what counts
+ * as a cover -- which they would, silently, the first time one list gained an
+ * extension the other did not.
+ *
+ * Numbered archives (cover1.jpg) are deliberately absent: exactly one file
+ * answers to "the cover", and invariant 6d depends on that staying true.
+ */
+object CoverNames {
+    val ALBUM = listOf(
+        "cover.jpg", "cover.jpeg", "cover.png",
+        "folder.jpg", "folder.jpeg", "folder.png",
+        "front.jpg", "album.jpg",
+    )
+
+    private val LOOKUP = ALBUM.toSet()
+
+    fun isCover(name: String): Boolean = name.lowercase() in LOOKUP
 }
 
 data class ChangeSet(

@@ -139,6 +139,21 @@ interface TrackDao {
     suspend fun tracksUnderFolder(sourceId: String, folderPath: String): List<FolderTrackRow>
 
     /**
+     * Which albums have tracks at or below a folder, for the cover pass.
+     *
+     * Returns the path too, because LIKE is only a narrowing here: `_` is a
+     * single-character wildcard and real folder names contain it, so Kotlin
+     * re-tests the prefix and a neighbouring album cannot take this one's
+     * picture. Same split as DocMatcher -- the SQL narrows, Kotlin decides.
+     */
+    @Query("""
+        SELECT DISTINCT albumId, folderPath FROM tracks
+        WHERE sourceId = :sourceId
+          AND (folderPath = :folderPath OR folderPath LIKE :folderPath || '/%')
+    """)
+    suspend fun albumsUnderFolder(sourceId: String, folderPath: String): List<FolderAlbumRow>
+
+    /**
      * Every genre string the library already holds, most used first.
      *
      * Feeds the editor's suggestions. Its own spellings before any external
@@ -717,6 +732,9 @@ data class PendingTagRow(
     val sizeBytes: Long,
 )
 
+/** An album and the cover file it last took its artwork from. */
+data class CoverRevisionRow(val id: Long, val coverRevision: String?)
+
 data class TrackListItem(
     val id: Long,
     val remoteId: String,
@@ -753,6 +771,9 @@ data class RevisionRow(val id: Long, val remoteId: String, val remoteRevision: S
  * next crawl, so a library that has not been re-crawled since simply matches
  * nothing rather than matching wrongly.
  */
+/** An album reached through a folder, with the path that found it. */
+data class FolderAlbumRow(val albumId: Long, val folderPath: String?)
+
 data class FolderTrackRow(
     val id: Long,
     val fileName: String?,
@@ -880,6 +901,23 @@ interface AlbumDao {
      */
     @Query("UPDATE albums SET artworkId = :artworkId WHERE id = :albumId")
     suspend fun setArtwork(albumId: Long, artworkId: String)
+
+    /**
+     * A cover read from the album's own folder, which outranks embedded art.
+     *
+     * Unconditional on the artwork, deliberately: the file beside the music is
+     * the authority, and a picture chosen by hand BECOMES that file, so it
+     * wins here rather than by being pinned to a row nothing ever refreshes.
+     *
+     * The revision is stamped even when the artwork is unchanged, because it
+     * is the record of having looked.
+     */
+    @Query("UPDATE albums SET artworkId = :artworkId, coverRevision = :revision WHERE id = :albumId")
+    suspend fun setCoverFromFolder(albumId: Long, artworkId: String, revision: String?)
+
+    /** What each album last read a cover from, so an unchanged file is skipped. */
+    @Query("SELECT id, coverRevision FROM albums WHERE coverRevision IS NOT NULL")
+    suspend fun coverRevisions(): List<CoverRevisionRow>
 
     @Query("UPDATE albums SET compilation = :compilation WHERE id = :albumId")
     suspend fun setCompilation(albumId: Long, compilation: Boolean)

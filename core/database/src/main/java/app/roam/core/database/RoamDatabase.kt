@@ -19,7 +19,7 @@ import javax.inject.Singleton
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
         TrackEntity::class, ArtworkEntity::class, DocRevisionEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -257,6 +257,21 @@ val MIGRATION_17_18 = object : Migration(17, 18) {
     }
 }
 
+/**
+ * Albums learn to read the cover sitting beside them.
+ *
+ * Null for every existing row, which is exactly right: no album has taken its
+ * artwork from a folder yet, so every one of them is eligible the first time a
+ * crawl finds a cover. An album already showing embedded art keeps it until
+ * then, and is then overruled by the file -- which is the precedence invariant
+ * 6c always described and nothing ever implemented.
+ */
+val MIGRATION_18_19 = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE albums ADD COLUMN coverRevision TEXT")
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -269,6 +284,7 @@ object DatabaseModule {
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                 MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
                 MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
+                MIGRATION_18_19,
             )
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()

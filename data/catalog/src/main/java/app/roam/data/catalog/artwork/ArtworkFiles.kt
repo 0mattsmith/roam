@@ -1,5 +1,7 @@
 package app.roam.data.catalog.artwork
 
+import app.roam.data.source.CoverNames
+
 /**
  * The filenames Roam recognises as artwork sitting beside the music, shared
  * between the automatic passes and the manual ones so the two can never
@@ -12,12 +14,14 @@ object ArtworkFiles {
 
     val ARTIST_NAMES = listOf("artist.jpg", "artist.jpeg", "artist.png", "folder.jpg")
 
-    /** cover.jpg first -- it is the near-universal convention for album art. */
-    val ALBUM_NAMES = listOf(
-        "cover.jpg", "cover.jpeg", "cover.png",
-        "folder.jpg", "folder.jpeg", "folder.png",
-        "front.jpg", "album.jpg",
-    )
+    /**
+     * cover.jpg first -- it is the near-universal convention for album art.
+     *
+     * Delegated to the crawl's own list rather than repeated. Two lists would
+     * disagree the first time one gained an extension, and the symptom would be
+     * a cover the sync reads and the editor refuses to replace.
+     */
+    val ALBUM_NAMES: List<String> = CoverNames.ALBUM
 
     /** Kodi and Plex both use logo.png in the artist folder; follow the herd. */
     val LOGO_NAMES = listOf("logo.png", "logo.jpg", "clearlogo.png")

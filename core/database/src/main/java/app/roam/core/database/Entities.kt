@@ -92,6 +92,19 @@ data class AlbumEntity(
     val trackCount: Int = 0,
     val durationMs: Long = 0,
     val artworkId: String? = null,
+    /**
+     * The revision of the cover file this album last took its artwork from.
+     *
+     * Two jobs, and the second is the surprising one. It stops a cover being
+     * re-downloaded on every sync, obviously -- but it is also what makes
+     * "Remove cover" survive. That clears [artworkId] and deliberately leaves
+     * cover.jpg on Drive, so without a record of having already seen that
+     * exact file the next crawl would helpfully put the picture straight back.
+     *
+     * Null means no cover has ever been read from the folder, which is not the
+     * same as there being none.
+     */
+    val coverRevision: String? = null,
     val addedAt: Long = 0,
 )
 

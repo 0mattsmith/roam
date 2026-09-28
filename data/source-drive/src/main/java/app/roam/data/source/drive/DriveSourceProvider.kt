@@ -4,6 +4,7 @@ import androidx.media3.datasource.DataSource
 import app.roam.core.model.SourceType
 import app.roam.data.source.Capability
 import app.roam.data.source.ChangeSet
+import app.roam.data.source.CoverNames
 import app.roam.data.source.DocNames
 import app.roam.data.source.FileKind
 import app.roam.data.source.RemoteFile
@@ -87,6 +88,8 @@ class DriveSourceProvider @Inject constructor(
                         // later would be one more round-trip per album, and
                         // round-trips are the entire cost of this crawl.
                         send(f.toRemoteFile(path, FileKind.DOCUMENT))
+                    } else if (CoverNames.isCover(f.name)) {
+                        send(f.toRemoteFile(path, FileKind.ARTWORK))
                     }
                 }
                 pageToken = page.nextPageToken
