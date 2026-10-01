@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roam — Web interface mockups</title>
+<style>
+:root{
+  --ink:#070B0D; --surface:#0C1215; --raise:#141C20; --high:#1C262A; --outline:#24333A;
+  --teal-b:#5EEAD4; --teal:#2DD4BF; --teal-c:#14B8A6; --teal-d:#0D9488; --teal-w:rgba(20,184,166,.11);
+  --hi:#E8EFF0; --mid:#9AAAB0; --low:#5F7178;
+  --page:#0a0e10; --amber:#FBBF24; --amber-w:rgba(251,191,36,.12); --red:#F87171;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--page);color:var(--hi);font:15px/1.55 "Inter",-apple-system,"Segoe UI",Roboto,sans-serif;padding:40px 24px 90px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto}
+
+h1{font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1.05}
+.lede{color:var(--mid);font-size:15px;margin-top:8px;max-width:720px}
+.rule{height:1px;background:linear-gradient(90deg,var(--teal-c),transparent 70%);margin:24px 0 38px;opacity:.5}
+h2{font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--teal);margin:54px 0 6px}
+h2:first-of-type{margin-top:0}
+h2 .n{color:var(--low);margin-right:8px}
+.sub{color:var(--low);font-size:13.5px;margin-bottom:20px;max-width:760px}
+.note{background:var(--teal-w);border-left:2px solid var(--teal-c);padding:12px 16px;border-radius:0 10px 10px 0;color:var(--mid);font-size:13.5px;margin:20px 0 0;max-width:900px}
+.note b{color:var(--hi);font-weight:600}
+code{font:12.5px/1.5 ui-monospace,"Cascadia Mono",Consolas,monospace;color:var(--teal-b)}
+
+/* ---- browser frame ---- */
+.browser{width:100%;max-width:980px;background:var(--surface);border:1px solid var(--outline);border-radius:12px;overflow:hidden;box-shadow:0 20px 48px rgba(0,0,0,.5)}
+.chrome{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--ink);border-bottom:1px solid var(--outline)}
+.dots{display:flex;gap:6px;flex:none}
+.dots i{width:9px;height:9px;border-radius:50%;background:var(--high);display:block}
+.url{flex:1;background:var(--raise);border:1px solid var(--outline);border-radius:7px;padding:4px 10px;font:11.5px/1.5 ui-monospace,Consolas,monospace;color:var(--mid);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.url .lock{color:var(--low)}
+.url b{color:var(--hi);font-weight:500}
+
+/* ---- app shell inside the browser ---- */
+.topbar{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--outline);flex-wrap:wrap}
+.mark{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15.5px;letter-spacing:-.02em}
+.mark .sq{width:20px;height:20px;border-radius:6px;background:linear-gradient(135deg,var(--teal-b),var(--teal-d));flex:none}
+.mark small{font-weight:500;font-size:11px;color:var(--low);letter-spacing:.09em;text-transform:uppercase;margin-left:2px}
+.navs{display:flex;gap:2px;margin-left:8px;flex-wrap:wrap}
+.nav{font-size:12.5px;color:var(--low);padding:5px 10px;border-radius:7px;font-weight:500}
+.nav.on{color:var(--ink);background:var(--teal);font-weight:600}
+.sp{flex:1;min-width:0}
+.pill{font-size:11px;color:var(--mid);border:1px solid var(--outline);border-radius:20px;padding:3px 10px;white-space:nowrap}
+.pill.live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--teal);margin-right:6px;vertical-align:1px}
+
+.pad{padding:18px 16px 22px}
+.cap{color:var(--low);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;margin:12px 0 0}
+
+/* ---- generic bits ---- */
+.h3{font-size:16px;font-weight:650;letter-spacing:-.01em}
+.muted{color:var(--low);font-size:12.5px}
+.midtxt{color:var(--mid);font-size:13px}
+.art{aspect-ratio:1;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none;overflow:hidden}
+.art span{font-size:20px;font-weight:800;color:rgba(255,255,255,.88);letter-spacing:-.04em}
+.a1{background:linear-gradient(145deg,#1e3a5f,#0f2027)}
+.a2{background:linear-gradient(145deg,#4a1942,#1a0a1f)}
+.a3{background:linear-gradient(145deg,#1d4d3f,#07201a)}
+.a4{background:linear-gradient(145deg,#5a3a12,#231405)}
+.a5{background:linear-gradient(145deg,#3b2a5e,#140d24)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:5px}
+.chip.tags{background:var(--high);color:var(--mid)}
+.chip.doc{background:var(--teal-w);color:var(--teal-b)}
+.chip.hand{background:rgba(93,110,116,.22);color:var(--hi)}
+.chip.guess{background:var(--amber-w);color:var(--amber)}
+.btn{font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--outline);color:var(--mid);background:transparent;white-space:nowrap}
+.btn.go{background:var(--teal);color:var(--ink);border-color:var(--teal)}
+.btn.off{color:var(--low);background:var(--raise);border-color:var(--outline);opacity:.55}
+
+/* ---- queue ---- */
+.queue{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:11px}
+.job{background:var(--raise);border:1px solid var(--outline);border-radius:11px;padding:13px 14px}
+.job .num{font-size:25px;font-weight:700;letter-spacing:-.03em;line-height:1.1}
+.job .lbl{font-size:13px;font-weight:600;margin-top:1px}
+.job .why{font-size:11.5px;color:var(--low);margin-top:5px;line-height:1.45}
+.job.hot{border-color:var(--teal-d);background:linear-gradient(160deg,var(--teal-w),var(--raise))}
+.job.hot .num{color:var(--teal-b)}
+.job.warn .num{color:var(--amber)}
+
+/* ---- track table ---- */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--low);font-weight:600;padding:0 8px 7px;border-bottom:1px solid var(--outline);white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid rgba(36,51,58,.5);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.n{color:var(--low);font-variant-numeric:tabular-nums;width:26px}
+td.gap{color:var(--low)}
+td.gap em{color:var(--amber);font-style:normal}
+.tname{font-weight:550}
+.tsub{font-size:11.5px;color:var(--low)}
+.ck{width:13px;height:13px;border:1px solid var(--low);border-radius:3px;display:inline-block;vertical-align:-2px}
+.ck.on{background:var(--teal);border-color:var(--teal);position:relative}
+.ck.on::after{content:"";position:absolute;left:3px;top:1px;width:4px;height:7px;border:solid var(--ink);border-width:0 1.6px 1.6px 0;transform:rotate(42deg)}
+
+/* ---- form ---- */
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px 26px}
+.fs{border:0}
+.fs legend{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);font-weight:700;margin-bottom:9px}
+.f{margin-bottom:9px}
+.f label{display:block;font-size:11px;color:var(--low);margin-bottom:3px;letter-spacing:.02em}
+.f .in{background:var(--ink);border:1px solid var(--outline);border-radius:7px;padding:7px 9px;font-size:13px;min-height:33px;display:flex;align-items:center;gap:7px}
+.f .in.dirty{border-color:var(--teal-c);box-shadow:inset 2px 0 0 var(--teal)}
+.f .in.empty{color:var(--low)}
+.f .in.wide{min-height:66px;align-items:flex-start;line-height:1.5;display:block;color:var(--mid);font-size:12.5px}
+.f.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.f .src{font-size:10px;color:var(--low);margin-top:3px;letter-spacing:.03em}
+.bar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-top:1px solid var(--outline);background:var(--ink);flex-wrap:wrap}
+.bar .cnt{font-size:12px;color:var(--teal-b)}
+.warnbar{display:flex;gap:10px;align-items:flex-start;background:var(--amber-w);border-left:2px solid var(--amber);padding:10px 14px;margin:0 0 16px;border-radius:0 8px 8px 0}
+.warnbar .t{font-size:12.5px;font-weight:600;color:var(--amber)}
+.warnbar .d{font-size:12px;color:var(--mid);margin-top:2px}
+
+/* ---- cover panel ---- */
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;align-items:start}
+.drop{border:1.5px dashed var(--teal-d);border-radius:11px;padding:14px;text-align:center;background:var(--teal-w)}
+.drop .big{width:128px;margin:0 auto 10px}
+.drop .t{font-size:12.5px;font-weight:600}
+.drop .d{font-size:11.5px;color:var(--mid);margin-top:3px}
+pre{background:var(--ink);border:1px solid var(--outline);border-radius:9px;padding:12px 13px;font:12px/1.65 ui-monospace,Consolas,monospace;color:var(--mid);overflow-x:auto}
+pre .k{color:var(--teal-b)}
+pre .s{color:var(--hi)}
+pre .hl{background:var(--teal-w);display:inline-block;border-radius:3px;padding:0 3px;margin:0 -3px}
+.stack{display:flex;flex-direction:column;gap:6px}
+.frow{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:6px 9px;background:var(--raise);border:1px solid var(--outline);border-radius:8px}
+.frow .sw{width:22px;height:22px;border-radius:4px;flex:none}
+.frow .nm{font:12px/1 ui-monospace,Consolas,monospace}
+.frow .tag{margin-left:auto;font-size:10.5px;color:var(--low);letter-spacing:.04em;text-transform:uppercase}
+.frow.now{border-color:var(--teal-d)}
+.frow.now .tag{color:var(--teal-b)}
+.frow.old{opacity:.6}
+
+/* ---- link documents ---- */
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;align-items:start}
+.panel{background:var(--raise);border:1px solid var(--outline);border-radius:11px;overflow:hidden}
+.panel .ph{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--low);padding:10px 13px;border-bottom:1px solid var(--outline);font-weight:600}
+.panel .pb{padding:7px}
+.opt{padding:8px 10px;border-radius:8px;font-size:12.5px;display:flex;gap:9px;align-items:center}
+.opt .pathy{font:11px/1.4 ui-monospace,Consolas,monospace;color:var(--low);display:block;margin-top:2px}
+.opt.sel{background:var(--teal-w);box-shadow:inset 0 0 0 1px var(--teal-d)}
+.opt.sel .nmm{color:var(--teal-b)}
+.linkbtn{display:flex;align-items:center;justify-content:center}
+
+/* ---- phone card ---- */
+.phone{width:290px;max-width:100%;background:var(--surface);border:1px solid var(--outline);border-radius:26px;overflow:hidden;box-shadow:0 20px 44px rgba(0,0,0,.5)}
+.sbar{height:24px;display:flex;align-items:center;justify-content:space-between;padding:0 15px;font-size:9.5px;color:var(--mid)}
+.srow{display:flex;gap:12px;padding:12px 15px;border-bottom:1px solid rgba(36,51,58,.5)}
+.srow .tt{font-size:13.5px;font-weight:550}
+.srow .dd{font-size:11.5px;color:var(--low);margin-top:3px;line-height:1.45}
+.sw2{width:36px;height:20px;border-radius:12px;background:var(--teal);flex:none;position:relative;margin-left:auto}
+.sw2::after{content:"";position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--ink)}
+.sw2.off{background:var(--high)}
+.sw2.off::after{right:auto;left:2px;background:var(--low)}
+.addr{margin:10px 15px 14px;background:var(--ink);border:1px solid var(--teal-d);border-radius:9px;padding:11px 13px}
+.addr .u{font:13px/1.4 ui-monospace,Consolas,monospace;color:var(--teal-b)}
+.addr .p{display:flex;align-items:baseline;gap:9px;margin-top:9px}
+.addr .p .lb{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--low)}
+.addr .p .v{font:17px/1 ui-monospace,Consolas,monospace;letter-spacing:.22em;color:var(--hi)}
+
+/* ---- PIN gate ---- */
+.gate{padding:38px 16px;text-align:center}
+.gate .sq{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--teal-b),var(--teal-d));margin:0 auto 14px}
+.gate h4{font-size:18px;font-weight:650;letter-spacing:-.02em}
+.gate p{font-size:12.5px;color:var(--low);margin-top:5px}
+.boxes{display:flex;gap:9px;justify-content:center;margin:18px 0 4px}
+.boxes i{width:40px;height:48px;border-radius:9px;background:var(--ink);border:1px solid var(--outline);display:flex;align-items:center;justify-content:center;font:20px/1 ui-monospace,Consolas,monospace;color:var(--hi);font-style:normal}
+.boxes i.cur{border-color:var(--teal)}
+.gate .keep{font-size:11.5px;color:var(--mid);margin-top:14px}
+
+.stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:8px}
+.st{background:var(--raise);border:1px solid var(--outline);border-radius:10px;padding:11px 13px}
+.st .sn{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--low);font-weight:700}
+.st .sl{font-size:13px;font-weight:600;margin-top:3px}
+.st .sd{font-size:11.5px;color:var(--low);margin-top:4px;line-height:1.45}
+.st.done{border-color:var(--teal-d)}
+.st.done .sn{color:var(--teal)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>The web interface</h1>
+<p class="lede">What <code>docs/WEB_INTERFACE.md</code> looks like once it is built. A toggle in Settings
+starts a server on the phone; a laptop on the same wifi gets the library in a browser, with a real
+keyboard and a screen that fits more than six rows.</p>
+<div class="rule"></div>
+
+<!-- ══════════════ 1. the gate ══════════════ -->
+<h2><span class="n">1</span>The PIN, once per browser</h2>
+<p class="sub">Not because anyone is attacking you — because “I opened it on my phone by accident and
+renamed an album” is a real Tuesday. The PIN is shown in Settings beside the address, so there is
+nothing to work out.</p>
+
+<div class="browser" style="max-width:520px">
+  <div class="chrome">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="url"><span class="lock">○</span> <b>192.168.1.42:8080</b></div>
+  </div>
+  <div class="gate">
+    <div class="sq"></div>
+    <h4>Roam</h4>
+    <p>Enter the PIN from Settings → Web interface</p>
+    <div class="boxes"><i>4</i><i>8</i><i>1</i><i class="cur">&nbsp;</i></div>
+    <div class="keep">Remembered on this browser until the server is turned off.</div>
+  </div>
+</div>
+
+<div class="note"><b>Local only.</b> No port forwarding, no tunnel, no dynamic DNS. If it ever needs
+to work from elsewhere that is Tailscale’s job, not Roam’s.</div>
+
+<!-- ══════════════ 2. the work queue ══════════════ -->
+<h2><span class="n">2</span>The landing page is a work queue, not a library</h2>
+<p class="sub">The spec left this as an open question and the answer is the queue. The phone already
+browses well; this exists for the jobs the phone is bad at. “Show me everything with no year” is a
+reason to open a laptop — scrolling Artists is not.</p>
+
+<div class="browser">
+  <div class="chrome">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="url"><span class="lock">○</span> <b>192.168.1.42:8080</b>/</div>
+  </div>
+  <div class="topbar">
+    <div class="mark"><span class="sq"></span>Roam <small>web</small></div>
+    <div class="navs">
+      <span class="nav on">To do</span><span class="nav">Artists</span><span class="nav">Albums</span>
+      <span class="nav">Tracks</span><span class="nav">Documents</span>
+    </div>
+    <span class="sp"></span>
+    <span class="pill live">Connected to Pixel 8</span>
+  </div>
+  <div class="pad">
+    <div class="queue">
+      <div class="job hot">
+        <div class="num">41</div><div class="lbl">Needs a look</div>
+        <div class="why">No edit, no <code>album.json</code> and no readable tags — nothing has
+        vouched for these values.</div>
+      </div>
+      <div class="job">
+        <div class="num">180</div><div class="lbl">No year</div>
+        <div class="why">Blocks the decade shuffles: “Play 80s” can’t see them.</div>
+      </div>
+      <div class="job">
+        <div class="num">263</div><div class="lbl">No genre</div>
+        <div class="why">Typed once per album here, not once per track on a phone.</div>
+      </div>
+      <div class="job">
+        <div class="num">12</div><div class="lbl">Albums with no cover</div>
+        <div class="why">Drag a file on; it lands as <code>cover.jpg</code> beside the music.</div>
+      </div>
+      <div class="job warn">
+        <div class="num">4</div><div class="lbl">Frozen on a guess</div>
+        <div class="why">Hand-edited before the tags were ever read, so the tag pass will
+        never touch them.</div>
+      </div>
+      <div class="job warn">
+        <div class="num">26</div><div class="lbl">Missing from the source</div>
+        <div class="why">Flagged, never deleted — the loved flag and play count are still here.</div>
+      </div>
+    </div>
+
+    <p class="cap" style="margin:22px 0 8px">Needs a look — 41 tracks</p>
+    <table>
+      <tr><th style="width:18px"><span class="ck on"></span></th><th>Track</th><th>Album</th>
+          <th>What’s missing</th><th style="width:70px">Source</th></tr>
+      <tr><td><span class="ck on"></span></td>
+          <td><div class="tname">04 Champagne Supernova</div><div class="tsub">Oasis</div></td>
+          <td class="gap">(What’s the Story) Morning Glory?</td>
+          <td class="gap"><em>title from the filename</em>, no year, no genre</td>
+          <td><span class="chip guess">guess</span></td></tr>
+      <tr><td><span class="ck on"></span></td>
+          <td><div class="tname">07 Enjoy the Silence</div><div class="tsub">Depeche Mode</div></td>
+          <td class="gap">Violator</td>
+          <td class="gap">no composer, no original year</td>
+          <td><span class="chip guess">guess</span></td></tr>
+      <tr><td><span class="ck"></span></td>
+          <td><div class="tname">Track 11</div><div class="tsub">Unknown artist</div></td>
+          <td class="gap">Songs of Faith and Devotion</td>
+          <td class="gap"><em>tags unreadable</em> — moov atom at end of file</td>
+          <td><span class="chip guess">failed</span></td></tr>
+      <tr><td><span class="ck"></span></td>
+          <td><div class="tname">02 Rock ’n’ Roll Star</div><div class="tsub">Oasis</div></td>
+          <td class="gap">Definitely Maybe</td>
+          <td class="gap">no genre</td>
+          <td><span class="chip tags">tags</span></td></tr>
+    </table>
+  </div>
+  <div class="bar">
+    <span class="midtxt">2 selected</span>
+    <span class="sp"></span>
+    <button class="btn">Set genre for all…</button>
+    <button class="btn">Look up on MusicBrainz</button>
+    <button class="btn go">Edit first</button>
+  </div>
+</div>
+
+<div class="note"><b>Every count here is a query that already exists.</b> “Needs a look” is
+<code>isGuess</code> — not <code>userEdited</code>, not <code>fromDoc</code>, and
+<code>tagState != OK</code> — which is the same rule Settings → Needs a look uses on the phone.
+Nothing new to get wrong.</div>
+
+<!-- ══════════════ 3. the form ══════════════ -->
+<h2><span class="n">3</span>Editing a track: every field at once</h2>
+<p class="sub">The phone’s editor is correct and cramped — twenty-odd fields behind sections and a
+soft keyboard. Here they all fit, and each one says where its value came from.</p>
+
+<div class="browser">
+  <div class="chrome">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="url"><span class="lock">○</span> <b>192.168.1.42:8080</b>/track/8814330291</div>
+  </div>
+  <div class="topbar">
+    <div class="mark"><span class="sq"></span>Roam <small>web</small></div>
+    <div class="navs"><span class="nav">To do</span><span class="nav on">Tracks</span></div>
+    <span class="sp"></span>
+    <span class="pill">◀ 7 of 41 ▶</span>
+  </div>
+
+  <div class="pad">
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <div class="art a2" style="width:56px"><span>V</span></div>
+      <div style="min-width:0">
+        <div class="h3">Enjoy the Silence</div>
+        <div class="muted">Depeche Mode · Violator · 1990 · 6:12</div>
+      </div>
+      <span class="sp"></span>
+      <span class="chip tags">tags</span>
+      <span class="chip doc">album.json</span>
+      <span class="chip hand">hand-edited</span>
+    </div>
+
+    <div class="warnbar">
+      <div>
+        <div class="t">Composer was typed by hand</div>
+        <div class="d">So the tag pass leaves this track’s metadata alone from now on. That is what
+        <code>userEdited</code> means, and it is why Apply only sets it when something really moved.</div>
+      </div>
+    </div>
+
+    <div class="form">
+      <fieldset class="fs">
+        <legend>Identity</legend>
+        <div class="f"><label>Title</label><div class="in">Enjoy the Silence</div>
+          <div class="src">from tags</div></div>
+        <div class="f"><label>Artist</label><div class="in">Depeche Mode</div>
+          <div class="src">from tags</div></div>
+        <div class="f"><label>Album</label><div class="in">Violator</div>
+          <div class="src">from album.json</div></div>
+        <div class="f"><label>Album artist</label><div class="in">Depeche Mode</div>
+          <div class="src">from album.json</div></div>
+        <div class="f two">
+          <div><label>Track</label><div class="in">7 / 9</div></div>
+          <div><label>Disc</label><div class="in">1 / 1</div></div>
+        </div>
+        <div class="f"><label>Compilation</label><div class="in"><span class="ck"></span>
+          <span class="muted" style="font-size:12.5px">Files under the album artist</span></div></div>
+      </fieldset>
+
+      <fieldset class="fs">
+        <legend>Dates &amp; classification</legend>
+        <div class="f two">
+          <div><label>Year</label><div class="in">1990</div></div>
+          <div><label>Original year</label><div class="in dirty">1990</div></div>
+        </div>
+        <div class="f"><label>Genres</label><div class="in">Synth-pop · Alternative</div>
+          <div class="src">from album.json</div></div>
+        <div class="f"><label>Composer</label><div class="in dirty">Martin L. Gore</div>
+          <div class="src">edited — was “Dave Gahan”</div></div>
+        <div class="f"><label>Grouping</label><div class="in empty">—</div></div>
+      </fieldset>
+
+      <fieldset class="fs">
+        <legend>Sorting</legend>
+        <div class="f"><label>Sort artist</label><div class="in empty">Depeche Mode</div>
+          <div class="src">derived</div></div>
+        <div class="f"><label>Title sort</label><div class="in empty">—</div></div>
+        <div class="f"><label>Album sort</label><div class="in empty">—</div></div>
+        <div class="f"><label>Album artist sort</label><div class="in empty">—</div></div>
+        <div class="f"><label>Grouped under</label><div class="in empty">—</div>
+          <div class="src">aliases sort with the main artist</div></div>
+      </fieldset>
+
+      <fieldset class="fs">
+        <legend>Playback &amp; words</legend>
+        <div class="f two">
+          <div><label>Start</label><div class="in">0:00</div></div>
+          <div><label>End</label><div class="in empty">end of file</div></div>
+        </div>
+        <div class="f"><label>Lyrics</label><div class="in wide">Words like violence break the
+          silence / Come crashing in, into my little world…</div>
+          <div class="src">Violator/07 Enjoy the Silence.lrc · synced</div></div>
+      </fieldset>
+    </div>
+  </div>
+
+  <div class="bar">
+    <span class="cnt">2 changes</span>
+    <span class="muted">Composer, Original year</span>
+    <span class="sp"></span>
+    <button class="btn">Revert</button>
+    <button class="btn">Save &amp; next ▶</button>
+    <button class="btn go">Apply</button>
+  </div>
+</div>
+
+<div class="note"><b>Apply is disabled until something has really moved</b> — the same
+<code>comparable()</code> check the phone does, over HTTP. Without it, every track you merely looked
+at ends up marked hand-edited and frozen on whatever it showed at the time. The step arrows pass
+null when the form is clean, for exactly that reason.</div>
+
+<!-- ══════════════ 4. cover art ══════════════ -->
+<h2><span class="n">4</span>Cover art, and what <code>album.json</code> has to say about it</h2>
+<p class="sub">The document names the cover; the filenames are only a fallback. Making that visible is
+half the point of a big screen — on the phone it is an invariant you have to take on trust.</p>
+
+<div class="browser">
+  <div class="chrome">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="url"><span class="lock">○</span> <b>192.168.1.42:8080</b>/album/3390212884</div>
+  </div>
+  <div class="topbar">
+    <div class="mark"><span class="sq"></span>Roam <small>web</small></div>
+    <div class="navs"><span class="nav">To do</span><span class="nav on">Albums</span></div>
+    <span class="sp"></span>
+    <span class="pill">Violator · Depeche Mode</span>
+  </div>
+  <div class="pad">
+    <div class="cols">
+      <div>
+        <p class="cap" style="margin:0 0 9px">Drop a new one</p>
+        <div class="drop">
+          <div class="art a2 big"><span>V</span></div>
+          <div class="t">Drag an image here</div>
+          <div class="d">Uploads as <code>cover.jpg</code> in the album folder</div>
+        </div>
+      </div>
+
+      <div>
+        <p class="cap" style="margin:0 0 9px">In the folder on Drive</p>
+        <div class="stack">
+          <div class="frow now"><span class="sw a2"></span><span class="nm">cover.jpg</span>
+            <span class="tag">live</span></div>
+          <div class="frow old"><span class="sw a5"></span><span class="nm">cover1.jpg</span>
+            <span class="tag">archived</span></div>
+          <div class="frow old"><span class="sw a1"></span><span class="nm">cover2.jpg</span>
+            <span class="tag">archived</span></div>
+          <div class="frow"><span class="sw" style="background:var(--high)"></span>
+            <span class="nm">album.json</span><span class="tag">index</span></div>
+        </div>
+        <p class="muted" style="margin-top:10px">Replacing a cover numbers the outgoing file aside and
+        writes the new one as plain <code>cover.jpg</code>. Nothing on the source is ever
+        destroyed, and the live image always has the same name — so nothing pointing at it has to
+        change.</p>
+      </div>
+
+      <div>
+        <p class="cap" style="margin:0 0 9px">album.json decides which</p>
+<pre><span class="k">"album"</span>: <span class="s">"Violator"</span>,
+<span class="k">"album_artist"</span>: <span class="s">"Depeche Mode"</span>,
+<span class="k">"year"</span>: <span class="s">1990</span>,
+<span class="hl"><span class="k">"cover_art"</span>: <span class="s">"cover.jpg"</span>,</span>
+<span class="k">"previous_artwork"</span>: [
+  <span class="s">"cover1.jpg"</span>,
+  <span class="s">"cover2.jpg"</span>
+],
+<span class="k">"tracks"</span>: [ … ]</pre>
+        <p class="muted" style="margin-top:10px">A folder holding both <code>cover.jpg</code> and
+        <code>folder.jpg</code> is ordinary. Without the document the ranked filename list decides,
+        which is a guess — so the field outranks it, and both outrank the picture embedded in the
+        tracks.</p>
+      </div>
+    </div>
+  </div>
+  <div class="bar">
+    <span class="muted">Shown from the file on Drive, re-read whenever its revision moves</span>
+    <span class="sp"></span>
+    <button class="btn">Remove cover</button>
+    <button class="btn off">Apply</button>
+  </div>
+</div>
+
+<!-- ══════════════ 5. linking a document ══════════════ -->
+<h2><span class="n">5</span>Linking a document by hand</h2>
+<p class="sub">The part nothing else does, and the reason a web UI is the right home for it.
+<code>DocApplier</code> matches on the <code>file</code> locator — never a title or a track number,
+because those are exactly what an edit changes. Correct, and also why a renamed folder stops
+matching. With both lists side by side there is somewhere to say <em>this one belongs to that
+one</em>.</p>
+
+<div class="browser">
+  <div class="chrome">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="url"><span class="lock">○</span> <b>192.168.1.42:8080</b>/documents</div>
+  </div>
+  <div class="topbar">
+    <div class="mark"><span class="sq"></span>Roam <small>web</small></div>
+    <div class="navs"><span class="nav">To do</span><span class="nav on">Documents</span></div>
+    <span class="sp"></span>
+    <span class="pill">3 documents matched nothing</span>
+  </div>
+  <div class="pad">
+    <div class="pair">
+      <div class="panel">
+        <div class="ph">album.json that matched nothing</div>
+        <div class="pb">
+          <div class="opt sel"><span class="art a4" style="width:30px"><span
+            style="font-size:12px">D</span></span>
+            <span><span class="nmm">Dummy</span><span class="pathy">Depeche Mode/Dummy (1993)/</span>
+            </span></div>
+          <div class="opt"><span class="art a3" style="width:30px"><span
+            style="font-size:12px">O</span></span>
+            <span>OK Computer<span class="pathy">Radiohead/OK Computer [remaster]/</span></span></div>
+          <div class="opt"><span class="art a1" style="width:30px"><span
+            style="font-size:12px">S</span></span>
+            <span>Scary Monsters<span class="pathy">Bowie, David/Scary Monsters/</span></span></div>
+        </div>
+      </div>
+
+      <div class="linkbtn">
+        <div style="text-align:center">
+          <button class="btn go">Link these →</button>
+          <p class="muted" style="margin-top:8px;max-width:180px">A hand link outranks the matcher
+          permanently, or the next sync quietly undoes it.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="ph">Albums with no document</div>
+        <div class="pb">
+          <div class="opt sel"><span class="art a4" style="width:30px"><span
+            style="font-size:12px">S</span></span>
+            <span><span class="nmm">Songs of Faith and Devotion</span>
+            <span class="pathy">Depeche Mode/Songs of Faith &amp; Devotion/ · 10 tracks</span></span></div>
+          <div class="opt"><span class="art a5" style="width:30px"><span
+            style="font-size:12px">K</span></span>
+            <span>Kid A<span class="pathy">Radiohead/Kid A/ · 11 tracks</span></span></div>
+          <div class="opt"><span class="art a1" style="width:30px"><span
+            style="font-size:12px">L</span></span>
+            <span>Low<span class="pathy">Bowie, David/Low/ · 11 tracks</span></span></div>
+        </div>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:14px">The document calls the album <em>Dummy</em> and its
+    folder <em>Dummy (1993)</em>; the music is in <em>Songs of Faith &amp; Devotion</em>. No locator
+    in it points at a file that exists, so the matcher was right to refuse — and a person can see in
+    one glance what it couldn’t.</p>
+  </div>
+</div>
+
+<!-- ══════════════ 6. settings ══════════════ -->
+<h2><span class="n">6</span>Where it is turned on</h2>
+<p class="sub">Off by default. The address and the PIN sit together, because needing both and being
+shown one is the kind of thing that makes a feature feel broken.</p>
+
+<div style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start">
+  <div class="phone">
+    <div class="sbar"><span>9:41</span><span>▾ ▪ ▮</span></div>
+    <div style="padding:12px 15px 4px"><div class="h3">Web interface</div></div>
+    <div class="srow">
+      <div>
+        <div class="tt">Edit from a browser</div>
+        <div class="dd">Serves the library to this wifi network. Keeps a notification while it runs —
+        Android stops a server that has none.</div>
+      </div>
+      <span class="sw2"></span>
+    </div>
+    <div class="addr">
+      <div class="u">http://192.168.1.42:8080</div>
+      <div class="p"><span class="lb">PIN</span><span class="v">4817</span></div>
+    </div>
+    <div class="srow">
+      <div><div class="tt">Allow editing</div>
+        <div class="dd">Off means browse only — useful on a network you don’t own.</div></div>
+      <span class="sw2"></span>
+    </div>
+    <div class="srow">
+      <div><div class="tt">Play audio through the phone</div>
+        <div class="dd">Streams Drive → phone → browser. Doubles the bandwidth and keeps the phone
+        awake as a proxy.</div></div>
+      <span class="sw2 off"></span>
+    </div>
+    <div class="srow" style="border-bottom:0">
+      <div><div class="tt">New PIN</div>
+        <div class="dd">Signs every browser out.</div></div>
+    </div>
+  </div>
+
+  <div style="flex:1;min-width:270px">
+    <p class="cap" style="margin:0 0 10px">Built in this order, each one worth having alone</p>
+    <div class="stages">
+      <div class="st"><div class="sn">Stage 1</div><div class="sl">Browse, read only</div>
+        <div class="sd">Server, PIN, foreground service, library view. Answers the lifecycle question
+        before anything depends on it.</div></div>
+      <div class="st"><div class="sn">Stage 2</div><div class="sl">Edit metadata</div>
+        <div class="sd">The actual point. Forms over <code>TrackEditor</code>, dirty-checked.</div></div>
+      <div class="st"><div class="sn">Stage 3</div><div class="sl">Cover art</div>
+        <div class="sd">Upload through <code>ArtworkEditor</code>, which archives rather than
+        overwrites.</div></div>
+      <div class="st"><div class="sn">Stage 4</div><div class="sl">Link a document</div>
+        <div class="sd">Two lists and a button. Outranks the matcher for good.</div></div>
+      <div class="st"><div class="sn">Stage 5</div><div class="sl">Playback, if ever</div>
+        <div class="sd">Range requests over <code>SourceProvider.readRange</code>. Most expensive,
+        least connected to why this is wanted.</div></div>
+    </div>
+    <div class="note" style="margin-top:18px"><b>Nothing here touches a DAO.</b> Every write goes
+    through <code>TrackEditor</code> and <code>ArtworkEditor</code> — the HTTP layer’s only job is to
+    turn a request into an editor call and the result into JSON. A handler that reached past them
+    would reimplement content-derived ids, the transaction around an album rename and the
+    archive-don’t-overwrite rule, in a place nobody thinks to look.</div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

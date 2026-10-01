@@ -4,6 +4,8 @@ A toggle in Settings starts an HTTP server on the phone. Open it from a laptop
 on the same wifi and you get Roam's library in a browser — to **edit**, with a
 real keyboard and a screen that fits more than six rows.
 
+Visual reference: `docs/web-mockup.html`.
+
 ## Why this and not the desktop app
 
 Three things solve "I want to edit my metadata on a big screen": this, the
@@ -87,9 +89,9 @@ than lingering.
 
 Ordered so each one is worth having alone.
 
-**1 — Browse, read only.** The server, the PIN, the foreground service, and a
-library view. Proves the lifecycle question (does it survive the screen going
-off?) before anything depends on it.
+**1 — Browse, read only.** The server, the PIN, the foreground service, and the
+work queue below. Proves the lifecycle question (does it survive the screen
+going off?) before anything depends on it.
 
 **2 — Edit metadata.** The actual point. Track and album forms over
 `TrackEditor`, with the same dirty-checking the phone does — Apply stays
@@ -153,14 +155,22 @@ The front end is plain HTML, CSS and a single JS file, served from assets. No
 build step, no npm, nothing to keep current. A metadata form does not need a
 framework, and a second toolchain in this repo would need maintaining forever.
 
+## The landing page is a work queue
+
+Settled, and it is what stage one builds. "Everything with no year", "everything
+nothing has vouched for", "albums with no cover" — those are reasons to open a
+laptop. Scrolling Artists is not, and the phone already does it well.
+
+Every count is a query that exists. "Needs a look" is `isGuess` — not
+`userEdited`, not `fromDoc`, and `tagState != OK` — the same rule Settings →
+Needs a look uses today. A browse view is still there for finding one specific
+thing, but it is not the front door.
+
 ## Open questions
 
 - **Does the server survive the screen going off** with a foreground service, on
   a phone with aggressive battery management? Stage one answers it, and the
   answer decides whether this is pleasant or infuriating.
-- **Does editing want a track list or a work queue?** "Show me everything with
-  no year" is probably more useful than browsing artists — the phone already
-  does browsing well, and this exists for the jobs the phone is bad at.
 - **What happens to an edit made while a sync is running.** The phone has the
   same question today and answers it by accident; two clients make it worth
   deciding on purpose.
