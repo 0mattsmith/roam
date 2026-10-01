@@ -170,8 +170,16 @@ class DocApplier @Inject constructor(
         file: RemoteFile,
         doc: AlbumDoc,
         rows: List<FolderTrackRow>,
-        report: DocReport,
+        incoming: DocReport,
     ): DocReport {
+        // The cover first, and unconditionally -- a document whose entries
+        // match nothing still NAMES one, and the two failures are unrelated.
+        // Recorded here rather than further down so that staying ahead of the
+        // early return is structural, not a comment a later edit can falsify.
+        val report = incoming.copy(
+            declaredCovers = incoming.declaredCovers + (file.folderPath to doc.coverArt)
+        )
+
         val local = DocMatcher.matchLocal(file.folderPath, doc, rows)
 
         // Entries pointing outside their own album folder. Almost always none,
@@ -184,13 +192,6 @@ class DocApplier @Inject constructor(
         }
 
         val matched = local.matched + external
-        // Recorded BEFORE the early return. A document whose entries match
-        // nothing still names a cover, and that claim is worth honouring --
-        // the two failures are unrelated.
-        report = report.copy(
-            declaredCovers = report.declaredCovers + (file.folderPath to doc.coverArt)
-        )
-
         if (matched.isEmpty() && local.orphaned.isEmpty()) return report
 
         val albumArtist = doc.albumArtist
@@ -236,6 +237,7 @@ class DocApplier @Inject constructor(
                         compilation = doc.isCompilation,
                         year = doc.year ?: previous?.year,
                         artworkId = previous?.artworkId,
+                        coverRevision = previous?.coverRevision,
                         addedAt = previous?.addedAt ?: System.currentTimeMillis(),
                     )
                 )

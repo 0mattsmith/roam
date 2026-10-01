@@ -647,6 +647,79 @@ def unimported_types() -> dict[str, set[str]]:
     return problems
 
 
+_FUN = re.compile(r"\bfun\s+(?:<[^>]*>\s*)?(?:[\w.]+\.)?(\w+)\s*\(")
+_ASSIGN = re.compile(r"^\s*(\w+)\s*(?:=(?!=)|\+=|-=|\*=|/=)")
+
+
+def _body_span(src: str, after: int) -> tuple[int, int] | None:
+    """The {...} span of a function whose parameter list closed at [after]."""
+    open_brace = src.find("{", after)
+    if open_brace < 0:
+        return None
+    # An expression body, or the next declaration entirely: either way this
+    # function has no block to scan.
+    gap = src[after:open_brace]
+    if "=" in gap.replace("==", "") or "fun " in gap or ";" in gap:
+        return None
+    depth = 0
+    for i in range(open_brace, len(src)):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return open_brace, i
+    return None
+
+
+def reassigned_parameters() -> dict[str, set[str]]:
+    """
+    A function parameter being assigned to. Kotlin parameters are `val`.
+
+    "Val cannot be reassigned", and the shape that causes it is specific: a
+    function threads an accumulator through as a parameter, and an edit later
+    adds `report = report.copy(...)` to it as though it were the local `var` the
+    caller holds. It reads perfectly and it does not compile.
+
+    Only statement-level assignments count, so a named argument -- `copy(year =
+    ...)` where the enclosing function also has a `year` parameter -- is not it.
+    A name the body redeclares as its own local is shadowing, which is legal.
+    """
+    problems: dict[str, set[str]] = collections.defaultdict(set)
+    for kt, lines in sources().items():
+        src = _decomment("\n".join(lines))
+        for m in _FUN.finditer(src):
+            args, close = _arg_text(src, m.end() - 1)
+            if args is None:
+                continue
+            names: set[str] = set()
+            for arg in _split_args(args):
+                if ":" not in arg:
+                    continue
+                head = arg.split(":", 1)[0].strip().split()
+                if head and re.fullmatch(r"\w+", head[-1]):
+                    names.add(head[-1])
+            span = _body_span(src, close)
+            if not names or span is None:
+                continue
+            body = src[span[0] : span[1]]
+            names = {n for n in names if not re.search(rf"\b(?:val|var)\s+{n}\b", body)}
+            if not names:
+                continue
+
+            depth = 0
+            for line in body.split("\n"):
+                hit = _ASSIGN.match(line)
+                if depth == 0 and hit and hit.group(1) in names:
+                    at = src[: span[0]].count("\n") + 1 + body[: body.find(line)].count("\n")
+                    problems[kt].add(
+                        f"near line {at}: '{hit.group(1)}' is a parameter of "
+                        f"{m.group(1)}() and cannot be reassigned"
+                    )
+                depth += line.count("(") - line.count(")")
+    return problems
+
+
 def main() -> int:
     problems: dict[str, set[str]] = collections.defaultdict(set)
 
@@ -678,12 +751,15 @@ def main() -> int:
     for path, issues in unimported_types().items():
         problems[path] |= issues
 
+    for path, issues in reassigned_parameters().items():
+        problems[path] |= issues
+
     problems = {m: v for m, v in problems.items() if v}
 
     if not problems:
         print(
             "check-deps: no dependency, supertype, smart-cast, visibility, "
-            "duplicate, argument or import problems detected"
+            "duplicate, argument, import or reassignment problems detected"
         )
         return 0
 

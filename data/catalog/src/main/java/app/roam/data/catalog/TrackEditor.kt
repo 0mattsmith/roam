@@ -409,6 +409,12 @@ class TrackEditor @Inject constructor(
                                     // The new row inherits the cover, or renaming
                                     // an album would silently lose its artwork.
                                     artworkId = existingAlbum?.artworkId,
+                                    // And the revision with it, which matters in
+                                    // one case: a cover REMOVED by hand leaves
+                                    // cover.jpg on Drive, so a row that has no
+                                    // record of having read it is a row the next
+                                    // crawl helpfully fills back in.
+                                    coverRevision = existingAlbum?.coverRevision,
                                     addedAt = existingAlbum?.addedAt ?: System.currentTimeMillis(),
                                 )
                             )

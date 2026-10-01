@@ -764,6 +764,9 @@ data class TrackListItem(
 data class ShuffleRow(val id: Long, val loved: Boolean, val skipCount: Int, val lastPlayedAt: Long?)
 data class RevisionRow(val id: Long, val remoteId: String, val remoteRevision: String?)
 
+/** An album reached through a folder, with the path that found it. */
+data class FolderAlbumRow(val albumId: Long, val folderPath: String?)
+
 /**
  * Enough of a track to match it against a document entry.
  *
@@ -771,9 +774,6 @@ data class RevisionRow(val id: Long, val remoteId: String, val remoteRevision: S
  * next crawl, so a library that has not been re-crawled since simply matches
  * nothing rather than matching wrongly.
  */
-/** An album reached through a folder, with the path that found it. */
-data class FolderAlbumRow(val albumId: Long, val folderPath: String?)
-
 data class FolderTrackRow(
     val id: Long,
     val fileName: String?,
