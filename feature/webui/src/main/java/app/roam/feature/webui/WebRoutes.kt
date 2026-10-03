@@ -114,11 +114,45 @@ object WebRoutes {
     /**
      * A plain filename in a known set, not a path.
      *
-     * Allow-listing the three files that exist is stricter than sanitising,
-     * and it costs nothing: a front end with no build step has no file the
-     * author did not type.
+     * Allow-listing the handful of files that exist is stricter than
+     * sanitising, and it costs nothing: a front end with no build step has no
+     * file the author did not type. It does mean a new asset has to be added
+     * here as well as written, which [WebRoutesTest] checks against the real
+     * assets directory so the two cannot drift.
      */
     fun isSafeAsset(name: String): Boolean = name in ASSETS
 
-    val ASSETS = setOf("app.js", "style.css", "favicon.svg")
+    val ASSETS = setOf(
+        "app.js",
+        "style.css",
+        // Installable as a windowed app. The manifest and the icons are public
+        // for the same reason index.html is: a browser reads them before it has
+        // any idea what a PIN is, and an install that showed a broken icon
+        // would be worse than no install.
+        "manifest.webmanifest",
+        "icon.svg",
+        "icon-192.png",
+        "icon-512.png",
+        "icon-maskable-512.png",
+        "apple-touch-icon.png",
+    )
+
+    /**
+     * Content type by extension.
+     *
+     * Here rather than in the server because it is a decision, and everything
+     * decidable in this module is testable. `application/manifest+json` is the
+     * registered type and the one Chrome wants -- served as plain json the
+     * manifest is fetched and then ignored, which looks exactly like not having
+     * written one.
+     */
+    fun mime(name: String): String = when {
+        name.endsWith(".js") -> "application/javascript"
+        name.endsWith(".css") -> "text/css"
+        name.endsWith(".svg") -> "image/svg+xml"
+        name.endsWith(".png") -> "image/png"
+        name.endsWith(".webmanifest") -> "application/manifest+json"
+        name.endsWith(".html") -> "text/html"
+        else -> "application/octet-stream"
+    }
 }

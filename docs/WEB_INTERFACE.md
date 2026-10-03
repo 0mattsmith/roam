@@ -112,6 +112,26 @@ overwrites. Drag a file onto an album.
 
 **5 — Playback, if ever.** Below.
 
+## Pinning it to a taskbar
+
+There is a web app manifest and a set of icons, generated from the launcher
+icon's own paths by `tools/webui-icons.py` — so the pinned app is the same mark
+as the phone, not a lookalike. Chrome and Edge on the desktop will install any
+page as a windowed app from their menu (Chrome: ⋯ → Cast, save and share →
+Install page as app; Edge: ⋯ → Apps → Install this site as an app), and they
+read the manifest for the name and the icon.
+
+**There is no service worker, and there cannot be one.** Service workers need a
+secure context, and this is plain HTTP on a LAN address — so
+`navigator.serviceWorker` does not exist, and Chrome's automatic install prompt
+never fires. That only costs offline caching, which would be meaningless here:
+every number on the page is live from the phone, and the phone is the thing
+that has to be reachable anyway.
+
+If a true PWA ever matters, the route is HTTPS with a certificate the browser
+already trusts, which in practice means Tailscale — the same answer this
+document gives for remote access, and still not Roam's job.
+
 ## Linking `album.json` by hand
 
 The part nothing else does, and the reason a web UI is the right home for it.

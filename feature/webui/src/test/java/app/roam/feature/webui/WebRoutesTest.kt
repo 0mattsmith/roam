@@ -28,10 +28,43 @@ class WebRoutesTest {
     }
 
     @Test
-    fun `the three real assets are served and nothing else is`() {
+    fun `the real assets are served and nothing else is`() {
         assertEquals(Route.Asset("app.js"), get("/app.js"))
         assertEquals(Route.Asset("style.css"), get("/style.css"))
         assertEquals(Route.NotFound, get("/secrets.txt"))
+    }
+
+    // The allow-list against the directory it allow-lists is checked by
+    // tools/check-deps.py instead: a unit test would have to find the assets
+    // through a relative path, and a test that silently checks nothing when
+    // the working directory moves is worse than no test.
+
+    @Test
+    fun `installing as an app needs the manifest and the icons`() {
+        assertEquals(Route.Asset("manifest.webmanifest"), get("/manifest.webmanifest"))
+        assertEquals(Route.Asset("icon-192.png"), get("/icon-192.png"))
+        assertEquals(Route.Asset("icon-512.png"), get("/icon-512.png"))
+        assertEquals(Route.Asset("apple-touch-icon.png"), get("/apple-touch-icon.png"))
+
+        // Read before a browser has any idea what a PIN is. An install that
+        // showed a broken icon would be worse than no install.
+        assertTrue(WebRoutes.isPublic(Route.Asset("manifest.webmanifest")))
+        assertTrue(WebRoutes.isPublic(Route.Asset("icon-512.png")))
+    }
+
+    /**
+     * Served as plain json, a manifest is fetched and then ignored -- which
+     * looks exactly like not having written one.
+     */
+    @Test
+    fun `the manifest gets its registered content type`() {
+        assertEquals("application/manifest+json", WebRoutes.mime("manifest.webmanifest"))
+        assertEquals("image/png", WebRoutes.mime("icon-512.png"))
+        assertEquals("image/svg+xml", WebRoutes.mime("icon.svg"))
+        assertEquals("text/html", WebRoutes.mime("index.html"))
+        assertEquals("application/javascript", WebRoutes.mime("app.js"))
+        assertEquals("text/css", WebRoutes.mime("style.css"))
+        assertEquals("application/octet-stream", WebRoutes.mime("mystery"))
     }
 
     /**

@@ -720,6 +720,61 @@ def reassigned_parameters() -> dict[str, set[str]]:
     return problems
 
 
+WEB_ASSETS = "feature/webui/src/main/assets/web"
+WEB_ROUTES = "feature/webui/src/main/java/app/roam/feature/webui/WebRoutes.kt"
+# Served by Route.Index rather than by name, so it is deliberately not listed.
+WEB_IMPLICIT = {"index.html"}
+
+
+def web_assets() -> dict[str, set[str]]:
+    """
+    Every file in the web front end is in `WebRoutes.ASSETS`, and vice versa.
+
+    The server allow-lists asset names rather than sanitising a path, which is
+    the right way round -- there is no spelling of "../databases/roam.db" that
+    is in a list of eight filenames. The cost is that a new asset has to be
+    added twice, and forgetting the second is a 404 on a file that is plainly
+    sitting in the directory. A name in the list with no file behind it is the
+    same bug from the other end: a 404 nothing explains.
+
+    Checked here rather than in a unit test because a JVM test would have to
+    find the directory through a relative path, and a test that quietly checks
+    nothing when the working directory moves is worse than no test.
+    """
+    if not os.path.isdir(WEB_ASSETS) or not os.path.exists(WEB_ROUTES):
+        return {}
+
+    shipped = {f for f in os.listdir(WEB_ASSETS) if os.path.isfile(f"{WEB_ASSETS}/{f}")}
+
+    with open(WEB_ROUTES, encoding="utf-8") as fh:
+        source = fh.read()
+
+    # The RAW source, deliberately. _decomment blanks string literals as well
+    # as comments -- which is exactly what the Kotlin checks above need, and
+    # exactly wrong here, where the string literals ARE the subject.
+    start = source.find("val ASSETS")
+    opened = source.find("setOf(", start) + len("setOf(")
+    if start < 0 or opened < len("setOf("):
+        return {WEB_ROUTES: {"WebRoutes.ASSETS not found -- did it stop being a setOf?"}}
+
+    depth, at = 1, opened
+    while at < len(source) and depth > 0:
+        if source[at] == "(":
+            depth += 1
+        elif source[at] == ")":
+            depth -= 1
+        at += 1
+    block = re.sub(r"//[^\n]*", "", source[opened : at - 1])
+    listed = set(re.findall(r'"([^"]+)"', block))
+
+    problems: set[str] = set()
+    for name in sorted(shipped - listed - WEB_IMPLICIT):
+        problems.add(f"{name} is served from assets/web but missing from WebRoutes.ASSETS")
+    for name in sorted(listed - shipped):
+        problems.add(f"WebRoutes.ASSETS lists {name}, which is not in assets/web")
+    return {WEB_ROUTES: problems} if problems else {}
+
+
 def main() -> int:
     problems: dict[str, set[str]] = collections.defaultdict(set)
 
@@ -752,6 +807,9 @@ def main() -> int:
         problems[path] |= issues
 
     for path, issues in reassigned_parameters().items():
+        problems[path] |= issues
+
+    for path, issues in web_assets().items():
         problems[path] |= issues
 
     problems = {m: v for m, v in problems.items() if v}

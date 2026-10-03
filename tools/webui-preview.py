@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import urllib.parse
 
 ASSETS = "feature/webui/src/main/assets/web"
 
@@ -134,6 +135,22 @@ def build(unlocked: bool, open_job: str | None = None) -> str:
     html = html.replace(
         '<link rel="stylesheet" href="/style.css">', f"<style>\n{css}\n</style>"
     )
+
+    # The icon inlined for the same reason; the manifest dropped because an
+    # installable app is the one thing a file:// preview genuinely cannot be,
+    # and leaving the link in only buys a console error.
+    icon = open(f"{ASSETS}/icon.svg", encoding="utf-8").read()
+    html = html.replace(
+        '<link rel="icon" href="/icon.svg" type="image/svg+xml">',
+        '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,'
+        + urllib.parse.quote(icon)
+        + '">',
+    )
+    for dead in (
+        '<link rel="manifest" href="/manifest.webmanifest">',
+        '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
+    ):
+        html = html.replace(dead, "")
     banner = (
         '<div style="position:fixed;right:10px;bottom:10px;z-index:99;'
         'font:11px system-ui;color:#5F7178;border:1px solid #24333A;'

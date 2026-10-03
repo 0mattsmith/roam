@@ -61,8 +61,8 @@ class RoamWebServer(
 
         return try {
             when (route) {
-                Route.Index -> asset("index.html", "text/html")
-                is Route.Asset -> asset(route.name, mime(route.name))
+                Route.Index -> asset("index.html")
+                is Route.Asset -> asset(route.name)
                 Route.Counts -> json(Response.Status.OK, counts())
                 is Route.Job -> json(Response.Status.OK, job(route))
                 is Route.Artwork -> cover(route)
@@ -165,12 +165,12 @@ class RoamWebServer(
         ).apply { addHeader("Cache-Control", "public, max-age=31536000, immutable") }
     }
 
-    private fun asset(name: String, type: String): Response {
+    private fun asset(name: String): Response {
         val bytes = runCatching { assets.open("$ASSET_DIR/$name").use { it.readBytes() } }
             .getOrNull()
             ?: return json(Response.Status.NOT_FOUND, WebJson.error("No such file"))
         return newFixedLengthResponse(
-            Response.Status.OK, type, ByteArrayInputStream(bytes), bytes.size.toLong()
+            Response.Status.OK, WebRoutes.mime(name), ByteArrayInputStream(bytes), bytes.size.toLong()
         ).apply { addHeader("Cache-Control", "no-cache") }
     }
 
@@ -181,13 +181,6 @@ class RoamWebServer(
             addHeader("Cache-Control", "no-store")
             addHeader("X-Content-Type-Options", "nosniff")
         }
-
-    private fun mime(name: String): String = when {
-        name.endsWith(".js") -> "application/javascript"
-        name.endsWith(".css") -> "text/css"
-        name.endsWith(".svg") -> "image/svg+xml"
-        else -> "application/octet-stream"
-    }
 
     companion object {
         /** Everything under assets/web/, and nothing above it. */
