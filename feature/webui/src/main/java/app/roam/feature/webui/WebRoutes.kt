@@ -117,8 +117,10 @@ object WebRoutes {
      * Allow-listing the handful of files that exist is stricter than
      * sanitising, and it costs nothing: a front end with no build step has no
      * file the author did not type. It does mean a new asset has to be added
-     * here as well as written, which [WebRoutesTest] checks against the real
-     * assets directory so the two cannot drift.
+     * here as well as written, so `tools/check-deps.py` compares this list
+     * against the assets directory in both directions -- a file with no entry
+     * is a 404 on something plainly there, an entry with no file is a 404
+     * nothing explains.
      */
     fun isSafeAsset(name: String): Boolean = name in ASSETS
 
