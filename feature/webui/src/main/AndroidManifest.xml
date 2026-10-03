@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        dataSync, not a type of its own: Android has no "serving" category, and
+        dataSync is what a transfer the user asked for and can see is meant to
+        declare. The permission itself is already held by :app.
+
+        NOT exported. Nothing outside Roam starts this -- the Settings switch
+        does, through its own process.
+    -->
+    <application>
+        <service
+            android:name=".WebService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+</manifest>

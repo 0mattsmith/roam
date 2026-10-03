@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import app.roam.data.catalog.sync.SyncWorker
+import app.roam.core.common.WebAddress
 import app.roam.core.database.TrackDao
 import app.roam.core.datastore.SettingsRepository
 import app.roam.data.catalog.metadata.ConsolidateWorker
@@ -32,6 +33,19 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/**
+ * The web interface as Settings has to show it.
+ *
+ * The address and the PIN sit in one object because they are shown together:
+ * needing both and being given one is the shape of a feature that feels
+ * broken. A null url means no network Roam could serve on.
+ */
+data class WebUiState(
+    val enabled: Boolean = false,
+    val pin: String? = null,
+    val url: String? = null,
+)
 
 data class SettingsUiState(
     val connected: Boolean = false,
@@ -265,6 +279,39 @@ class SettingsViewModel @Inject constructor(
     fun setWifiOnlyLargeTransfers(v: Boolean) = viewModelScope.launch {
         settings.setWifiOnlyForLargeTransfers(v)
     }
+
+    /**
+     * The web interface, and the two things needed to actually reach it.
+     *
+     * The address is worked out on every emission rather than once: a phone
+     * that has moved between networks since Settings was last opened would
+     * otherwise show an address that cannot load, with nothing on screen to
+     * explain why. Toggling the switch re-reads it, which is the moment it
+     * matters most.
+     */
+    val webUi = settings.settings
+        .map { s ->
+            WebUiState(
+                enabled = s.webServerEnabled,
+                pin = s.webPin,
+                url = WebAddress.current()?.let { WebAddress.url(it) },
+            )
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebUiState())
+
+    /**
+     * Writes the setting and nothing else.
+     *
+     * Starting the service is `:app`'s job, because a UI feature may not
+     * depend on another one -- and because the setting, not an intent, is what
+     * decides whether the server should exist. One source of truth survives a
+     * process restart; an intent does not.
+     */
+    fun setWebServerEnabled(v: Boolean) = viewModelScope.launch {
+        settings.setWebServerEnabled(v)
+    }
+
+    fun rotateWebPin() = viewModelScope.launch { settings.rotateWebPin() }
 
     /** Kept as typed. Trimming and emptiness are handled on the way to disk. */
     val discogsToken = settings.settings

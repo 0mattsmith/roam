@@ -89,9 +89,16 @@ than lingering.
 
 Ordered so each one is worth having alone.
 
-**1 — Browse, read only.** The server, the PIN, the foreground service, and the
-work queue below. Proves the lifecycle question (does it survive the screen
-going off?) before anything depends on it.
+**1 — Browse, read only. Built.** `:feature:webui`: the server, the PIN, the
+foreground service and the work queue below. Settings → Web interface has the
+switch, the address and the PIN; `:app` starts the service from the setting so
+no UI feature depends on another.
+
+What is left is the one thing only a phone can answer: **does it survive the
+screen going off?** Turn it on, leave it, come back in an hour and reload. If
+it holds, stage two is worth building; if the phone kills it anyway, that is a
+battery-optimisation exemption to ask for and the answer changes the shape of
+everything after.
 
 **2 — Edit metadata.** The actual point. Track and album forms over
 `TrackEditor`, with the same dirty-checking the phone does — Apply stays

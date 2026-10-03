@@ -87,6 +87,24 @@ data class RoamSettings(
      */
     val wifiOnlyForLargeTransfers: Boolean = true,
 
+    /**
+     * Serve the library to this wifi network for editing from a browser.
+     *
+     * Off by default, and the only setting in Roam that opens a port. Until
+     * this there was no credential and no server anywhere in the app, which is
+     * why the PIN below exists at all.
+     */
+    val webServerEnabled: Boolean = false,
+
+    /**
+     * Four digits, generated once and shown beside the address.
+     *
+     * Null until the server is first switched on. Not a secret worth much --
+     * it stops "I opened it on my phone by accident and renamed an album",
+     * which is a likelier Tuesday than an attack from inside the house.
+     */
+    val webPin: String? = null,
+
     // How the library is laid out and ordered. These live here rather than in
     // the ViewModel's UI state because they are preferences, not screen state:
     // picking "grid" once should still mean grid tomorrow morning in the car.
@@ -105,6 +123,9 @@ data class RoamSettings(
  */
 private inline fun <reified T : Enum<T>> String?.toEnum(fallback: T): T =
     this?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: fallback
+
+/** Four digits, zero-padded, from a source worth trusting for the purpose. */
+private fun newPin(): String = "%04d".format(java.security.SecureRandom().nextInt(10_000))
 
 /**
  * Every public function here declares an explicit return type. DataStore's
@@ -138,6 +159,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val SHOW_LYRICS = booleanPreferencesKey("show_lyrics")
         val SAVE_LYRICS = booleanPreferencesKey("save_lyrics_to_drive")
         val WIFI_ONLY_LARGE = booleanPreferencesKey("wifi_only_large_transfers")
+        val WEB_ENABLED = booleanPreferencesKey("web_server_enabled")
+        val WEB_PIN = stringPreferencesKey("web_pin")
 
         val ARTIST_VIEW = stringPreferencesKey("artist_view_mode")
         val ARTIST_ALBUM_VIEW = stringPreferencesKey("artist_album_view_mode")
@@ -171,6 +194,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             showLyrics = p[K.SHOW_LYRICS] ?: true,
             saveLyricsToDrive = p[K.SAVE_LYRICS] ?: true,
             wifiOnlyForLargeTransfers = p[K.WIFI_ONLY_LARGE] ?: true,
+            webServerEnabled = p[K.WEB_ENABLED] ?: false,
+            webPin = p[K.WEB_PIN],
             artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID_3),
             artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID_3),
             trackSort = p[K.TRACK_SORT].toEnum(TrackSort.ARTIST),
@@ -246,6 +271,27 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
 
     suspend fun setSaveLyricsToDrive(v: Boolean) {
         ctx.dataStore.edit { it[K.SAVE_LYRICS] = v }
+    }
+
+    /**
+     * Turns the server on or off, minting a PIN the first time.
+     *
+     * The PIN is generated HERE rather than by the server, because the switch
+     * has to be able to show it in the same breath as the address -- needing
+     * both and being shown one is the shape of a feature that feels broken.
+     * `SecureRandom`, not `Random`: four digits is small enough that a
+     * predictable sequence would be worth guessing.
+     */
+    suspend fun setWebServerEnabled(v: Boolean) {
+        ctx.dataStore.edit {
+            it[K.WEB_ENABLED] = v
+            if (v && it[K.WEB_PIN].isNullOrBlank()) it[K.WEB_PIN] = newPin()
+        }
+    }
+
+    /** Signs every browser out, because the cookie carries the old PIN. */
+    suspend fun rotateWebPin() {
+        ctx.dataStore.edit { it[K.WEB_PIN] = newPin() }
     }
 
     suspend fun setDiscogsToken(token: String?) {

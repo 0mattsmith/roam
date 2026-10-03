@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roam</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- The gate. Shown when any api call comes back 401, hidden after one
+     successful PIN; see app.js. -->
+<div id="gate" class="gate" hidden>
+  <div class="gate-card">
+    <div class="sq"></div>
+    <h1>Roam</h1>
+    <p>Enter the PIN from Settings &rarr; Web interface</p>
+    <form id="pin-form" autocomplete="off">
+      <input id="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+             aria-label="PIN" spellcheck="false">
+      <button type="submit">Unlock</button>
+    </form>
+    <p id="pin-error" class="error" hidden>That is not the PIN.</p>
+    <p class="keep">Remembered on this browser until the server is turned off.</p>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="mark"><span class="sq"></span>Roam <small>web</small></div>
+    <nav id="jobs" class="navs"></nav>
+    <span class="sp"></span>
+    <span id="library" class="pill"></span>
+  </header>
+
+  <main>
+    <!-- The landing page: every count at once. The phone browses well; this
+         exists for the jobs the phone is bad at. -->
+    <section id="queue" class="queue"></section>
+
+    <section id="list" hidden>
+      <div class="list-head">
+        <button id="back" class="btn">&larr; All jobs</button>
+        <h2 id="list-title"></h2>
+        <span id="list-count" class="muted"></span>
+      </div>
+      <div id="rows"></div>
+      <div class="pager">
+        <button id="prev" class="btn" hidden>&larr; Previous</button>
+        <button id="next" class="btn" hidden>Next &rarr;</button>
+      </div>
+    </section>
+
+    <p id="empty" class="empty" hidden>Nothing to do here.</p>
+    <p id="failed" class="error" hidden></p>
+  </main>
+
+  <footer class="foot">
+    Read only for now &mdash; editing is stage two. Every write will go through
+    the same editors the phone uses.
+  </footer>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

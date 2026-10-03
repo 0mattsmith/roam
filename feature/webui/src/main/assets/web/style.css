@@ -1,0 +1,100 @@
+/*
+ * Roam's own tokens, copied rather than imported -- there is no build step
+ * here on purpose, and :core:designsystem is Kotlin. The values come from
+ * Color.kt; docs/web-mockup.html is the reference for the layout.
+ */
+:root{
+  --ink:#070B0D; --surface:#0C1215; --raise:#141C20; --high:#1C262A; --outline:#24333A;
+  --teal-b:#5EEAD4; --teal:#2DD4BF; --teal-c:#14B8A6; --teal-d:#0D9488;
+  --teal-w:rgba(20,184,166,.11);
+  --hi:#E8EFF0; --mid:#9AAAB0; --low:#5F7178;
+  --amber:#FBBF24; --amber-w:rgba(251,191,36,.12); --red:#F87171;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--ink);color:var(--hi);
+  font:15px/1.55 "Inter",-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;min-height:100vh;
+}
+.sp{flex:1;min-width:0}
+.muted{color:var(--low);font-size:12.5px}
+.error{color:var(--red);font-size:13px;margin-top:10px}
+.empty{color:var(--low);padding:40px 20px;text-align:center}
+
+/* ---- the gate ---- */
+.gate{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.gate-card{text-align:center;max-width:340px}
+.gate-card h1{font-size:22px;font-weight:650;letter-spacing:-.02em}
+.gate-card p{font-size:13px;color:var(--low);margin-top:6px}
+.gate-card .keep{font-size:11.5px;color:var(--mid);margin-top:16px}
+.sq{width:40px;height:40px;border-radius:12px;display:block;margin:0 auto 14px;
+    background:linear-gradient(135deg,var(--teal-b),var(--teal-d))}
+#pin-form{display:flex;gap:9px;justify-content:center;margin-top:18px}
+#pin{
+  width:130px;background:var(--surface);border:1px solid var(--outline);border-radius:9px;
+  color:var(--hi);font:20px/1 ui-monospace,Consolas,monospace;letter-spacing:.3em;
+  padding:13px 10px 13px 16px;text-align:center;
+}
+#pin:focus{outline:none;border-color:var(--teal)}
+
+/* ---- chrome ---- */
+.topbar{
+  display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;
+  border-bottom:1px solid var(--outline);position:sticky;top:0;background:var(--ink);z-index:2;
+}
+.mark{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15.5px;letter-spacing:-.02em}
+.mark .sq{width:20px;height:20px;border-radius:6px;margin:0}
+.mark small{font-weight:500;font-size:11px;color:var(--low);letter-spacing:.09em;text-transform:uppercase}
+.navs{display:flex;gap:2px;flex-wrap:wrap}
+.nav{
+  font-size:12.5px;color:var(--low);padding:5px 10px;border-radius:7px;font-weight:500;
+  background:none;border:0;cursor:pointer;font-family:inherit;
+}
+.nav:hover{color:var(--hi)}
+.nav.on{color:var(--ink);background:var(--teal);font-weight:600}
+.pill{font-size:11px;color:var(--mid);border:1px solid var(--outline);border-radius:20px;padding:3px 10px;white-space:nowrap}
+main{padding:18px 18px 40px;max-width:1100px}
+.foot{padding:0 18px 36px;max-width:760px;color:var(--low);font-size:12px}
+
+/* ---- the queue ---- */
+.queue{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:11px}
+.job{
+  background:var(--raise);border:1px solid var(--outline);border-radius:11px;padding:13px 14px;
+  text-align:left;cursor:pointer;font-family:inherit;color:inherit;
+}
+.job:hover{border-color:var(--teal-d)}
+.job .num{font-size:25px;font-weight:700;letter-spacing:-.03em;line-height:1.1}
+.job .lbl{font-size:13px;font-weight:600;margin-top:1px}
+.job .why{font-size:11.5px;color:var(--low);margin-top:5px;line-height:1.45}
+.job.hot{border-color:var(--teal-d);background:linear-gradient(160deg,var(--teal-w),var(--raise))}
+.job.hot .num{color:var(--teal-b)}
+.job.warn .num{color:var(--amber)}
+/* A finished job stays on the page -- a zero says DONE, where a hidden card
+   just looks like something failed to load. */
+.job.done{opacity:.5}
+.job.done .num{color:var(--low)}
+
+/* ---- rows ---- */
+.list-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.list-head h2{font-size:17px;font-weight:650;letter-spacing:-.01em}
+.btn{
+  font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--outline);color:var(--mid);background:transparent;font-family:inherit;
+}
+.btn:hover{color:var(--hi);border-color:var(--teal-d)}
+.row{
+  display:flex;align-items:center;gap:12px;padding:8px 4px;
+  border-bottom:1px solid rgba(36,51,58,.5);
+}
+.row .art{width:38px;height:38px;border-radius:6px;flex:none;background:var(--high);object-fit:cover}
+.row .who{min-width:0;flex:1}
+.row .t1{font-size:13.5px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t2{font-size:11.5px;color:var(--low);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .gap{font-size:11.5px;color:var(--low);text-align:right;flex:none;max-width:40%}
+.row .gap em{color:var(--amber);font-style:normal}
+.chip{
+  display:inline-block;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  padding:3px 7px;border-radius:5px;background:var(--high);color:var(--mid);flex:none;
+}
+.chip.guess{background:var(--amber-w);color:var(--amber)}
+.pager{display:flex;gap:9px;margin-top:16px}

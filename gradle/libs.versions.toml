@@ -28,6 +28,10 @@ googleApiClient    = "2.7.0"
 driveApi           = "v3-rev20241027-2.0.0"
 securityCrypto     = "1.1.0-alpha06"
 smbj               = "0.13.0"
+# About 50 KB, against several megabytes for Ktor. This serves a JSON API and
+# four static files; the APK is already carrying a Python runtime and an FFmpeg
+# build, so size is a documented problem here in a way elegance is not.
+nanohttpd          = "2.3.1"
 youtubedl          = "0.17.3"
 junit              = "4.13.2"
 androidxTest       = "1.2.1"
@@ -92,6 +96,8 @@ google-api-client-android = { module = "com.google.api-client:google-api-client-
 google-api-drive = { module = "com.google.apis:google-api-services-drive", version.ref = "driveApi" }
 
 smbj = { module = "com.hierynomus:smbj", version.ref = "smbj" }
+
+nanohttpd = { module = "org.nanohttpd:nanohttpd", version.ref = "nanohttpd" }
 
 youtubedl-library = { module = "io.github.junkfood02.youtubedl-android:library", version.ref = "youtubedl" }
 youtubedl-ffmpeg  = { module = "io.github.junkfood02.youtubedl-android:ffmpeg",  version.ref = "youtubedl" }

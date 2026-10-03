@@ -142,6 +142,7 @@ dependencies {
     implementation(projects.feature.nowplaying)
     implementation(projects.feature.downloader)
     implementation(projects.feature.settings)
+    implementation(projects.feature.webui)
     implementation(projects.update)
 
     implementation(libs.kotlinx.coroutines)

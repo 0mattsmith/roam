@@ -59,6 +59,7 @@ Multi-module, offline-first. `:app` wires everything; nothing else depends on it
 :feature:nowplaying phone player UI
 :feature:downloader yt-dlp + FFmpeg + metadata enrichment
 :feature:settings   settings UI
+:feature:webui      NanoHTTPD + browser front end (docs/WEB_INTERFACE.md)
 :update             GitHub Releases self-updater
 ```
 
@@ -209,6 +210,21 @@ other — route between them through `:app`.
     root children), shuffles the thing you are looking at rather than always
     the whole library, and still lands "Shuffle all" at the top of the screen
     because Library is the first tab.
+
+12. **The web interface writes through the editors, never the DAOs.** This is
+    the rule `:feature:webui` hangs on, and stage one keeps it by construction:
+    the only DAO injected is `QueueDao`, which has no writes in it. When
+    editing lands it goes through `TrackEditor` and `ArtworkEditor` --
+    `userEdited` only when the metadata actually moved, parent rows inserted
+    before anything points at them because ids are content-derived, an album
+    rename inside a transaction, rollups recomputed after. A handler reaching
+    past them reimplements every one of those bugs in a place nobody thinks to
+    look. Routing is in `WebRoutes` and responses in `WebJson` because sockets
+    cannot be unit-tested and everything else can: the asset allow-list and the
+    hex-shaped artwork id are what stop a URL being a file-read primitive.
+    `:app` is what starts the service, because the SETTING is the source of
+    truth -- a UI feature may not depend on another one, and an intent does not
+    survive a process restart.
 
 11. **Playback state is restored, never resumed by index alone.** The saved
     queue is re-found by the *current track's id*; a sync between sessions can
@@ -470,6 +486,12 @@ argued about mid-flight:
 | A lyrics sweep writes nothing to Drive | `saveLyricsToDrive` off, or the folder did not resolve. `LyricFiles` resolves with `create = false` like the photo pass -- a tag that does not match a folder must not conjure one |
 | "Sync lyrics" skips tracks that are plainly wrong | By design it only visits tracks with NO lyrics. Roam has nothing to compare words against, so it cannot detect a wrong one -- "Re-check all" is the manual answer |
 | A hand-written .lrc keeps getting replaced | It must not be. `LyricFiles.write` returns early when the name already exists, and the read path outranks LRCLIB |
+| The web interface loads on the phone but not from the laptop | The address shown is the wrong interface. A VPN's `tun0` and mobile data's `rmnet` are both up and both site-local, so no flag separates them from wifi -- `WebAddress.pick` prefers the name, and it is tested |
+| The switch is on and nothing answers | Port 8080 was already taken, so the start threw. `WebService` turns the SETTING back off rather than stopping quietly, because a switch left on with nothing behind it looks like a server refusing to answer |
+| The server dies a few minutes after the screen goes off | What stage one exists to find out. It must be a foreground service with a real notification; a plain object holding a socket is killed. If it still dies, the phone's battery optimisation has it |
+| Every request comes back 401 | The cookie carries the old PIN -- "New PIN" in Settings signs every browser out, which is the point. The cookie is session-scoped, so it also goes when the browser closes |
+| `Unresolved reference` on something NanoHTTPD plainly inherits | Kotlin does not bring a Java superclass's nested types or statics into the subclass's scope. Import `NanoHTTPD.IHTTPSession`, `NanoHTTPD.Response` and `newFixedLengthResponse` by name |
+| A JVM test of the web JSON dies on "Stub!" | Same org.json problem as the document tests -- `testImplementation(libs.org.json)` |
 | Update never installs | Version compared as a string, or the signing key changed |
 | Two releases with the same versionCode | Updater ignores the newer one | `versionCode` is the commit count; never hand-edit it in CI |
 | Update invisible to devices | Release marked pre-release or draft — `/releases/latest` skips both |

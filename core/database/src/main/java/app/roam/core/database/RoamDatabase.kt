@@ -30,6 +30,7 @@ abstract class RoamDatabase : RoomDatabase() {
     abstract fun sources(): SourceDao
     abstract fun artwork(): ArtworkDao
     abstract fun docs(): DocRevisionDao
+    abstract fun queue(): QueueDao
 }
 
 /**
@@ -295,4 +296,5 @@ object DatabaseModule {
     @Provides fun sources(db: RoamDatabase) = db.sources()
     @Provides fun artwork(db: RoamDatabase) = db.artwork()
     @Provides fun docs(db: RoamDatabase) = db.docs()
+    @Provides fun queue(db: RoamDatabase): QueueDao = db.queue()
 }

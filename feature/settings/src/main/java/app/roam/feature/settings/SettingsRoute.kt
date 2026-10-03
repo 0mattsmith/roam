@@ -16,9 +16,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.roam.data.catalog.metadata.ConsolidateWorker
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -275,6 +277,65 @@ fun SettingsRoute(
                 checked = wifiOnly,
                 onChange = vm::setWifiOnlyLargeTransfers,
             )
+
+            Spacer(Modifier.height(24.dp))
+            SectionHeader("Web interface")
+
+            val webUi by vm.webUi.collectAsStateWithLifecycle()
+            SwitchRow(
+                title = "Edit from a browser",
+                // The notification is said out loud rather than discovered.
+                // Android stops a server that has none, so it is the price of
+                // the feature working at all, not an implementation detail.
+                subtitle = "Serves your library to this Wi-Fi network so you can fix " +
+                    "metadata with a real keyboard. Keeps a notification while it runs - " +
+                    "Android stops a server that has none. Read only for now.",
+                checked = webUi.enabled,
+                onChange = vm::setWebServerEnabled,
+            )
+
+            if (webUi.enabled) {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(
+                            webUi.url ?: "Not on a network Roam can serve on",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (webUi.url != null) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.error,
+                        )
+                        webUi.pin?.let { pin ->
+                            Spacer(Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "PIN",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    pin,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontFamily = FontFamily.Monospace,
+                                    letterSpacing = 6.sp,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                TextButton(onClick = vm::rotateWebPin) { Text("New PIN") }
+                            }
+                        }
+                        Text(
+                            "Asked for once per browser. A new PIN signs every browser out.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
             SectionHeader("Discogs")

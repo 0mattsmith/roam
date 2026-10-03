@@ -26,6 +26,7 @@ dependencies {
     implementation(libs.work.runtime)
     implementation(libs.kotlinx.coroutines)
     implementation(projects.core.model)
+    implementation(projects.core.common)
     implementation(projects.core.designsystem)
     implementation(projects.core.database)
     implementation(projects.core.datastore)
