@@ -50,6 +50,12 @@ function api(path, options) {
     if (res.status === 401) { gate(true); throw new Error('locked'); }
     return res.json().then(function (body) {
       if (!res.ok) throw new Error(body.error || res.statusText);
+      // Symmetric with the 401 above, and not an afterthought: a call that
+      // SUCCEEDS is the proof this browser is in. Taking the gate down only in
+      // the PIN handler meant a browser that already had the cookie never went
+      // through it -- the queue rendered into #app and #app was still hidden,
+      // so every visit after the first was a blank page.
+      gate(false);
       return body;
     });
   });

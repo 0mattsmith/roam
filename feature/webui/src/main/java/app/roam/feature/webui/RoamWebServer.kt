@@ -84,20 +84,30 @@ class RoamWebServer(
     /**
      * The gate. Sets the cookie only on a correct PIN.
      *
-     * Session-scoped deliberately -- no expiry date, so it lasts as long as the
-     * browser is open and a rotated PIN cannot be remembered past it. NanoHTTPD
-     * writes queued cookies onto the response for us after serve() returns.
+     * The header is written by hand rather than through `session.cookies`,
+     * because NanoHTTPD's Cookie has no path and a cookie with no Path is
+     * scoped by the browser to the DIRECTORY of the request -- /api/. That
+     * happens to cover every call stage one makes, so it would work by luck
+     * and break the first time a route lives anywhere else.
+     *
+     * Session-scoped on purpose: no expiry, so it lasts as long as the browser
+     * is open and a rotated PIN cannot be remembered past it. HttpOnly because
+     * the front end never reads it -- the only thing that asks whether a
+     * browser is let in is the 401, which is the server's answer, not a guess
+     * the page makes about its own cookies.
      */
     private fun offeredPin(session: IHTTPSession): Response {
         // parseBody is what populates parameters for a POST. Without it the
         // body is still sitting in the socket and the map is empty.
         runCatching { session.parseBody(HashMap()) }
+        // takeIf rather than an if-return, so what survives is non-null and
+        // the cookie cannot be handed a null it would write as "null".
         val offered = session.parameters["pin"]?.firstOrNull()?.trim()
-        if (!WebPin.sane(offered) || !WebPin.matches(pin(), offered)) {
-            return json(Response.Status.FORBIDDEN, WebJson.error("Wrong PIN"))
-        }
-        session.cookies.set(WebPin.COOKIE, offered, 1)
+            ?.takeIf { WebPin.sane(it) && WebPin.matches(pin(), it) }
+            ?: return json(Response.Status.FORBIDDEN, WebJson.error("Wrong PIN"))
+
         return json(Response.Status.OK, """{"ok":true}""")
+            .apply { addHeader("Set-Cookie", WebPin.cookie(offered)) }
     }
 
     private fun counts(): String = WebJson.counts(

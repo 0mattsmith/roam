@@ -33,4 +33,21 @@ object WebPin {
      */
     fun sane(offered: String?): Boolean =
         offered != null && offered.length == 4 && offered.all { it.isDigit() }
+
+    /**
+     * The Set-Cookie value, written out rather than built by NanoHTTPD.
+     *
+     * `Path=/` because NanoHTTPD's own Cookie has no path, and a cookie
+     * without one is scoped by the browser to the DIRECTORY of the request
+     * that set it -- /api/. Every call stage one makes happens to live there,
+     * so it would work by luck and break on the first route that does not.
+     *
+     * No expiry, so it lasts the browser session and a rotated PIN cannot be
+     * remembered past it. HttpOnly because the page never reads this: what
+     * decides whether a browser is let in is the server's 401, not a guess the
+     * page makes about its own cookies. SameSite=Strict so another site cannot
+     * get the browser to POST here carrying it.
+     */
+    fun cookie(pin: String): String =
+        "$COOKIE=$pin; Path=/; HttpOnly; SameSite=Strict"
 }

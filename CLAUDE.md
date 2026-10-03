@@ -16,6 +16,7 @@ Store. Full design: `docs/SPEC.md`. Visual reference: `docs/mockups.html`.
 ./push.ps1 "release notes"       # bump + tag + push; CI publishes a signed APK
 ./push.ps1 -DryRun               # show the plan, change nothing
 ./setup-secrets.ps1              # one-time: signing key into Actions secrets
+python tools/webui-preview.py .  # drive the web front end in a browser, no phone
 ```
 
 **Every green push to main publishes a signed release marked Latest**, with
@@ -490,6 +491,9 @@ argued about mid-flight:
 | The switch is on and nothing answers | Port 8080 was already taken, so the start threw. `WebService` turns the SETTING back off rather than stopping quietly, because a switch left on with nothing behind it looks like a server refusing to answer |
 | The server dies a few minutes after the screen goes off | What stage one exists to find out. It must be a foreground service with a real notification; a plain object holding a socket is killed. If it still dies, the phone's battery optimisation has it |
 | Every request comes back 401 | The cookie carries the old PIN -- "New PIN" in Settings signs every browser out, which is the point. The cookie is session-scoped, so it also goes when the browser closes |
+| The Unlock button appears to do nothing | It worked; the gate did not go away. `[hidden]{display:none}` is a UA rule and ANY class rule out-specifies it, so `.gate{display:flex}` left a full-height box over the unlocked page. `[hidden]{display:none !important}` is in style.css for good, and `tools/webui-preview.py` is how to see this class of bug without a phone |
+| The web page is blank on every visit after the first | The gate was only lowered in the PIN handler, so a browser that already had the cookie never went through it: the queue rendered into `#app` while `#app` was still hidden. Lowering it belongs in the `api()` success path, symmetric with the 401 that raises it |
+| The web interface works on one path and 401s on another | The PIN cookie was set through NanoHTTPD's `Cookie`, which has no path -- browsers then scope it to the DIRECTORY of the request, `/api/`. `WebPin.cookie` writes the header by hand with `Path=/` |
 | `Unresolved reference` on something NanoHTTPD plainly inherits | Kotlin does not bring a Java superclass's nested types or statics into the subclass's scope. Import `NanoHTTPD.IHTTPSession`, `NanoHTTPD.Response` and `newFixedLengthResponse` by name |
 | A JVM test of the web JSON dies on "Stub!" | Same org.json problem as the document tests -- `testImplementation(libs.org.json)` |
 | `The string "--" is not permitted within comments` from `processDebugManifest` | An XML comment containing `--`, which this codebase writes as an em-dash in every Kotlin comment. XML forbids it anywhere inside a comment, because that is how the parser finds the end of one. `tools/check-xml.py` parses every XML in the repo and names the line; it runs in `commit.ps1` as a CERTAIN check, so there is no "push anyway" |

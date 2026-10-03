@@ -11,6 +11,20 @@
   --amber:#FBBF24; --amber-w:rgba(251,191,36,.12); --red:#F87171;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+
+/*
+ * The hidden attribute has to win, and without this it loses.
+ *
+ * Browsers implement it as a UA rule, `[hidden]{display:none}`, which ANY
+ * class rule out-specifies. `.gate{display:flex}` and `.queue{display:grid}`
+ * both did, so setting `.hidden = true` in JS changed the attribute and
+ * nothing on screen: the PIN was accepted, the gate stayed up at 100vh, and
+ * the unlocked page sat below the fold looking like a dead button.
+ *
+ * !important rather than careful ordering, because the next person to add a
+ * display rule to a toggled element should not have to know about this.
+ */
+[hidden]{display:none !important}
 body{
   background:var(--ink);color:var(--hi);
   font:15px/1.55 "Inter",-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -36,6 +50,14 @@ body{
   padding:13px 10px 13px 16px;text-align:center;
 }
 #pin:focus{outline:none;border-color:var(--teal)}
+/* The submit button is not a .btn: it is the primary action on the page, and
+   it was the one control with no rule at all -- a browser-default grey box in
+   the middle of a dark page. */
+#pin-form button{
+  background:var(--teal);color:var(--ink);border:0;border-radius:9px;
+  padding:0 20px;font:600 13.5px/1 inherit;font-family:inherit;cursor:pointer;
+}
+#pin-form button:hover{background:var(--teal-b)}
 
 /* ---- chrome ---- */
 .topbar{
