@@ -131,18 +131,22 @@ if (-not $PushOnly) {
 # never declared. This catches that in a second rather than a round trip.
 $py = (Get-Command python -ErrorAction SilentlyContinue) ?? (Get-Command python3 -ErrorAction SilentlyContinue)
 if ($py) {
-    # check-schema is not a heuristic: a migration and an entity disagreeing is
-    # always a broken build, so it is checked first and its findings are real.
+    # Certain = the finding is always a broken build, never a false positive, so
+    # there is nothing to weigh up and no prompt is offered. check-deps is the
+    # only heuristic here: it reads Kotlin with regexes and can be wrong.
     $preflight = @(
-        @{ Script = 'tools/check-deps.py';   Step = 'Checking declared dependencies' }
-        @{ Script = 'tools/check-schema.py'; Step = 'Checking Room migrations' }
+        @{ Script = 'tools/check-xml.py';    Step = 'Checking XML parses';            Certain = $true  }
+        @{ Script = 'tools/check-schema.py'; Step = 'Checking Room migrations';       Certain = $true  }
+        @{ Script = 'tools/check-docs.py';   Step = 'Checking document examples';     Certain = $true  }
+        @{ Script = 'tools/check-deps.py';   Step = 'Checking declared dependencies'; Certain = $false }
     )
     foreach ($check in $preflight) {
         if (-not (Test-Path $check.Script)) { continue }
         Write-Step $check.Step
         & $py.Source $check.Script
         if ($LASTEXITCODE -ne 0) {
-            Write-Warn 'Push anyway? These are heuristics and can be wrong.'
+            if ($check.Certain) { Fail 'Fix that first - CI will fail on it.' }
+            Write-Warn 'Push anyway? This one is a heuristic and can be wrong.'
             $answer = Read-Host '[y/N]'
             if ($answer -notmatch '^[Yy]') { Fail 'Stopped before committing.' }
         }

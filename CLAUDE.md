@@ -492,6 +492,9 @@ argued about mid-flight:
 | Every request comes back 401 | The cookie carries the old PIN -- "New PIN" in Settings signs every browser out, which is the point. The cookie is session-scoped, so it also goes when the browser closes |
 | `Unresolved reference` on something NanoHTTPD plainly inherits | Kotlin does not bring a Java superclass's nested types or statics into the subclass's scope. Import `NanoHTTPD.IHTTPSession`, `NanoHTTPD.Response` and `newFixedLengthResponse` by name |
 | A JVM test of the web JSON dies on "Stub!" | Same org.json problem as the document tests -- `testImplementation(libs.org.json)` |
+| `The string "--" is not permitted within comments` from `processDebugManifest` | An XML comment containing `--`, which this codebase writes as an em-dash in every Kotlin comment. XML forbids it anywhere inside a comment, because that is how the parser finds the end of one. `tools/check-xml.py` parses every XML in the repo and names the line; it runs in `commit.ps1` as a CERTAIN check, so there is no "push anyway" |
+| A service in a library module is missing from the merged APK | A relative `android:name=".Thing"` in a LIBRARY manifest. Write it fully qualified -- relative names are resolved during the merge, and the failure only shows up in the APK |
+| `Unresolved reference: lifecycleScope` | `lifecycle-service` does not carry it; `lifecycle-runtime-ktx` does. `:feature:player` takes the service without the ktx artifact because it never asks for the scope |
 | Update never installs | Version compared as a string, or the signing key changed |
 | Two releases with the same versionCode | Updater ignores the newer one | `versionCode` is the commit count; never hand-edit it in CI |
 | Update invisible to devices | Release marked pre-release or draft — `/releases/latest` skips both |

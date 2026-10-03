@@ -33,6 +33,10 @@ dependencies {
     // LifecycleService, so the settings collector is scoped to the service
     // rather than to a scope somebody has to remember to cancel.
     implementation(libs.androidx.lifecycle.service)
+    // And runtime-ktx for `lifecycleScope` itself, which lives in the ktx
+    // artifact rather than in lifecycle-service. :feature:player takes the
+    // service without this one because it never asks for the scope.
+    implementation(libs.androidx.lifecycle.runtime)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 

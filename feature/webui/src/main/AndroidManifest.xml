@@ -6,12 +6,17 @@
         dataSync is what a transfer the user asked for and can see is meant to
         declare. The permission itself is already held by :app.
 
-        NOT exported. Nothing outside Roam starts this -- the Settings switch
-        does, through its own process.
+        NOT exported. Nothing outside Roam starts this; the Settings switch
+        does, by way of :app.
+
+        Fully qualified rather than ".WebService". A relative name in a LIBRARY
+        manifest is resolved during the merge, and reading it as the app's
+        package instead of this module's is a failure that only appears in the
+        merged APK.
     -->
     <application>
         <service
-            android:name=".WebService"
+            android:name="app.roam.feature.webui.WebService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
     </application>
