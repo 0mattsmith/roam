@@ -523,5 +523,6 @@ argued about mid-flight:
 | `Unresolved reference: lifecycleScope` | `lifecycle-service` does not carry it; `lifecycle-runtime-ktx` does. `:feature:player` takes the service without the ktx artifact because it never asks for the scope |
 | Update never installs | Version compared as a string, or the signing key changed |
 | Two releases with the same versionCode | Updater ignores the newer one | `versionCode` is the commit count; never hand-edit it in CI |
+| A tagged release will not install: INSTALL_FAILED_VERSION_DOWNGRADE | `release.yml` built without `ROAM_VERSION_CODE`, so the APK said versionCode 1 while its notes said the real one: the updater believes the notes, Android believes the APK. Both workflows pass the commit count to Gradle -- and ci.yml leaves a `v*`-tagged commit to `release.yml`, because the two raced to upload and the loser's APKs simply vanished |
 | Update invisible to devices | Release marked pre-release or draft — `/releases/latest` skips both |
 | CI release job fails at signing | `KEYSTORE_BASE64` missing or stale — re-run `./setup-secrets.ps1` |

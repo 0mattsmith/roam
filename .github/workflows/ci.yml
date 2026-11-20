@@ -133,7 +133,14 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
+          # A commit push.ps1 tagged is release.yml's to publish, with the tag's
+          # own notes. Publishing it here as well raced that upload: whichever
+          # finished second replaced the other's APKs and notes outright.
+          MILESTONE=$(git tag --points-at HEAD --list 'v*' | head -1)
+          if [ -n "$MILESTONE" ]; then
+            echo "::notice title=Release left to release.yml::$MILESTONE is a tagged milestone, and release.yml publishes it."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$KEYSTORE_BASE64" ]; then
             echo "::notice title=Release skipped::No signing key configured. Run ./setup-secrets.ps1 -Create once, then pushes will publish installable builds."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else

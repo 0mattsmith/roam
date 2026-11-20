@@ -84,6 +84,13 @@ jobs:
           } > keystore.properties
 
       - name: Build signed release
+        env:
+          # The same two ci.yml passes. Without them Gradle falls back to the
+          # placeholder versionCode 1 while the notes below still say the real
+          # one -- the updater believes the notes, the installer believes the
+          # APK, and Android refuses it as INSTALL_FAILED_VERSION_DOWNGRADE.
+          ROAM_VERSION_CODE: ${{ steps.meta.outputs.code }}
+          ROAM_VERSION_NAME: ${{ steps.meta.outputs.version }}
         run: |
           ./gradlew assembleRelease --no-daemon --stacktrace
 
