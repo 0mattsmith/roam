@@ -322,6 +322,15 @@ class SettingsViewModel @Inject constructor(
         settings.setDiscogsToken(token)
     }
 
+    /** Kept as typed, like the Discogs token. */
+    val jamendoClientId = settings.settings
+        .map { it.jamendoClientId.orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    fun setJamendoClientId(id: String) = viewModelScope.launch {
+        settings.setJamendoClientId(id)
+    }
+
     /**
      * The ViewModel dies when you navigate away from Settings, so everything
      * below has to be recovered rather than assumed. Play Services remembers

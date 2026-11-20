@@ -79,6 +79,8 @@ fun DownloaderRoute(
         PlacementDialog(
             initial = waiting.placement,
             trackCount = waiting.trackCount,
+            trackTitle = waiting.requests.singleOrNull()?.title,
+            note = waiting.note,
             onDismiss = vm::cancelPlacement,
             onConfirm = vm::confirmPlacement,
         )

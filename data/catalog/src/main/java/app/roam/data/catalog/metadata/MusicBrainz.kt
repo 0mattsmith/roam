@@ -1,5 +1,6 @@
 package app.roam.data.catalog.metadata
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -161,6 +162,46 @@ class MusicBrainz @Inject constructor() : ReleaseSource {
             }.sortedByDescending { it.year ?: 0 }
         }
 
+    /**
+     * Recordings with this title by this artist, each with the releases it
+     * appears on.
+     *
+     * What a video is put to. Its title and channel are clues, not answers,
+     * and this is the question they are asked. The artist is required, because
+     * a title alone finds every cover version anyone ever recorded. Both are
+     * phrases, which match INSIDE a longer name as well -- the caller narrows
+     * that down by comparing the answers, not by trusting the ranking.
+     *
+     * The limit is the most the API allows, and it needs to be. A famous song
+     * comes back as dozens of recordings with one title and one artist -- the
+     * studio take, a remaster, live ones off every tour -- all scoring alike,
+     * so the one wanted can sit anywhere in the list.
+     *
+     * An error page FAILS rather than coming back empty: "MusicBrainz does not
+     * know this song" and "MusicBrainz said 503" lead to different sentences
+     * on screen, and only one of them is about the song.
+     */
+    suspend fun searchRecordings(
+        title: String,
+        artist: String,
+        limit: Int = MAX_LIMIT,
+    ): Result<List<RecordingMatch>> = runCatching {
+        if (title.isBlank() || artist.isBlank()) return@runCatching emptyList()
+        val lucene = "recording:${title.phrase()} AND artist:${artist.phrase()}"
+        val url = "$BASE/recording/?query=${lucene.encoded()}&fmt=json&limit=$limit"
+        val json = get(url) ?: error("MusicBrainz did not answer")
+        RecordingResults.parse(json)
+    }.onFailure {
+        // runCatching catches cancellation too, and a lookup abandoned for a
+        // newer one must stop -- not come back as a failure that something
+        // then tries to explain on screen.
+        if (it is CancellationException) throw it
+    }
+
+    /** A Lucene phrase. Inside quotes only the quote and the backslash need escaping. */
+    private fun String.phrase(): String =
+        "\"" + trim().replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
     /** The tracklist, flattened across discs but keeping the disc number. */
     override suspend fun release(mbid: String): Result<ReleaseDetail?> = runCatching {
         val url = "$BASE/release/$mbid?inc=recordings+artist-credits&fmt=json"
@@ -202,21 +243,8 @@ class MusicBrainz @Inject constructor() : ReleaseSource {
         )
     }
 
-    /**
-     * artist-credit is an ARRAY, because a track can be credited to several
-     * acts with joining words between them ("Queen feat. David Bowie"). Taking
-     * element zero loses the feature; joining them keeps what was written.
-     */
-    private fun JSONObject.creditedArtist(): String {
-        val credits = optJSONArray("artist-credit") ?: return ""
-        return buildString {
-            for (i in 0 until credits.length()) {
-                val credit = credits.optJSONObject(i) ?: continue
-                append(credit.optString("name").ifBlank { credit.optJSONObject("artist")?.optString("name").orEmpty() })
-                append(credit.optString("joinphrase"))
-            }
-        }.trim()
-    }
+    /** See [mbCredit], which the recording results read the same way. */
+    private fun JSONObject.creditedArtist(): String = mbCredit(this)
 
     /**
      * Cover Art Archive is keyed on the SAME release id, so no second lookup
@@ -229,7 +257,7 @@ class MusicBrainz @Inject constructor() : ReleaseSource {
         return (0 until types.length()).any { types.optString(it).equals("Compilation", true) }
     }
 
-    private fun coverUrl(mbid: String) = "https://coverartarchive.org/release/$mbid/front-500"
+    private fun coverUrl(mbid: String): String = coverArtUrl(mbid)
 
     private fun String.encoded(): String = URLEncoder.encode(this, "UTF-8")
 
@@ -244,5 +272,120 @@ class MusicBrainz @Inject constructor() : ReleaseSource {
 
         /** One per second, with a little headroom for clock jitter. */
         const val RATE_LIMIT_MS = 1_100L
+
+        /** The most the search API returns in one page. */
+        const val MAX_LIMIT = 100
+    }
+}
+
+/**
+ * artist-credit is an ARRAY, because a track can be credited to several
+ * acts with joining words between them ("Queen feat. David Bowie"). Taking
+ * element zero loses the feature; joining them keeps what was written.
+ */
+internal fun mbCredit(json: JSONObject): String {
+    val credits = json.optJSONArray("artist-credit") ?: return ""
+    return buildString {
+        for (i in 0 until credits.length()) {
+            val credit = credits.optJSONObject(i) ?: continue
+            append(credit.optString("name").ifBlank { credit.optJSONObject("artist")?.optString("name").orEmpty() })
+            append(credit.optString("joinphrase"))
+        }
+    }.trim()
+}
+
+/**
+ * Cover Art Archive is keyed on the SAME release id, so no second lookup is
+ * needed -- the URL either resolves or 404s and the image simply does not load.
+ */
+internal fun coverArtUrl(mbid: String): String = "https://coverartarchive.org/release/$mbid/front-500"
+
+/**
+ * The cover of the RECORD rather than of one pressing of it. Cover Art Archive
+ * answers for a release group from whichever of its releases has art, and the
+ * pressing a lookup lands on -- a 1994 CD single, say -- often has none of its
+ * own while the group plainly does.
+ */
+internal fun coverArtGroupUrl(groupId: String): String =
+    "https://coverartarchive.org/release-group/$groupId/front-500"
+
+/**
+ * A recording search's answer as plain values.
+ *
+ * Apart from the client so the shape can be tested without a network: the
+ * search API nests the one matching track inside each release's medium, under
+ * a key spelled differently from a release lookup's ("track", not "tracks").
+ */
+internal object RecordingResults {
+
+    fun parse(json: JSONObject): List<RecordingMatch> {
+        val recordings = json.optJSONArray("recordings") ?: return emptyList()
+        return (0 until recordings.length()).mapNotNull { i ->
+            val rec = recordings.optJSONObject(i) ?: return@mapNotNull null
+            val releases = rec.optJSONArray("releases")
+            RecordingMatch(
+                id = rec.text("id") ?: return@mapNotNull null,
+                title = rec.text("title").orEmpty(),
+                artist = mbCredit(rec),
+                artistNames = creditNames(rec),
+                lengthMs = rec.optLong("length").takeIf { it > 0 },
+                releases = (0 until (releases?.length() ?: 0))
+                    .mapNotNull { r -> releases?.optJSONObject(r)?.let { appearance(it) } },
+            )
+        }
+    }
+
+    private fun appearance(release: JSONObject): ReleaseAppearance? {
+        val id = release.text("id") ?: return null
+        val group = release.optJSONObject("release-group")
+        val secondary = group?.optJSONArray("secondary-types")
+        val medium = release.optJSONArray("media")?.optJSONObject(0)
+        val track = (medium?.optJSONArray("track") ?: medium?.optJSONArray("tracks"))?.optJSONObject(0)
+        val groupId = group?.text("id")
+        return ReleaseAppearance(
+            id = id,
+            groupId = groupId,
+            title = release.text("title").orEmpty(),
+            artist = mbCredit(release),
+            date = release.text("date"),
+            status = release.text("status"),
+            primaryType = group?.text("primary-type"),
+            secondaryTypes = secondary
+                ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optString(it).trim().ifEmpty { null } } }
+                .orEmpty(),
+            trackNumber = trackNumber(medium, track),
+            coverUrl = groupId?.let(::coverArtGroupUrl) ?: coverArtUrl(id),
+        )
+    }
+
+    /**
+     * Where on its disc the track sits: its position where given, else the
+     * medium's offset, and only then the digits of its number -- on vinyl
+     * "B2" is the seventh track and its digits say two.
+     */
+    private fun trackNumber(medium: JSONObject?, track: JSONObject?): Int? =
+        track?.optInt("position", 0)?.takeIf { it > 0 }
+            ?: medium?.optInt("track-offset", -1)?.takeIf { it >= 0 }?.plus(1)
+            ?: track?.optString("number")?.filter { it.isDigit() }?.toIntOrNull()
+
+    /**
+     * A field's text, or null when it is missing, blank or JSON null. Android's
+     * org.json reads a JSON null as the four letters "null" through optString,
+     * and a release with no type is exactly where the catalogue sends one.
+     */
+    private fun JSONObject.text(key: String): String? =
+        if (isNull(key)) null else optString(key).trim().takeIf { it.isNotEmpty() }
+
+    /**
+     * Each act separately, as credited AND as named. A credit can spell an
+     * act differently from the act's own entry -- "Jay Z" on one record,
+     * "JAY-Z" on the artist -- and either is what a video might say.
+     */
+    private fun creditNames(json: JSONObject): List<String> {
+        val credits = json.optJSONArray("artist-credit") ?: return emptyList()
+        return (0 until credits.length()).flatMap { i ->
+            val credit = credits.optJSONObject(i) ?: return@flatMap emptyList()
+            listOf(credit.optString("name"), credit.optJSONObject("artist")?.optString("name").orEmpty())
+        }.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
     }
 }

@@ -53,8 +53,8 @@ class CatalogWriter @Inject constructor(
         // and nothing about the row would say why.
         val changed = batch.filter { file ->
             if (file.kind != FileKind.AUDIO) return@filter false
-            val existing = known[file.remoteId]
-            existing == null || existing.remoteRevision != file.revision
+            val existing = known[file.remoteId] ?: return@filter true
+            existing.remoteRevision != file.revision || filedElsewhere(existing, file)
         }
         if (changed.isEmpty()) return 0
 
@@ -64,8 +64,8 @@ class CatalogWriter @Inject constructor(
 
         for (file in changed) {
             val tags = tagExtractor.inferFromPath(file)
-            val artistName = tags.albumArtist ?: tags.artist ?: UNKNOWN_ARTIST
-            val albumName = tags.album ?: UNKNOWN_ALBUM
+            val artistName = filingArtist(tags)
+            val albumName = filingAlbum(tags)
 
             val artistId = Ids.artist(artistName)
             val albumId = Ids.album(artistName, albumName)
@@ -97,6 +97,9 @@ class CatalogWriter @Inject constructor(
                 albumId = albumId,
                 albumArtist = artistName,
                 trackNo = tags.trackNo,
+                // The folder's "(1997)", the weakest claim there is: the tag
+                // pass only ever fills a year in, so tags still win.
+                year = tags.year,
                 mimeType = file.mimeType,
                 sizeBytes = file.sizeBytes,
                 fileName = file.name,
@@ -151,6 +154,7 @@ class CatalogWriter @Inject constructor(
                     albumId = row.albumId,
                     albumArtist = row.albumArtist,
                     trackNo = row.trackNo,
+                    year = row.year,
                 )
             }
         }
@@ -233,6 +237,34 @@ class CatalogWriter @Inject constructor(
         albums.recomputeRollups()
         artists.recomputeRollups()
     }
+
+    /**
+     * Whether the folder now files this track under a different album from the
+     * one it is in -- because the RULE for reading a path changed, not the file.
+     *
+     * Only changed bytes used to bring a file back through here, so a change to
+     * how a folder name is read reached new files and nothing else. Reading
+     * "Be Here Now (1997)" as Be Here Now from 1997 then filed the next track
+     * downloaded into that folder under a second album beside the first. This
+     * moves the old rows too, once, for the price of a string split per file
+     * per sync -- and the tag pass re-reads them after, which is what puts an
+     * embedded cover onto the album they moved to.
+     *
+     * A hand edit or a document outranks the path (invariant 6f), so those rows
+     * disagree with their folder on purpose and never count. Counting them
+     * would send them through here, and through the tag pass, on every sync.
+     */
+    private fun filedElsewhere(existing: RevisionRow, file: RemoteFile): Boolean {
+        if (existing.userEdited || existing.fromDoc) return false
+        val path = tagExtractor.inferFromPath(file)
+        return existing.albumId != Ids.album(filingArtist(path), filingAlbum(path))
+    }
+
+    /** Who a path files under. One definition, for writing a row and for checking one. */
+    private fun filingArtist(tags: ExtractedTags): String =
+        tags.albumArtist ?: tags.artist ?: UNKNOWN_ARTIST
+
+    private fun filingAlbum(tags: ExtractedTags): String = tags.album ?: UNKNOWN_ALBUM
 
     companion object {
         private const val UNKNOWN_ARTIST = "Unknown artist"

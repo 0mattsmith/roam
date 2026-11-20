@@ -1,5 +1,6 @@
 package app.roam.data.catalog.sync
 
+import app.roam.core.model.FolderNames
 import app.roam.data.source.RemoteFile
 import app.roam.data.source.SourceProvider
 import javax.inject.Inject
@@ -84,23 +85,30 @@ class TagExtractor @Inject constructor() {
     )
 
     /**
-     * Fallback for untagged files. Matches the Music/Artist/Album/NN title - artist.ext
-     * convention. Rows land as TagState.PATH_INFERRED so the phone app can
-     * surface a "Fix metadata" chip on exactly what guessed.
+     * Fallback for untagged files. Matches the
+     * Music/Artist/Album (Year)/NN title - artist.ext convention. Rows land as
+     * TagState.PATH_INFERRED so the phone app can surface a "Fix metadata" chip
+     * on exactly what guessed.
      */
     fun inferFromPath(file: RemoteFile): ExtractedTags {
         val stem = file.name.substringBeforeLast('.')
         val m = FILENAME.find(stem)
-        val album = file.pathSegments.lastOrNull()
+        val folder = file.pathSegments.lastOrNull()
+        // "Be Here Now (1997)" names an album AND its year. It is how the
+        // downloader files every album and how plenty of people file theirs,
+        // and read verbatim it put "(1997)" into the title and left the year
+        // empty. A folder that is nothing BUT a year keeps its name, or the
+        // album would have none.
+        val dated = folder?.let(FolderNames::parse)?.takeIf { it.name.isNotEmpty() }
         val artist = file.pathSegments.getOrNull(file.pathSegments.size - 2)
         return ExtractedTags(
             title = m?.groups?.get("title")?.value?.trim() ?: stem,
             artist = m?.groups?.get("artist")?.value?.trim() ?: artist,
-            album = album,
+            album = dated?.name ?: folder,
             albumArtist = artist,
             trackNo = m?.groups?.get("track")?.value?.toIntOrNull(),
             trackTotal = null, discNo = null, discTotal = null,
-            year = null, genre = null, durationMs = null,
+            year = dated?.year, genre = null, durationMs = null,
             artwork = null,
             inferredFromPath = true,
         )

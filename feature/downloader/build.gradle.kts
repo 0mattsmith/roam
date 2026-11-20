@@ -56,4 +56,7 @@ dependencies {
 
     // YoutubeLink is pure string handling, so it is provable on the JVM.
     testImplementation(libs.junit)
+    // org.json ships inside android.jar as stubs that throw "Stub!", so the
+    // SourceResults tests would die on their first JSONObject without it.
+    testImplementation(libs.org.json)
 }

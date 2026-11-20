@@ -164,6 +164,7 @@ class DownloaderViewModel @Inject constructor(
     private val musicBrainz: MusicBrainz,
     private val discogs: Discogs,
     private val settings: SettingsRepository,
+    private val identifier: TrackIdentifier,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SearchUiState())
@@ -216,6 +217,13 @@ class DownloaderViewModel @Inject constructor(
     private var localJob: Job? = null
     private var remoteJob: Job? = null
     private var albumJob: Job? = null
+
+    /**
+     * The lookup behind the last add. A newer one replaces it rather than
+     * racing it -- otherwise two quick taps open two dialogs, in whichever
+     * order MusicBrainz happens to answer.
+     */
+    private var lookup: Job? = null
 
     /**
      * Albums from the catalogues rather than from YouTube.
@@ -375,7 +383,10 @@ class DownloaderViewModel @Inject constructor(
                     } else {
                         request.artist.ifBlank { placement.filingArtist }
                     },
-                    album = placement.albumOrSingles,
+                    // Per request, because a track with no album is a single
+                    // named for ITSELF -- one name for a batch would file every
+                    // one of them under the first one's title.
+                    album = placement.albumFor(request.title),
                     albumArtist = placement.filingArtist,
                     year = placement.year,
                     compilation = placement.compilation,
@@ -393,9 +404,27 @@ class DownloaderViewModel @Inject constructor(
         }
     }
 
-    private fun ask(placement: AlbumPlacement, requests: List<DownloadRequest>) {
+    private fun ask(placement: AlbumPlacement, requests: List<DownloadRequest>, note: String? = null) {
         if (requests.isEmpty()) return
-        _pending.value = PendingDownload(placement, requests)
+        _pending.value = PendingDownload(placement, requests, note)
+    }
+
+    /** The dialog, opened on whatever the lookup made of a video. */
+    private fun offer(identity: VideoIdentity) {
+        ask(identity.placement, listOf(identity.request), note = identity.note())
+    }
+
+    /**
+     * One line saying where the answers came from. The dialog has no title
+     * field -- the track's title is not a placement question -- so this is
+     * also the only place the title that will be written is shown.
+     */
+    private fun VideoIdentity.note(): String = when (this) {
+        is VideoIdentity.Known -> "Found on MusicBrainz: “${request.title}” by ${request.artist}"
+        is VideoIdentity.Unknown -> {
+            val why = if (reached) "Not found on MusicBrainz" else "MusicBrainz could not be reached"
+            "$why, so this is the video's own title: “$title” by ${request.artist}. Worth a check."
+        }
     }
 
     fun showMore() = showNextBatch(firstPage = false)
@@ -449,37 +478,23 @@ class DownloaderViewModel @Inject constructor(
     }
 
     /**
-     * Asks where this belongs, then queues it.
+     * Works out what the video is, then asks where it belongs.
      *
-     * A search result is the weakest starting point there is -- yt-dlp gives a
-     * title, a channel name where an artist belongs, and nothing resembling an
-     * album -- so this is the case the dialog earns its place on. Queued from an
-     * album page it is usually just a confirmation.
+     * A search result is the weakest starting point there is -- a title the
+     * uploader typed, a channel name where an artist belongs, nothing
+     * resembling an album. None of that is written anywhere: it is put to
+     * MusicBrainz, and the dialog opens on the catalogue's answer. See
+     * [TrackIdentifier].
+     *
+     * No duration guard on what is queued: this is a real video id the person
+     * picked off a result they could see, not a blind search.
      */
     fun download(result: YoutubeResult) {
-        ask(
-            AlbumPlacement.from(result),
-            listOf(DownloadRequest(
-                url = result.url,
-                title = result.title,
-                artist = result.artist.ifBlank { "Unknown Artist" },
-                // Lands in Artist/Album beside everything else. "Singles" only
-                // when YouTube genuinely had no album -- every existing track
-                // in the library sits inside an album folder, and a loose file
-                // in the artist folder would be the odd one out.
-                album = result.album?.ifBlank { null } ?: "Singles",
-                // No duration guard: this is a real video id the person picked
-                // off a result they could see, not a blind search.
-                //
-                // And no cover either. YouTube's thumbnail is a 16:9 video
-                // still, not album art, and "Singles" is a bucket that fills up
-                // with unrelated tracks -- so there is no one right cover for
-                // it. Roam cannot delete from Drive (invariant 6d), only
-                // archive, so a wrong cover.jpg is a mess that stays. The
-                // catalogue-backed album page is the only place art is known
-                // well enough to write.
-            )),
-        )
+        lookup?.cancel()
+        lookup = viewModelScope.launch {
+            _state.update { it.copy(message = "Looking up ${result.title}…") }
+            offer(identifier.identify(result))
+        }
     }
 
     // ---- the album page -----------------------------------------------------
@@ -710,9 +725,10 @@ class DownloaderViewModel @Inject constructor(
                 artist = track.artist.ifBlank { album.artist },
                 album = album.title,
                 trackNo = track.position,
-                // The two things only the catalogue knows. Without the length
-                // a search takes whatever comes first, and without the cover
-                // the album lands on Drive with no art beside it.
+                // The two things only the catalogue knows. The length is one
+                // of the four checks a search result must pass (ExactTrack),
+                // and without the cover the album lands on Drive with no art
+                // beside it.
                 durationMs = track.durationMs,
                 coverUrl = album.coverUrl,
             )),
@@ -754,36 +770,29 @@ class DownloaderViewModel @Inject constructor(
     /**
      * Queues a video shared into Roam from another app.
      *
-     * The id is looked up before queueing rather than after. YouTube's own
-     * title is often "Song (Official Video)" with the channel as the artist,
-     * and those two strings decide the FOLDER the file lands in on Drive --
-     * which Roam cannot rename afterwards without leaving a copy behind. One
-     * extraction up front is worth it.
+     * The id is looked up before queueing rather than after, and then put to
+     * MusicBrainz like any search result. YouTube's own title is often "Song
+     * (Official Video)" with the channel as the artist, and what is written
+     * decides the FOLDER the file lands in on Drive -- which Roam cannot
+     * rename afterwards without leaving a copy behind.
      *
      * Refuses rather than guessing when the lookup fails: a track filed under
-     * "Unknown Artist / Singles" is worse than one that was never added, since
+     * "Unknown Artist" is worse than one that was never added, since
      * the first has to be found and fixed by hand.
      */
-    fun addSharedVideo(videoId: String) = viewModelScope.launch {
-        _state.update { it.copy(message = "Reading shared video…") }
+    fun addSharedVideo(videoId: String) {
+        lookup?.cancel()
+        lookup = viewModelScope.launch {
+            _state.update { it.copy(message = "Reading shared video…") }
 
-        val result = youtube.enrich(listOf(videoId)).getOrNull()?.firstOrNull()
-        if (result == null) {
-            _state.update { it.copy(message = "Could not read that video") }
-            return@launch
+            val result = youtube.enrich(listOf(videoId)).getOrNull()?.firstOrNull()
+            if (result == null) {
+                _state.update { it.copy(message = "Could not read that video") }
+                return@launch
+            }
+
+            offer(identifier.identify(result))
         }
-
-        ask(
-            AlbumPlacement.from(result),
-            listOf(
-                DownloadRequest(
-                    url = result.url,
-                    title = result.title,
-                    artist = result.artist.ifBlank { "Unknown Artist" },
-                    album = result.album?.ifBlank { null } ?: "Singles",
-                )
-            ),
-        )
     }
 
     /** yt-dlp goes stale and quietly stops returning results when it does. */

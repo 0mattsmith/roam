@@ -49,6 +49,10 @@ fun PlacementDialog(
     initial: AlbumPlacement,
     /** How many tracks this covers, so the button can say what it will do. */
     trackCount: Int,
+    /** The track's title when there is one track, which is what names a single. */
+    trackTitle: String? = null,
+    /** Where the answers came from -- the catalogue, or the video's own words. */
+    note: String? = null,
     onDismiss: () -> Unit,
     onConfirm: (AlbumPlacement) -> Unit,
 ) {
@@ -93,10 +97,18 @@ fun PlacementDialog(
                 // this line, and most of the time it will already be right.
                 Text(
                     "Saving to " + FolderNames.sanitise(placement.filingArtist) + " / " +
-                        FolderNames.albumFolder(placement.albumOrSingles, placement.year),
+                        placement.albumFolderFor(trackTitle.orEmpty()),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
+
+                note?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 // Ticking OFFERS Various Artists rather than imposing it. Most
                 // compilations are various-artists ones, so filling the field
@@ -174,7 +186,7 @@ fun PlacementDialog(
                     value = album,
                     onValueChange = { album = it },
                     label = { Text("Album") },
-                    supportingText = { Text("Blank files it under ${AlbumPlacement.SINGLES}") },
+                    supportingText = { Text("With no album it is a single, named after the track") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -238,10 +250,12 @@ fun PlacementDialog(
             }
         },
         confirmButton = {
+            // "Add", never "Download": that word is kept for pinning a track
+            // you already own to the phone (CLAUDE.md, Conventions).
             TextButton(
                 enabled = placement.isComplete,
                 onClick = { onConfirm(placement) },
-            ) { Text("Download") }
+            ) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

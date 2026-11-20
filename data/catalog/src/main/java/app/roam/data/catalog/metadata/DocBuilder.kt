@@ -247,6 +247,129 @@ object DocBuilder {
     }
 
     /**
+     * `<track>.json` for a track the downloader has just put on the source.
+     *
+     * Built from what the download was told rather than from a row, because
+     * there is no row yet: the file reaches Drive first and the catalogue only
+     * learns of it on the next sync. Only what is actually known goes in -- no
+     * disc, no duration -- because every field in these files is a claim.
+     * Anything a file of the same name already says that this does not set is
+     * kept.
+     */
+    fun downloadedTrackDocument(
+        existing: JSONObject?,
+        track: DownloadedTrack,
+        modified: String = isoNow(),
+    ): String {
+        val set = buildMap<String, Json> {
+            put("schema", Json.Num(DOC_SCHEMA.toLong()))
+            put("modified", Json.Str(modified))
+            put("title", Json.Str(track.title))
+            track.trackNo.json()?.let { put("track_number", it) }
+            put("artist", Json.Str(track.artist))
+            put("album", Json.Str(track.albumTitle))
+            put("album_artist", Json.Str(track.albumArtist))
+            track.year.json()?.let { put("year", it) }
+            put("is_compilation", track.compilation.json())
+            put("audio_file", Json.Str(track.fileName))
+        }
+        return patched(existing, TRACK_KEYS, set).render()
+    }
+
+    /**
+     * `album.json` with a downloaded file added to it.
+     *
+     * A document already there is somebody's claim about the album -- quite
+     * possibly a hand correction -- so its album fields stay exactly as they
+     * are and only this file's entry is added, or replaced if the same file
+     * was downloaded before. With no document yet, the album fields are the
+     * download's, which the placement dialog confirmed.
+     *
+     * The year stays out of `album_title`, which is most of the reason this
+     * exists. The folder says "Be Here Now (1997)" because a folder has to say
+     * it somewhere; read back off it, the title gained the year and the year
+     * field stayed empty. The title also keeps what a folder name cannot hold
+     * -- the "?" in "(What's the Story) Morning Glory?".
+     */
+    fun withDownloadedEntry(
+        existing: JSONObject?,
+        track: DownloadedTrack,
+        modified: String = isoNow(),
+    ): String {
+        val described = existing.stringOr("album_title", "").isNotEmpty() &&
+            existing.stringOr("album_artist", "").isNotEmpty()
+        val albumArtist = if (described) existing.stringOr("album_artist", "") else track.albumArtist
+
+        val entries = existing?.optJSONArray("tracks")
+            ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optJSONObject(it) } }
+            .orEmpty()
+        val key = LibraryDocs.normalisePath(track.fileName)
+        val was = entries.firstOrNull { LibraryDocs.normalisePath(it.optString("file")) == key }
+
+        val entry = Json.Obj(
+            buildList<Pair<String, Json>> {
+                // A download does not know its disc; an earlier entry might.
+                was?.takeIf { it.has("disc") }?.let { add("disc" to fromJson(it.opt("disc"))) }
+                track.trackNo.json()?.let { add("track" to it) }
+                add("title" to Json.Str(track.title))
+                // Only when it differs from the album's, as in [albumDocument].
+                track.artist.takeIf { !it.equals(albumArtist, ignoreCase = true) }
+                    .json()?.let { add("artist" to it) }
+                add("file" to Json.Str(track.fileName))
+                add("track_meta" to Json.Str(trackDocName(track.fileName)))
+                was?.takeIf { it.has("lyrics") }?.let { add("lyrics" to fromJson(it.opt("lyrics"))) }
+                was?.optJSONObject("external")?.let { add("external" to fromJson(it)) }
+                was?.let { addAll(it.preserving(ENTRY_KEYS.toSet())) }
+            }
+        )
+
+        // Every other entry re-emitted in the documented order rather than in
+        // whatever order org.json found it, or the whole array would show as
+        // changed in a diff.
+        val kept = entries.map { if (it === was) entry else patched(it, ENTRY_KEYS, emptyMap()) }
+        val tracks = if (was == null) kept + entry else kept
+
+        val set = buildMap<String, Json> {
+            put(
+                "schema",
+                existing?.opt("schema")?.takeIf { it != JSONObject.NULL }?.let(::fromJson)
+                    ?: Json.Num(DOC_SCHEMA.toLong()),
+            )
+            put("modified", Json.Str(modified))
+            if (!described) {
+                put("album_artist", Json.Str(track.albumArtist))
+                put("album_title", Json.Str(track.albumTitle))
+                track.year.json()?.let { put("year", it) }
+                put("is_compilation", track.compilation.json())
+            }
+            put("tracks", Json.Arr(tracks))
+        }
+        return patched(existing, ALBUM_KEYS, set).render()
+    }
+
+    /**
+     * [existing] re-emitted in [order], with [set] laid over it.
+     *
+     * The patch shape [withRetiredArtwork] uses, made general: a key this
+     * writer has a value for takes it, a key it has nothing to say about keeps
+     * whatever is there, and keys outside [order] follow, sorted. Nothing
+     * another writer put in the file is lost, and nothing moves.
+     */
+    private fun patched(
+        existing: JSONObject?,
+        order: List<String>,
+        set: Map<String, Json>,
+    ): Json.Obj = Json.Obj(
+        buildList<Pair<String, Json>> {
+            for (key in order) {
+                val value = set[key] ?: existing?.takeIf { it.has(key) }?.let { fromJson(it.opt(key)) }
+                value?.let { add(key to it) }
+            }
+            existing?.let { addAll(it.preserving(order.toSet())) }
+        }
+    )
+
+    /**
      * The same document with one more retired image named in it.
      *
      * A patch rather than a rebuild, and that distinction matters: replacing a

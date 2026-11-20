@@ -118,7 +118,7 @@ class AlbumPlacementTest {
     @Test
     fun `no answers at all is not a crash`() {
         assertEquals(AlbumPlacement.UNKNOWN_ARTIST, AlbumPlacement().filingArtist)
-        assertEquals(AlbumPlacement.SINGLES, AlbumPlacement().albumOrSingles)
+        assertEquals(AlbumPlacement.SINGLES, AlbumPlacement().albumFor(""))
     }
 
     // ---- the track's own credit ----------------------------------------------
@@ -137,5 +137,47 @@ class AlbumPlacementTest {
     fun `a typed artist beats the credit it arrived with`() {
         val p = AlbumPlacement(artist = "Rick Astley", album = "100 Hits", compilation = true)
         assertEquals("Rick Astley", p.trackArtist("80sPopChannel"))
+    }
+
+    // ---- singles -------------------------------------------------------------
+
+    @Test
+    fun `a track with no album is a single named after itself`() {
+        val p = AlbumPlacement(artist = "Oasis", albumArtist = "Oasis", year = 1994)
+        assertEquals("Whatever - Single", p.albumFor("Whatever"))
+        assertEquals("Whatever - Single (1994)", p.albumFolderFor("Whatever"))
+        assertFalse(p.isSinglesPool)
+    }
+
+    @Test
+    fun `a single the catalogue already named keeps that name`() {
+        val p = AlbumPlacement(artist = "Oasis", album = "Whatever", year = 1994)
+        assertEquals("Whatever", p.albumFor("Whatever"))
+        assertEquals("Whatever (1994)", p.albumFolderFor("Whatever"))
+    }
+
+    @Test
+    fun `the dialog opens on the name a single will get, so it can be corrected`() {
+        val p = AlbumPlacement.from(
+            YoutubeResult(
+                videoId = "abcdefghijk",
+                title = "Whatever",
+                artist = "Oasis",
+                album = null,
+                year = 1994,
+                durationSec = 382,
+                thumbnailUrl = null,
+            )
+        )
+        assertEquals("Whatever - Single", p.album)
+        assertTrue(p.isComplete)
+    }
+
+    @Test
+    fun `with no title to name it after, it joins the artist's pool, which has no year`() {
+        val p = AlbumPlacement(artist = "Oasis", albumArtist = "Oasis", year = 1994)
+        assertEquals(AlbumPlacement.SINGLES, p.albumFor(" "))
+        assertEquals("Singles", p.albumFolderFor(""))
+        assertTrue(AlbumPlacement(album = "Singles").isSinglesPool)
     }
 }

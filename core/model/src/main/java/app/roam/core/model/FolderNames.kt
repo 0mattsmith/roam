@@ -78,9 +78,17 @@ object FolderNames {
         return Parsed(match.groupValues[1].trim(), match.groupValues[2].toIntOrNull())
     }
 
-    /** `Be Here Now` + 1997 -> `Be Here Now (1997)`, sanitised. */
+    /**
+     * `Be Here Now` + 1997 -> `Be Here Now (1997)`, sanitised.
+     *
+     * A title made entirely of what a folder cannot hold -- "?" is a real album
+     * -- sanitises to nothing, and nothing is not a folder name: a write with an
+     * empty segment either fails or lands in the artist's folder. Untitled says
+     * so plainly, and the album.json the downloader writes beside it keeps the
+     * real title.
+     */
     fun albumFolder(albumTitle: String, year: Int?): String {
-        val name = sanitise(albumTitle)
+        val name = sanitise(albumTitle).ifEmpty { UNTITLED }
         return if (year != null) "$name ($year)" else name
     }
 
@@ -128,4 +136,7 @@ object FolderNames {
 
     /** What a compilation files under when nobody has said otherwise. */
     const val VARIOUS_ARTISTS = "Various Artists"
+
+    /** An album folder for a title with nothing left after [sanitise]. */
+    const val UNTITLED = "Untitled"
 }

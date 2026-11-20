@@ -111,4 +111,10 @@ class TrackFileNameTest {
         // system that has an opinion about leading dots.
         assertEquals("01 ${TrackFileName.UNKNOWN_TITLE}.mp3", TrackFileName.of(1, "...", "mp3"))
     }
+
+    @Test
+    fun `a question mark is dropped and a trailing dot never ends the name`() {
+        assertEquals("01 D'You Know What I Mean.m4a", TrackFileName.of(1, "D'You Know What I Mean?", "m4a"))
+        assertEquals("02 Etc.m4a", TrackFileName.of(2, "Etc.", "m4a"))
+    }
 }

@@ -10,14 +10,16 @@ interpreter to scrape a search page), they know what a release actually
 remaster. YouTube is where the audio comes from, not where the answer comes
 from.
 
-Library search — finding music you already own — is a different question and
-lives elsewhere. See "Not in this spec".
+Library search — finding music you already own — was left out of this spec, and
+`docs/SEARCH.md` has since put both on one page. Where the two disagree about
+the page itself, that document wins; the catalogue side below stands.
 
 ## The shape
 
-**Entry point.** A download icon, not a magnifying glass. The distinction it is
-drawing is "music you do not have" against "music you do", and a second
-magnifying glass would say the opposite.
+**Entry point.** The magnifying glass, shared with library search. This said a
+download icon at first, to draw the line between music you have and music you
+do not; `docs/SEARCH.md` draws that line on each row instead, with a play icon
+or a +.
 
 **One page.** A query field, a filter row, results, and the Add to Library
 queue reachable from the same screen. Today's split between a track search, an
@@ -128,7 +130,10 @@ Rules the colours are there to express:
 
 - **Green means the audio exists**, not that you asked for it. The current
   green tick appears on *queueing*, which is why a failed download still looks
-  like a success. That is the bug this fixes.
+  like a success. That is the bug this fixes. `docs/SEARCH.md` tightens it
+  further: a row turns playable only once a sync has catalogued the file,
+  because a file on Drive that Roam cannot play yet is not an answer to "can I
+  play this".
 - **Retrying returns a red row to amber**, because a retry is a queued job
   again and nothing about it is known yet.
 - **Clearing a failed row returns it to "Add".** The row leaving the Failed
@@ -138,6 +143,85 @@ Rules the colours are there to express:
 - **Failure keeps its reason.** Already true and must stay true: a refused
   duration match is a verdict about the recording, and a retry repeats it
   exactly.
+
+## Adding a YouTube video
+
+A video's title is whatever its uploader typed, and none of it is written as a
+tag. `TrackIdentifier` reads the title, the channel and the description for
+clues (`VideoClues`), puts them to MusicBrainz's recording search, and the
+placement dialog opens on the catalogue's answer: its title, its credit, the
+release the track files under, that release's year and track number, and its
+cover.
+
+**Clues, most trustworthy first.** YouTube Music's "Provided to YouTube by"
+block; YouTube Music's own `track` and `artist`; a label's "Music video by X
+performing Y" or "Official video for “Y” by X"; then the title split at its
+dash, with any act the description ("Listen to X:") or the channel names
+deciding which half is the act. At most three are asked, because each costs a
+second of MusicBrainz's rate limit.
+
+**A match** is the same title by the same act, compared without case, accents
+or punctuation. The title as written is tried first, so a remix finds the
+remix; then with brackets off on both sides, so "Wonderwall (Live at
+Knebworth)" finds "Wonderwall" and the video's length chooses between the
+takes. A name merely contained in a credit is not a match: a tribute band is
+not the band.
+
+**The release** is chosen the way a person would by eye:
+
+1. Official releases only, where there are any.
+2. The first studio album, if it came out within two years of the song's first
+   release. A single a month ahead of its album files under the album.
+3. Otherwise the earliest single, EP or album; then anything with a secondary
+   type; live after that; compilations last.
+
+A single is named for itself, "Whatever - Single", exactly as a track with no
+album is, so the same song lands in the same folder however it was found. The
+folder is the main act's: a credit's "feat." guests never name one.
+
+**No match** leaves the video's own words, cleaned of "(Official Video)" and
+the rest, and the dialog says so in a line. Nothing the catalogue did not vouch
+for is written: no cover is seeded from a video's thumbnail.
+
+## Finding an album track's audio
+
+An album page knows exactly which track it wants -- title, artist, album and
+length, from the catalogue -- but YouTube does not take a catalogue id, so it
+queues a search. `TrackResolver` puts that search to each place in turn and
+stops at the first upload that IS the track:
+
+1. YouTube Music's Songs shelf: the labels' own audio, named for its album.
+2. A general YouTube search: official audio uploads and anything never
+   delivered to Music.
+3. Bandcamp: the artist's or label's own pages, found through Bandcamp's
+   search box and read by yt-dlp. Most releases stream in full.
+4. The Internet Archive: items named for the album, then the item's own file
+   list. One file per track over plain HTTP -- the same files the item's
+   torrent holds, without fetching or unpacking the rest. The archive's own
+   high-quality MP3 is taken over a lossless upload.
+5. SoundCloud: older catalogue is often there; recent major-label releases are
+   mostly 30-second previews, which are dropped -- and a download far too small
+   for its length is refused in case one slips through.
+6. Audius: artists' own uploads, through its free open API.
+7. Jamendo: independent music under free licences, only where the artist
+   allows downloading, and only with a client ID in Settings.
+
+YouTube is the only place whose failure fails the job; the rest are fallbacks
+and come back empty when they are down.
+
+`ExactTrack` decides, and an upload must be all four:
+
+- **the same song** -- the title as written, or with brackets off on both sides;
+- **by the same act** -- any act named on one side named on the other;
+- **the same performance** -- no "Live", "Acoustic", "Remix", "Demo", "Sped Up"
+  and the like that the catalogue's title lacks, and none missing that it has.
+  An upload YouTube Music files under the same album is exempt, because a live
+  album's titles seldom say "Live" and only that album's take is the one wanted;
+- **the same length** -- within five seconds of the catalogue's.
+
+When nothing passes, the job fails with what came back instead -- "2 live or
+other versions, 1 the wrong length (closest 6:50)" -- and is not retried,
+because asking again returns the same uploads.
 
 ## What this reuses
 
@@ -159,7 +243,8 @@ placement dialog all stand. The new work is:
 
 - **Does YouTube stay in search at all?** It is the only source that can find
   what no catalogue lists — a live set, a session, an obscure upload. It is
-  also the one that returns a channel name where an artist belongs. Keeping it
+  also the one that returns a channel name where an artist belongs, which
+  identification (above) now corrects for anything MusicBrainz knows. Keeping it
   as an off-by-default filter is the current plan; worth revisiting once
   catalogue search is the primary path and it is clear how often it comes up
   empty.
@@ -172,10 +257,8 @@ placement dialog all stand. The new work is:
 
 ## Not in this spec
 
-**Library search.** Titles, artists and albums; results playable; long-press
-offering go-to-album, edit metadata, hide, go-to-artist, and view the album in
-Music Search to add what is missing. Different page, different data, tracked
-separately.
+**Library search.** Now `docs/SEARCH.md`, on the same page as this rather than
+a different one.
 
 **Artist pages.** `albumsForArtist` matches only `al.artistId`, so an artist
 who appears only as a *track* credit on a compilation has no albums and their

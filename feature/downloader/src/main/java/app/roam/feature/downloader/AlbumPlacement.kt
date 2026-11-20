@@ -69,7 +69,36 @@ data class AlbumPlacement(
     fun trackArtist(fallback: String): String =
         artist.trim().ifBlank { fallback.trim() }.ifBlank { UNKNOWN_ARTIST }
 
-    val albumOrSingles: String get() = album.trim().ifBlank { SINGLES }
+    /**
+     * What the album is called, for a track that may not have one.
+     *
+     * A release with no name is a single, and a single is named for its track
+     * -- "Whatever - Single", in a folder of its own under the artist like any
+     * other release. Catalogues and YouTube Music mostly name a single after
+     * its track already, so most of the time [album] holds that and this
+     * changes nothing.
+     *
+     * The artist's pool of singles is the last resort, for a track with no
+     * title to name a single after.
+     */
+    fun albumFor(trackTitle: String): String = album.trim().ifBlank { singleOf(trackTitle) }
+
+    /**
+     * The album folder this creates when nothing on the source already answers
+     * to it: `Whatever - Single (1994)`, or the artist's pool with no year on
+     * it -- one pool per artist, never one per year.
+     */
+    fun albumFolderFor(trackTitle: String): String {
+        val name = albumFor(trackTitle)
+        return FolderNames.albumFolder(name, year.takeUnless { isPool(name) })
+    }
+
+    /**
+     * Whether this files into the artist's pool of singles rather than a
+     * release of its own. The pool gets no album.json: it is a folder of
+     * unrelated tracks, and an index would describe it as an album.
+     */
+    val isSinglesPool: Boolean get() = isPool(album.trim().ifBlank { SINGLES })
 
     /** Enough answered to place a file without guessing. */
     val isComplete: Boolean get() = album.isNotBlank() && (compilation || artist.isNotBlank() ||
@@ -77,7 +106,22 @@ data class AlbumPlacement(
 
     companion object {
         const val UNKNOWN_ARTIST = "Unknown Artist"
+
+        /**
+         * The artist's pool of singles, inside their folder. Only for a track
+         * with no title to name a single after; see [albumFor].
+         */
         const val SINGLES = "Singles"
+
+        /** What a release of one track is called after it. */
+        const val SINGLE_SUFFIX = " - Single"
+
+        /** "Whatever" -> "Whatever - Single"; nothing -> the artist's pool. */
+        fun singleOf(trackTitle: String): String =
+            trackTitle.trim().takeIf { it.isNotEmpty() }?.let { it + SINGLE_SUFFIX } ?: SINGLES
+
+        fun isPool(albumName: String): Boolean =
+            FolderNames.key(albumName) == FolderNames.key(SINGLES)
 
         /**
          * Filled in from the catalogue, which already knows all five.
@@ -123,7 +167,10 @@ data class AlbumPlacement(
          */
         fun from(result: YoutubeResult): AlbumPlacement = AlbumPlacement(
             artist = result.artist,
-            album = result.album.orEmpty(),
+            // Filled in rather than left blank when YouTube knows no album, so
+            // the dialog opens on the name the single will actually get --
+            // where it can be corrected, before anything is written.
+            album = result.album?.trim()?.takeIf { it.isNotEmpty() } ?: singleOf(result.title),
             albumArtist = result.artist,
             year = result.year,
             compilation = false,
@@ -141,6 +188,8 @@ data class AlbumPlacement(
 data class PendingDownload(
     val placement: AlbumPlacement,
     val requests: List<DownloadRequest>,
+    /** Where the answers came from, when that is worth saying. */
+    val note: String? = null,
 ) {
     val trackCount: Int get() = requests.size
 }
@@ -161,7 +210,10 @@ suspend fun AlbumPlacement.folderSegments(
     root: String,
 ): List<String> {
     val wantedArtist = filingArtist
-    val wantedAlbum = albumOrSingles
+    // The caller has already named a single after its track, so blank here
+    // means there was nothing to name it after.
+    val wantedAlbum = album.trim().ifBlank { AlbumPlacement.SINGLES }
+    val folderYear = year.takeUnless { AlbumPlacement.isPool(wantedAlbum) }
 
     // The artist first. Match past punctuation -- "AC/DC" cannot be a folder
     // name at all, so the one on the source is already spelled differently.
@@ -177,8 +229,8 @@ suspend fun AlbumPlacement.folderSegments(
         provider.resolveFolder(root, listOf(artistFolder), create = false)
             ?.let { provider.listFolders(it) }
     }.getOrNull()
-        ?.let { FolderNames.matchAlbum(wantedAlbum, year, it) }
-        ?: FolderNames.albumFolder(wantedAlbum, year)
+        ?.let { FolderNames.matchAlbum(wantedAlbum, folderYear, it) }
+        ?: FolderNames.albumFolder(wantedAlbum, folderYear)
 
     return listOf(artistFolder, albumFolder)
 }

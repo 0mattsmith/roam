@@ -361,6 +361,29 @@ fun SettingsRoute(
             )
 
             Spacer(Modifier.height(24.dp))
+            SectionHeader("Jamendo")
+
+            val jamendoClientId by vm.jamendoClientId.collectAsStateWithLifecycle()
+            OutlinedTextField(
+                value = jamendoClientId,
+                onValueChange = vm::setJamendoClientId,
+                label = { Text("Client ID") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                // The last place an album track is looked for, and the only one
+                // that needs a key -- so it says what it is for and that leaving
+                // it blank loses very little.
+                "The last place Roam looks for an album track nobody else has: free music " +
+                    "from independent artists. Get a free client ID at devportal.jamendo.com. " +
+                    "Leave blank to skip Jamendo.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+
+            Spacer(Modifier.height(24.dp))
             SectionHeader("Library")
 
             val tagMessage by vm.tagMessage.collectAsStateWithLifecycle()

@@ -815,6 +815,12 @@ Order:
      guest performer.
 3. Check whether those folders exist; create only what is missing
 4. Write the audio file, `<track>.json`, and `album.json` together
+   - The audio file carries the same answers in its own tags -- ID3 in an MP3,
+     MP4 atoms in an M4A, Vorbis comments in the rest -- written before it goes
+     up, so it keeps them wherever it is copied to. WebM is repackaged to Opus
+     and raw AAC to M4A on the way, because the scan does not list the first and
+     the second cannot hold tags. A copy, never a re-encode; if any of it fails,
+     the file goes up exactly as it was downloaded.
 5. Only then let sync see it
 
 ---

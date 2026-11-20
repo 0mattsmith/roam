@@ -11,6 +11,8 @@ import app.roam.data.source.SourceProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -92,7 +94,9 @@ class DocWriter @Inject constructor(
      * What the editor asks before saving. Roam UPDATES documents that exist and
      * never creates one -- creating them is Consolidate Metadata's job, so that
      * new files appearing on somebody's Drive is something they asked for
-     * rather than a side effect of fixing a title.
+     * rather than a side effect of fixing a title. Downloads are the exception
+     * (see [recordDownload]): new files on the Drive are what was asked for,
+     * and the contract has the documents go up with the audio.
      *
      * Answered from doc_revisions rather than by asking the source: the crawl
      * already found every album.json, and a network round trip to decide
@@ -218,6 +222,61 @@ class DocWriter @Inject constructor(
             }
             true
         }.getOrDefault(false)
+    }
+
+    /** One writer at a time, across every download running in this process. */
+    private val downloadDocs = Mutex()
+
+    /**
+     * Writes a downloaded track into its folder's documents: its own
+     * `<track>.json`, then the album's index.
+     *
+     * The one place Roam CREATES an album.json unasked, because the contract
+     * says to (docs/ALBUM_JSON.md, "Uploading"): the audio, its file and the
+     * index go up together, at the moment the metadata is known exactly. Left
+     * to be read back off the folder name instead, a title loses whatever a
+     * folder cannot hold -- the "?" in "(What's the Story) Morning Glory?" --
+     * and has nowhere to put the year but in the name.
+     *
+     * Serialised, because the queue runs downloads side by side and every track
+     * of one album rewrites the same index. Two read-modify-writes overlapping
+     * would each drop the other's entry, silently.
+     *
+     * Failure is reported rather than thrown. The audio is already safely on
+     * the source, and without its documents it still files by folder name.
+     */
+    suspend fun recordDownload(
+        provider: SourceProvider,
+        root: String,
+        folder: List<String>,
+        track: DownloadedTrack,
+    ): Boolean = withContext(Dispatchers.IO) {
+        downloadDocs.withLock {
+            runCatching {
+                val folderId = provider.resolveFolder(root, folder, create = false)
+                    ?: return@runCatching false
+                val staging = File(ctx.cacheDir, "docs/download").apply { mkdirs() }
+                try {
+                    // The track's own file first: the index names it, and a
+                    // path to a file that is not there yet is a false claim.
+                    val trackDoc = DocBuilder.trackDocName(track.fileName)
+                    val trackBody = DocBuilder.downloadedTrackDocument(
+                        readJson(provider, folderId, trackDoc),
+                        track,
+                    )
+                    upload(provider, root, folder, trackDoc, trackBody, staging, folderId)
+
+                    val albumBody = DocBuilder.withDownloadedEntry(
+                        readJson(provider, folderId, DocNames.ALBUM),
+                        track,
+                    )
+                    upload(provider, root, folder, DocNames.ALBUM, albumBody, staging, folderId)
+                    true
+                } finally {
+                    staging.deleteRecursively()
+                }
+            }.getOrDefault(false)
+        }
     }
 
     private suspend fun writeTrack(

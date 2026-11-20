@@ -131,4 +131,10 @@ class FolderNamesTest {
         assertEquals("ACDC", FolderNames.matchArtist("AC/DC", listOf("ACDC")))
         assertEquals("Oasis", FolderNames.matchArtist("oasis", listOf("Oasis")))
     }
+
+    @Test
+    fun `a title that sanitises to nothing is filed as Untitled rather than as nothing`() {
+        assertEquals("Untitled (2018)", FolderNames.albumFolder("?", 2018))
+        assertEquals("Untitled", FolderNames.albumFolder("...", null))
+    }
 }

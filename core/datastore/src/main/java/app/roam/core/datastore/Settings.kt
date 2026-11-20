@@ -59,6 +59,13 @@ data class RoamSettings(
     val discogsToken: String? = null,
 
     /**
+     * Jamendo's API key ("client id"), free from devportal.jamendo.com. Null
+     * until someone pastes one in, and until then the downloader simply does
+     * not look there -- it is the last of its places, not one it relies on.
+     */
+    val jamendoClientId: String? = null,
+
+    /**
      * Show lyrics under the now playing screen. On by default, because the
      * lookup only happens for the song being played and costs a few kilobytes.
      */
@@ -156,6 +163,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val SAVE_ARTIST_PHOTOS = booleanPreferencesKey("save_artist_photos_to_drive")
         val UPDATE_AVAILABLE = stringPreferencesKey("update_available")
         val DISCOGS_TOKEN = stringPreferencesKey("discogs_token")
+        val JAMENDO_CLIENT_ID = stringPreferencesKey("jamendo_client_id")
         val SHOW_LYRICS = booleanPreferencesKey("show_lyrics")
         val SAVE_LYRICS = booleanPreferencesKey("save_lyrics_to_drive")
         val WIFI_ONLY_LARGE = booleanPreferencesKey("wifi_only_large_transfers")
@@ -191,6 +199,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             saveArtistPhotosToDrive = p[K.SAVE_ARTIST_PHOTOS] ?: true,
             updateAvailable = p[K.UPDATE_AVAILABLE],
             discogsToken = p[K.DISCOGS_TOKEN],
+            jamendoClientId = p[K.JAMENDO_CLIENT_ID],
             showLyrics = p[K.SHOW_LYRICS] ?: true,
             saveLyricsToDrive = p[K.SAVE_LYRICS] ?: true,
             wifiOnlyForLargeTransfers = p[K.WIFI_ONLY_LARGE] ?: true,
@@ -298,6 +307,13 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         ctx.dataStore.edit {
             val trimmed = token?.trim().orEmpty()
             if (trimmed.isBlank()) it.remove(K.DISCOGS_TOKEN) else it[K.DISCOGS_TOKEN] = trimmed
+        }
+    }
+
+    suspend fun setJamendoClientId(id: String?) {
+        ctx.dataStore.edit {
+            val trimmed = id?.trim().orEmpty()
+            if (trimmed.isBlank()) it.remove(K.JAMENDO_CLIENT_ID) else it[K.JAMENDO_CLIENT_ID] = trimmed
         }
     }
 

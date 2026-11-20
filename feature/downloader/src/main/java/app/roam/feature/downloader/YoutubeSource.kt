@@ -34,8 +34,36 @@ data class YoutubeResult(
     val year: Int?,
     val durationSec: Int?,
     val thumbnailUrl: String?,
+    /**
+     * What the upload says about itself, word for word, kept apart from the
+     * fields above because none of it is ever written as a tag. These are
+     * CLUES: [VideoClues] reads them to ask a catalogue what the video is.
+     */
+    val videoTitle: String = title,
+    /** The channel that posted it -- "OasisVEVO", "Oasis - Topic". */
+    val channel: String? = null,
+    /** Only a full extraction carries this. */
+    val description: String? = null,
+    /** YouTube Music's own credit for the song, where it gave one. */
+    val creditedTitle: String? = null,
+    val creditedArtist: String? = null,
+    /** A full extraction rather than a flat search row, which knows far less. */
+    val extracted: Boolean = false,
+    /**
+     * Where the audio lives when it is not on YouTube -- SoundCloud, Bandcamp,
+     * the Internet Archive and the rest of an album page's fallbacks (see
+     * [TrackResolver]). Null for anything on YouTube, whose address is built
+     * from [videoId].
+     */
+    val link: String? = null,
+    /**
+     * Set when [link] is a plain audio file, with its extension: fetched over
+     * HTTP as it stands, with no yt-dlp in between. The archive's MP3s and
+     * the like are files, not pages to be extracted.
+     */
+    val fileExtension: String? = null,
 ) {
-    val url: String get() = "https://music.youtube.com/watch?v=$videoId"
+    val url: String get() = link ?: "https://music.youtube.com/watch?v=$videoId"
 
     /** "Nevermind (1991)", or just the album when the year is unknown. */
     val albumLine: String?
@@ -200,7 +228,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
                 val byId = YoutubeDL.getInstance().execute(request).out
                     .lineSequence()
                     .filter { it.startsWith("{") }
-                    .mapNotNull { line -> runCatching { toResult(JSONObject(line)) }.getOrNull() }
+                    .mapNotNull { line -> runCatching { toResult(JSONObject(line), extracted = true) }.getOrNull() }
                     .associateBy { it.videoId }
 
                 // Restored to the order asked for: yt-dlp emits whatever
@@ -211,34 +239,49 @@ class YoutubeSource @Inject constructor(private val app: Application) {
         }
     }.rethrowCancellation()
 
-    private fun toResult(json: JSONObject): YoutubeResult {
+    private fun toResult(json: JSONObject, extracted: Boolean): YoutubeResult {
+        val videoTitle = json.text("title").orEmpty()
         // `track` is the song's real title where `title` is whatever the video
         // was called, which on Music is often "Song (Official Audio)".
-        val title = json.optString("track")
-            .ifBlank { json.optString("title") }
-            .ifBlank { "Unknown" }
+        val creditedTitle = json.text("track")
 
-        val artist = json.optString("artist")
-            .ifBlank { json.optJSONArray("artists")?.optString(0).orEmpty() }
-            .ifBlank { json.optString("uploader") }
-            .ifBlank { json.optString("channel") }
-            // Music credits arrive comma-joined; the first is the primary.
-            .substringBefore(",")
-            .trim()
+        // The list first, where yt-dlp gives one: it is the only form that
+        // keeps "Tyler, The Creator" in one piece. The joined string it
+        // replaced is cut at its first comma, since a comma is all that
+        // separates two acts in it.
+        val creditedArtist = json.optJSONArray("artists")?.optString(0)?.trim()
+            ?.takeIf { it.isNotEmpty() && it != "null" }
+            ?: json.text("artist")?.substringBefore(",")?.trim()?.takeIf { it.isNotEmpty() }
+        val channel = json.text("channel") ?: json.text("uploader")
 
         val year = json.optInt("release_year").takeIf { it > 0 }
-            ?: json.optString("upload_date").take(4).toIntOrNull()
+            ?: json.text("upload_date")?.take(4)?.toIntOrNull()
 
         return YoutubeResult(
             videoId = json.optString("id"),
-            title = title,
-            artist = artist,
-            album = json.optString("album").ifBlank { null },
+            title = (creditedTitle ?: videoTitle).ifBlank { "Unknown" },
+            artist = creditedArtist ?: json.text("uploader") ?: channel.orEmpty(),
+            album = json.text("album"),
             year = year,
             durationSec = json.optDouble("duration").takeIf { !it.isNaN() }?.toInt(),
-            thumbnailUrl = squareThumbnail(json) ?: json.optString("thumbnail").ifBlank { null },
+            thumbnailUrl = squareThumbnail(json) ?: json.text("thumbnail"),
+            videoTitle = videoTitle,
+            channel = channel,
+            description = json.text("description"),
+            creditedTitle = creditedTitle,
+            creditedArtist = creditedArtist,
+            extracted = extracted,
         )
     }
+
+    /**
+     * A field's text, or null when it is missing, blank or JSON null. A flat
+     * listing is full of explicit nulls, and Android's org.json reads one as
+     * the four letters "null" through optString -- which would otherwise
+     * become a description, or worse, a title.
+     */
+    private fun JSONObject.text(key: String): String? =
+        if (isNull(key)) null else optString(key).trim().takeIf { it.isNotEmpty() }
 
     /**
      * Music tracks carry a square cover among their thumbnails; videos only
@@ -289,7 +332,7 @@ class YoutubeSource @Inject constructor(private val app: Application) {
                 // Anything that is not an 11-character video id is a browse id
                 // belonging to a shelf header, not something that plays.
                 val id = entry.optString("id")
-                if (id.length == VIDEO_ID_LENGTH) listOf(toResult(entry)) else emptyList()
+                if (id.length == VIDEO_ID_LENGTH) listOf(toResult(entry, extracted = false)) else emptyList()
             }
         }
     }
@@ -302,48 +345,117 @@ class YoutubeSource @Inject constructor(private val app: Application) {
      * quality to gain nothing, and it is the slowest thing the phone could
      * possibly do. FFmpeg is still bundled because remuxing -- moving the same
      * audio into a container that carries tags -- is sometimes needed, and
-     * that is a copy, not an encode.
+     * that is a copy, not an encode. See [finish].
      */
     /**
-     * Turns a `ytsearch1:` query into a concrete video id whose length agrees
-     * with the catalogue, or null when nothing does.
+     * YouTube Music's Songs shelf alone: the labels' own audio, each upload
+     * named for the album it came from. What an album page's search is put to
+     * first (see [TrackResolver]), because the general search ranks music
+     * videos, live sets and lyric uploads beside the record -- often above it.
      *
-     * An album page queues a SEARCH, not a link -- there is no id to be had
-     * until something is picked. Taking the first hit on trust is how a
-     * three-minute song ends up as a nine-minute extended mix, a live version,
-     * or an hour-long "full album" upload with the whole record inside it. The
-     * catalogue already knows how long the track should be, so anything wildly
-     * off is the wrong recording whatever it is called.
-     *
-     * Deliberately returns null rather than falling back to the first result:
-     * the whole point is to refuse, and a download saved to Drive is not easily
-     * taken back.
+     * The `#songs` fragment is yt-dlp's own way of choosing a shelf of a
+     * YouTube Music search; it never reaches YouTube.
      */
-    suspend fun resolveByDuration(
-        query: String,
-        expectedMs: Long,
-        toleranceMs: Long = DURATION_TOLERANCE_MS,
-    ): Result<String?> = runCatching {
-        val flat = search(query, limit = DURATION_CANDIDATES).getOrThrow()
+    suspend fun searchSongs(query: String, limit: Int): Result<List<YoutubeResult>> =
+        runCatching {
+            ensureStarted()
+            withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
+                withContext(Dispatchers.IO) {
+                    runLock.withLock {
+                        query("https://music.youtube.com/search?q=${query.urlEncoded()}#songs", limit)
+                    }
+                }
+            } ?: error("Search timed out - Roam may be busy adding to your library")
+        }.rethrowCancellation()
 
-        // THROWN, not returned as null. "Nothing came back" is a failed search
-        // and deserves a retry; "these came back and none fits" is a verdict
-        // about the recording and must not be retried. Collapsing the two
-        // reports a bad connection as a duration mismatch, which sends anyone
-        // reading the queue looking in entirely the wrong place.
-        if (flat.isEmpty()) error("No search results for \"$query\"")
+    /**
+     * SoundCloud, searched the same way: one of the places an album page looks
+     * for a track YouTube does not have as itself. Older catalogue is often
+     * there, uploaded by the act or the label; recent major-label releases
+     * tend to be thirty-second previews, which [extractSoundCloud] drops.
+     */
+    suspend fun searchSoundCloud(query: String, limit: Int): Result<List<YoutubeResult>> =
+        runCatching {
+            ensureStarted()
+            withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
+                withContext(Dispatchers.IO) {
+                    runLock.withLock { soundCloudSearch(query, limit) }
+                }
+            } ?: error("Search timed out - Roam may be busy adding to your library")
+        }.rethrowCancellation()
 
-        // Enriched deliberately, even though the flat rows carry a duration:
-        // this decides whether a file is downloaded at all, and a flat listing's
-        // duration comes from the search page rather than from the recording.
-        val candidates = enrich(flat.take(DURATION_CANDIDATES).map { it.videoId }).getOrThrow()
-        if (candidates.isEmpty()) error("Could not read details for \"$query\"")
+    /**
+     * A flat listing, read separately from YouTube's: a SoundCloud id is a
+     * long number, so the eleven-character test [flatten] uses would throw
+     * every result away, and the address has to be kept rather than rebuilt.
+     */
+    private fun soundCloudSearch(query: String, limit: Int): List<YoutubeResult> {
+        val request = YoutubeDLRequest("scsearch$limit:$query")
+            .addOption("--flat-playlist")
+            .addOption("--dump-single-json")
+            .addOption("--no-warnings")
+            .addOption("--ignore-errors")
 
-        candidates.firstOrNull { candidate ->
-            val seconds = candidate.durationSec ?: return@firstOrNull false
-            kotlin.math.abs(seconds * 1000L - expectedMs) <= toleranceMs
-        }?.videoId
+        val out = YoutubeDL.getInstance().execute(request).out
+        val json = JSONObject(out.substring(out.indexOf('{').coerceAtLeast(0)))
+        val entries = json.optJSONArray("entries") ?: return emptyList()
+
+        return (0 until entries.length()).mapNotNull { i ->
+            val entry = entries.optJSONObject(i) ?: return@mapNotNull null
+            val link = entry.text("webpage_url") ?: entry.text("url") ?: return@mapNotNull null
+            toResult(entry, extracted = false).copy(link = link)
+        }
+    }
+
+    /**
+     * A full extraction of pages yt-dlp reads -- SoundCloud's, Bandcamp's --
+     * for judging them as [enrich] lets YouTube's be judged.
+     *
+     * A track whose every stream is a preview is left out. SoundCloud serves
+     * thirty seconds of what it will not play in full here, under the FULL
+     * track's length -- so it would pass every check and land as a clip.
+     */
+    suspend fun extractLinks(links: List<String>): Result<List<YoutubeResult>> = runCatching {
+        if (links.isEmpty()) return@runCatching emptyList()
+        ensureStarted()
+        withContext(Dispatchers.IO) {
+            runLock.withLock {
+                val request = YoutubeDLRequest(links)
+                    .addOption("--dump-json")
+                    .addOption("--skip-download")
+                    .addOption("--no-warnings")
+                    // One track that will not play here must not take the rest.
+                    .addOption("--ignore-errors")
+
+                YoutubeDL.getInstance().execute(request).out
+                    .lineSequence()
+                    .filter { it.startsWith("{") }
+                    .mapNotNull { line ->
+                        runCatching {
+                            val json = JSONObject(line)
+                            val link = json.text("webpage_url")
+                            if (link == null || previewOnly(json)) null
+                            else toResult(json, extracted = true).copy(link = link)
+                        }.getOrNull()
+                    }
+                    .toList()
+            }
+        }
     }.rethrowCancellation()
+
+    /** Every stream marked as a preview -- or none listed at all. */
+    private fun previewOnly(json: JSONObject): Boolean {
+        val formats = json.optJSONArray("formats") ?: return false
+        return (0 until formats.length()).all { i ->
+            val format = formats.optJSONObject(i) ?: return@all true
+            format.text("format_note")?.contains("preview", ignoreCase = true) == true ||
+                format.text("format_id")?.contains("preview", ignoreCase = true) == true ||
+                format.text("url")?.contains("/preview/") == true
+        }
+    }
+
+    private fun String.isYoutube(): Boolean =
+        contains("youtube.com/") || contains("youtu.be/")
 
     /**
      * Where the audio actually lives, once yt-dlp has worked it out.
@@ -383,8 +495,19 @@ class YoutubeSource @Inject constructor(private val app: Application) {
     suspend fun download(
         url: String,
         into: File,
+        /** Set when [url] is a plain audio file rather than a page; see [YoutubeResult.fileExtension]. */
+        fileExtension: String? = null,
         onProgress: (Float) -> Unit = {},
     ): Result<File> = runCatching {
+        // A plain file needs no yt-dlp at all, and so none of its lock.
+        if (fileExtension != null) {
+            return@runCatching withContext(Dispatchers.IO) {
+                into.deleteRecursively()
+                into.mkdirs()
+                fetch(StreamRef(url, fileExtension, expectedBytes = 0L, headers = emptyMap()), into, onProgress)
+            }
+        }
+
         ensureStarted()
 
         // A directory of its own per download, emptied first.
@@ -404,7 +527,13 @@ class YoutubeSource @Inject constructor(private val app: Application) {
             // costs every download an extra turn at the one resource the
             // interactive search also needs -- making a broken fetch look like
             // a broken app. Reset on success, and on restart.
-            val stream = if (directFailures < DIRECT_FETCH_ATTEMPTS) {
+            //
+            // And only for YouTube. SoundCloud's streams are HLS playlists, and
+            // fetching one directly saves the playlist's few hundred bytes of
+            // text under an audio file's name -- a "success" that is not music.
+            // yt-dlp knows how to follow the segments; this does not.
+            val fromYoutube = url.isYoutube()
+            val stream = if (fromYoutube && directFailures < DIRECT_FETCH_ATTEMPTS) {
                 runCatching { runLock.withLock { resolve(url) } }
                     .rethrowCancellation()
                     .getOrNull()
@@ -416,13 +545,69 @@ class YoutubeSource @Inject constructor(private val app: Application) {
 
             if (direct != null) {
                 directFailures = 0
-            } else if (directFailures < DIRECT_FETCH_ATTEMPTS) {
+            } else if (fromYoutube && directFailures < DIRECT_FETCH_ATTEMPTS) {
                 directFailures++
             }
 
             direct ?: runLock.withLock { fetchWithYoutubeDl(url, into, onProgress) }
         }
     }.rethrowCancellation()
+
+    /**
+     * Makes a downloaded file ready to go up: the catalogue's tags written into
+     * it in its own format, and its audio moved into a container Roam can see
+     * and tag where it arrived in one it cannot -- WebM, which the Drive scan
+     * does not list, to Opus; raw AAC, which holds no tags at all, to M4A.
+     *
+     * A copy, never an encode: re-encoding a lossy file can only lose more,
+     * and tags do not need one container to be consistent. FFmpeg does the
+     * work through yt-dlp's own metadata step, pointed at the finished file by
+     * an info file ([FileTags.infoJson]) -- yt-dlp finds the file already
+     * there, skips the download, and runs its post-processing on it. A
+     * fetched M4A also comes out a plain MP4 rather than YouTube's fragmented
+     * one, with its index at the front.
+     *
+     * Never fails. The work is done on a copy, and anything going wrong gives
+     * back the file exactly as it was downloaded -- an untagged track on Drive
+     * is better than no track.
+     */
+    suspend fun finish(file: File, tags: FileTags, sourceUrl: String): File {
+        val ext = file.extension.lowercase()
+        if (ext.isEmpty()) return file
+
+        return runCatching {
+            ensureStarted()
+            withContext(Dispatchers.IO) {
+                val work = file.resolveSibling("finish").apply {
+                    deleteRecursively()
+                    mkdirs()
+                }
+                file.copyTo(work.resolve("audio.$ext"), overwrite = true)
+                val info = file.resolveSibling("finish.info.json")
+                info.writeText(tags.infoJson(ext, sourceUrl))
+
+                runLock.withLock {
+                    val request = YoutubeDLRequest(emptyList<String>())
+                        .addOption("--load-info-json", info.absolutePath)
+                        .addOption("-o", "${work.absolutePath}/audio.%(ext)s")
+                        .addOption("--embed-metadata")
+                        .addOption("--remux-video", "webm>opus/aac>m4a")
+                        .addOption("--no-warnings")
+                        .addOption("--no-progress")
+                    YoutubeDL.getInstance().execute(request)
+                }
+
+                work.listFiles()
+                    ?.filter { it.isFile && it.extension.lowercase() in FINISHED && ".temp." !in it.name }
+                    ?.maxByOrNull { it.length() }
+            }
+        }.rethrowCancellation()
+            .getOrNull()
+            // A fraction of what went in is not the same audio with tags on,
+            // whatever produced it.
+            ?.takeIf { it.length() >= file.length() / 2 }
+            ?: file
+    }
 
     /** The cipher work, and nothing else. Brief, and the only part yt-dlp owes us. */
     private fun resolve(target: String): StreamRef {
@@ -563,6 +748,9 @@ class YoutubeSource @Inject constructor(private val app: Application) {
         /** Big enough that the read loop is not the cost; small enough to cancel promptly. */
         const val BUFFER_BYTES = 64 * 1024
 
+        /** What [finish] may leave behind: audio, in any container the pipeline knows. */
+        val FINISHED = setOf("mp3", "m4a", "opus", "ogg", "flac", "aac", "wav", "webm")
+
         /**
          * How long a search may wait before saying so.
          *
@@ -581,19 +769,5 @@ class YoutubeSource @Inject constructor(private val app: Application) {
          * from, not the amount of work done up front.
          */
         const val SEARCH_LIMIT = 60
-
-        /**
-         * Fifteen seconds. Wide enough for a fade, a count-in or a catalogue
-         * that rounded, narrow enough that a radio edit, an extended mix or a
-         * whole-album upload cannot slip through.
-         */
-        const val DURATION_TOLERANCE_MS = 15_000L
-
-        /**
-         * How many search hits to weigh before giving up. Enriching costs a
-         * full extraction each, so this stays small -- if the right recording
-         * is not in the first handful, the query itself is wrong.
-         */
-        const val DURATION_CANDIDATES = 5
     }
 }

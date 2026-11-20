@@ -64,7 +64,10 @@ interface TrackDao {
     @Query("""
         UPDATE tracks SET
           title = :title, artistId = :artistId, albumId = :albumId,
-          albumArtist = :albumArtist, trackNo = :trackNo
+          albumArtist = :albumArtist, trackNo = :trackNo,
+          -- A folder's "(1997)" only ever fills a year in: a folder with no
+          -- year must not clear one the tags or a correction supplied.
+          year = COALESCE(:year, year)
         WHERE id = :id AND userEdited = 0 AND fromDoc = 0
     """)
     suspend fun refreshFromPath(
@@ -74,6 +77,7 @@ interface TrackDao {
         albumId: Long,
         albumArtist: String?,
         trackNo: Int?,
+        year: Int?,
     )
 
     /**
@@ -621,7 +625,10 @@ interface TrackDao {
     fun pendingTagCount(): Flow<Int>
 
     // ---- sync ----
-    @Query("SELECT id, remoteId, remoteRevision FROM tracks WHERE sourceId = :sourceId")
+    @Query("""
+        SELECT id, remoteId, remoteRevision, albumId, userEdited, fromDoc
+        FROM tracks WHERE sourceId = :sourceId
+    """)
     suspend fun revisions(sourceId: String): List<RevisionRow>
 
     @Query("DELETE FROM tracks WHERE sourceId = :sourceId AND remoteId IN (:remoteIds)")
@@ -762,7 +769,21 @@ data class TrackListItem(
 )
 
 data class ShuffleRow(val id: Long, val loved: Boolean, val skipCount: Int, val lastPlayedAt: Long?)
-data class RevisionRow(val id: Long, val remoteId: String, val remoteRevision: String?)
+
+/**
+ * What the crawl compares a file against: its bytes, and where its row is filed.
+ *
+ * The filing half is what notices a change in how a PATH is read, which no
+ * revision ever will -- see CatalogWriter.filedElsewhere.
+ */
+data class RevisionRow(
+    val id: Long,
+    val remoteId: String,
+    val remoteRevision: String?,
+    val albumId: Long,
+    val userEdited: Boolean,
+    val fromDoc: Boolean,
+)
 
 /** An album reached through a folder, with the path that found it. */
 data class FolderAlbumRow(val albumId: Long, val folderPath: String?)
