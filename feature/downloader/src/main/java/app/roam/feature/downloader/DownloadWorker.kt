@@ -168,7 +168,7 @@ class DownloadWorker @AssistedInject constructor(
             tags = FileTags(
                 title = title,
                 artist = placement.trackArtist(placement.filingArtist),
-                album = placement.albumFor(rawTitle).takeUnless { placement.isSinglesPool },
+                album = placement.albumFor(rawTitle).takeUnless { placement.isSinglesPool(rawTitle) },
                 albumArtist = placement.filingArtist,
                 year = placement.year,
                 trackNo = trackNo.takeIf { it > 0 },
@@ -218,7 +218,7 @@ class DownloadWorker @AssistedInject constructor(
             // (docs/ALBUM_JSON.md, "Uploading"). Without it the catalogue reads
             // the album off its folder name, which has lost any "?" in the title
             // and carries the year. The artist's pool of singles gets none.
-            if (!placement.isSinglesPool) {
+            if (!placement.isSinglesPool(rawTitle)) {
                 docs.recordDownload(
                     provider = provider,
                     root = root,

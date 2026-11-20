@@ -94,11 +94,15 @@ data class AlbumPlacement(
     }
 
     /**
-     * Whether this files into the artist's pool of singles rather than a
-     * release of its own. The pool gets no album.json: it is a folder of
-     * unrelated tracks, and an index would describe it as an album.
+     * Whether a track of this title files into the artist's pool of singles
+     * rather than a release of its own. The pool gets no album.json: it is a
+     * folder of unrelated tracks, and an index would describe it as an album.
+     *
+     * Asked of the title, like [albumFor], because a blank album alone does
+     * not make a pool -- it makes a single named for its track. Only a track
+     * with no title either has nothing to be named after.
      */
-    val isSinglesPool: Boolean get() = isPool(album.trim().ifBlank { SINGLES })
+    fun isSinglesPool(trackTitle: String): Boolean = isPool(albumFor(trackTitle))
 
     /** Enough answered to place a file without guessing. */
     val isComplete: Boolean get() = album.isNotBlank() && (compilation || artist.isNotBlank() ||

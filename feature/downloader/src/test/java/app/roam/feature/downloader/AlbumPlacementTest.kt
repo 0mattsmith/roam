@@ -146,7 +146,7 @@ class AlbumPlacementTest {
         val p = AlbumPlacement(artist = "Oasis", albumArtist = "Oasis", year = 1994)
         assertEquals("Whatever - Single", p.albumFor("Whatever"))
         assertEquals("Whatever - Single (1994)", p.albumFolderFor("Whatever"))
-        assertFalse(p.isSinglesPool)
+        assertFalse(p.isSinglesPool("Whatever"))
     }
 
     @Test
@@ -178,6 +178,7 @@ class AlbumPlacementTest {
         val p = AlbumPlacement(artist = "Oasis", albumArtist = "Oasis", year = 1994)
         assertEquals(AlbumPlacement.SINGLES, p.albumFor(" "))
         assertEquals("Singles", p.albumFolderFor(""))
-        assertTrue(AlbumPlacement(album = "Singles").isSinglesPool)
+        assertTrue(p.isSinglesPool(""))
+        assertTrue(AlbumPlacement(album = "Singles").isSinglesPool("Whatever"))
     }
 }
