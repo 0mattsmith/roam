@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +46,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkInfo
 import app.roam.core.database.TrackListItem
+import app.roam.feature.player.NowPlaying
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
@@ -61,7 +63,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun DownloaderRoute(
     onBack: () -> Unit,
-    onPlay: (TrackListItem) -> Unit = {},
     /** Jumps to a downloaded track in the library, optionally opening its editor. */
     onOpenTrack: (Long, Boolean) -> Unit = { _, _ -> },
     /** A YouTube video id shared in from another app, queued once on arrival. */
@@ -71,6 +72,7 @@ fun DownloaderRoute(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val pending by vm.pending.collectAsStateWithLifecycle()
+    val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
 
     // Asked before anything is written, because the worker cannot ask later:
     // all it has by then is a search result, and a channel name is not an
@@ -236,7 +238,7 @@ fun DownloaderRoute(
                 state.query.isBlank() ->
                     Hint("Search your library, an album, or YouTube for something new")
 
-                tab == 0 -> LibraryResults(state.library, onPlay)
+                tab == 0 -> LibraryResults(state.library, nowPlaying, vm::play)
 
                 tab == 1 -> when {
                     state.searchingAlbums -> Hint("Searching Discogs and MusicBrainz…")
@@ -655,7 +657,11 @@ private val DONE_GREEN = Color(0xFF2E7D32)
 private val FAILED_RED = Color(0xFFC62828)
 
 @Composable
-private fun LibraryResults(tracks: List<TrackListItem>, onPlay: (TrackListItem) -> Unit) {
+private fun LibraryResults(
+    tracks: List<TrackListItem>,
+    nowPlaying: NowPlaying,
+    onPlay: (TrackListItem) -> Unit,
+) {
     if (tracks.isEmpty()) {
         Hint("Nothing in your library matches")
         return
@@ -663,10 +669,19 @@ private fun LibraryResults(tracks: List<TrackListItem>, onPlay: (TrackListItem) 
     LazyColumn(Modifier.fillMaxSize()) {
         items(tracks.size, key = { tracks[it].id }) { index ->
             val track = tracks[index]
+            // This screen has no mini-player, so the row is the only thing
+            // that can show a tap did anything.
+            val current = track.id == nowPlaying.trackId
+            val sounding = current && nowPlaying.isPlaying
             ListItem(
                 modifier = Modifier.clickable { onPlay(track) },
                 headlineContent = {
-                    Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        track.title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (current) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                    )
                 },
                 supportingContent = {
                     Text(
@@ -675,7 +690,13 @@ private fun LibraryResults(tracks: List<TrackListItem>, onPlay: (TrackListItem) 
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
-                trailingContent = { Icon(Icons.Filled.PlayArrow, contentDescription = "Play") },
+                trailingContent = {
+                    Icon(
+                        if (sounding) Icons.Filled.GraphicEq else Icons.Filled.PlayArrow,
+                        contentDescription = if (sounding) "Playing" else "Play",
+                        tint = if (current) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                    )
+                },
             )
         }
     }

@@ -35,6 +35,12 @@ fun UpdateBanner(
     onInstall: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Handed to Android and not yet answered. Said in words rather than
+     * offered as a button: a second tap is what used to start a second
+     * install of the same APK.
+     */
+    installing: Boolean = false,
 ) {
     Surface(color = Teal, contentColor = Ink, modifier = modifier.fillMaxWidth()) {
         Column {
@@ -56,10 +62,16 @@ fun UpdateBanner(
                             style = MaterialTheme.typography.bodySmall,
                             color = Ink.copy(alpha = 0.75f),
                         )
+                    } else if (installing) {
+                        Text(
+                            "Installing…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Ink.copy(alpha = 0.75f),
+                        )
                     }
                 }
 
-                if (downloadPercent == null) {
+                if (downloadPercent == null && !installing) {
                     TextButton(
                         onClick = onInstall,
                         colors = ButtonDefaults.textButtonColors(

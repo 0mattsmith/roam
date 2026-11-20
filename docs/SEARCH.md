@@ -20,16 +20,19 @@ else in `MUSIC_SEARCH.md` stands — `ReleaseQuery`, what each catalogue can
 honour, drawing each source as it lands, the rules for an add's state — and
 this page is where it shows up.
 
-## Why the results do nothing today
+## Why the results did nothing
 
 Two reasons, and the second is the real one.
 
-- The Library tab's rows call `onPlay`, and `RoamNavHost` never passes it to
-  `DownloaderRoute`, so a tap runs the empty default.
+- The Library tab's rows called `onPlay`, and `RoamNavHost` never passed it to
+  `DownloaderRoute`, so a tap ran the empty default. Fixed: the rows play
+  through `DownloaderViewModel`, which holds `PlayerController` the way the
+  library does, since `:feature:player` is the one feature a UI feature may
+  depend on. The queue is the results as shown, and the playing row says so.
 - Everything else a result should offer — the track sheet, the editor, Go to
   album, Go to artist — lives in `:feature:library`, and `:feature:downloader`
-  may not depend on another feature. Wiring `onPlay` fixes playing and nothing
-  else.
+  may not depend on another feature. Playing was the only part a wire could
+  fix.
 
 So the page lives in `:feature:library`. See "Where it lives".
 

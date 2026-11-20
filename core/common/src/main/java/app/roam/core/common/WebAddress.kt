@@ -23,20 +23,30 @@ data class Candidate(
  *
  * In `:core:common` rather than in `:feature:webui` because two modules have
  * to agree on it and they are not allowed to depend on each other: the server
- * binds the port, and Settings prints the address next to the PIN. A Settings
+ * binds the port, and Settings prints the address next to the PIN. Which port
+ * it got travels through the settings store (`webPort`), because a Settings
  * page that said 8080 while the server listened elsewhere would be a bug
  * nothing could catch.
  */
 object WebAddress {
 
     /**
-     * Fixed, because the address has to be printable in Settings before the
-     * server has started -- a port Roam picked at random could not be written
-     * down. 8080 is conventional and unprivileged.
+     * The port asked for first. 8080 is conventional and unprivileged -- and
+     * popular for exactly that reason: media servers and file-transfer apps
+     * take it too, and Roam cannot make another app let go of it.
      */
     const val PORT = 8080
 
-    fun url(host: String): String = "http://$host:$PORT"
+    /**
+     * Where the server may land, in order.
+     *
+     * A short fixed list rather than whatever port the system hands out, so
+     * the address stays the same from one start to the next for as long as
+     * whatever holds 8080 keeps holding it, and a bookmark keeps working.
+     */
+    val PORTS: IntRange = PORT..PORT + 9
+
+    fun url(host: String, port: Int = PORT): String = "http://$host:$port"
 
     /**
      * Wifi first by NAME, which is the part that looks like a hack and is not.

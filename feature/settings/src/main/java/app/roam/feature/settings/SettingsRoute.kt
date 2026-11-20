@@ -294,6 +294,15 @@ fun SettingsRoute(
                 onChange = vm::setWebServerEnabled,
             )
 
+            webUi.error?.let { reason ->
+                Text(
+                    "Couldn't start: $reason",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+
             if (webUi.enabled) {
                 Surface(
                     shape = MaterialTheme.shapes.medium,
@@ -485,6 +494,10 @@ fun SettingsRoute(
                             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         state.downloadPercent != null ->
                             Text("${state.downloadPercent}%", style = MaterialTheme.typography.labelMedium)
+                        // Words, not the button: a second tap here is what used
+                        // to start a second install of the same APK.
+                        state.installingUpdate ->
+                            Text("Installing…", style = MaterialTheme.typography.labelMedium)
                         state.update != null ->
                             Button(onClick = { vm.installUpdate() }) { Text("Update") }
                         else ->
@@ -522,7 +535,7 @@ fun SettingsRoute(
                 }
             }
 
-            state.updateMessage?.let {
+            (state.installMessage ?: state.updateMessage)?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(it, style = MaterialTheme.typography.bodyMedium)
             }

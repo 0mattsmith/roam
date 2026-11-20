@@ -1,7 +1,6 @@
 package app.roam.feature.webui
 
 import android.content.res.AssetManager
-import app.roam.core.common.WebAddress
 import app.roam.core.database.QueueDao
 import app.roam.data.catalog.artwork.ArtworkStore
 import fi.iki.elonen.NanoHTTPD
@@ -36,6 +35,8 @@ import java.io.FileInputStream
  * so this cannot drift onto the wrong one without failing loudly.
  */
 class RoamWebServer(
+    /** Chosen by [WebService], which moves to the next one when this is taken. */
+    port: Int,
     private val assets: AssetManager,
     private val queue: QueueDao,
     private val artwork: ArtworkStore,
@@ -46,7 +47,7 @@ class RoamWebServer(
      * rotating it is that the old one stops working immediately.
      */
     private val pin: () -> String?,
-) : NanoHTTPD(WebAddress.PORT) {
+) : NanoHTTPD(port) {
 
     override fun serve(session: IHTTPSession): Response {
         val params = session.parameters.mapValues { it.value.firstOrNull().orEmpty() }

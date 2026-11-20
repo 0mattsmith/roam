@@ -21,6 +21,8 @@ class UpdateBannerViewModel @Inject constructor(
     val available = updates.available
     val dismissed = updates.dismissed
     val downloadPercent = updates.downloadPercent
+    val installing = updates.installing
+    val confirming = updates.confirming
 
     fun install() = viewModelScope.launch { updates.install() }
     fun dismiss() = updates.dismiss()
@@ -38,6 +40,8 @@ fun UpdateBannerHost(vm: UpdateBannerViewModel = hiltViewModel()) {
     val update by vm.available.collectAsStateWithLifecycle()
     val dismissed by vm.dismissed.collectAsStateWithLifecycle()
     val percent by vm.downloadPercent.collectAsStateWithLifecycle()
+    val installing by vm.installing.collectAsStateWithLifecycle()
+    val confirming by vm.confirming.collectAsStateWithLifecycle()
 
     // Catches a release published while the app sat in the background, which
     // is most of the time given how these builds get made.
@@ -48,6 +52,9 @@ fun UpdateBannerHost(vm: UpdateBannerViewModel = hiltViewModel()) {
         UpdateBanner(
             versionName = shown.versionName,
             downloadPercent = percent,
+            // Unless Android is waiting on a confirmation that was closed
+            // unanswered: then Install is what puts it back.
+            installing = installing && !confirming,
             onInstall = { vm.install() },
             onDismiss = vm::dismiss,
         )

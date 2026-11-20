@@ -18,6 +18,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.net.BindException
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 
@@ -54,7 +55,9 @@ class WebService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
-        startForeground(NOTIFICATION_ID, notification(WebAddress.current()))
+        // Before the bind, because Android wants the notification within
+        // seconds of the start. The address replaces this once a port is held.
+        startForeground(NOTIFICATION_ID, notification("Starting…"))
 
         lifecycleScope.launch {
             settings.settings
@@ -74,20 +77,23 @@ class WebService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         if (server == null) {
-            val fresh = RoamWebServer(assets, queue, artwork) { pin.get() }
-            // daemon = false. A daemon thread dies with the process at a moment
-            // nothing chose; this one is stopped in onDestroy, which is the only
-            // place that knows the serving is meant to be over.
-            if (runCatching { fresh.start(SOCKET_TIMEOUT_MS, false) }.isSuccess) {
-                server = fresh
-            } else {
-                // Almost always the port already being in use. Turning the
-                // SETTING back off is what makes that visible: stopping
-                // quietly would leave the switch on with nothing behind it,
-                // which looks like the server working and refusing to answer.
-                // The collector above then stops this service for us.
-                lifecycleScope.launch { settings.setWebServerEnabled(false) }
-            }
+            listen()
+                .onSuccess { fresh ->
+                    server = fresh
+                    val port = fresh.listeningPort
+                    getSystemService(NotificationManager::class.java)
+                        ?.notify(NOTIFICATION_ID, notification(where(port)))
+                    lifecycleScope.launch { settings.webServerStarted(port) }
+                }
+                .onFailure { e ->
+                    // Turning the SETTING back off is what makes a failure
+                    // visible: stopping quietly would leave the switch on with
+                    // nothing behind it, which looks like a server refusing to
+                    // answer. The reason goes with it, because a switch that
+                    // flicks back with nothing said looks broken instead.
+                    // The collector above then stops this service for us.
+                    lifecycleScope.launch { settings.webServerFailed(reasonFor(e)) }
+                }
         }
         // START_STICKY: if Android kills the process for memory, the server is
         // meant to come back -- the user left it on. The settings collector
@@ -101,7 +107,46 @@ class WebService : LifecycleService() {
         super.onDestroy()
     }
 
-    private fun notification(address: String?): Notification {
+    /**
+     * Binds the first free port of [WebAddress.PORTS].
+     *
+     * Only a port someone else holds moves on to the next one. Anything else
+     * -- a permission, no network stack -- is not cured by another number, so
+     * it is reported as it is.
+     */
+    private fun listen(): Result<RoamWebServer> {
+        for (port in WebAddress.PORTS) {
+            val fresh = RoamWebServer(port, assets, queue, artwork) { pin.get() }
+            try {
+                // daemon = false. A daemon thread dies with the process at a
+                // moment nothing chose; this one is stopped in onDestroy, the
+                // only place that knows the serving is meant to be over.
+                fresh.start(SOCKET_TIMEOUT_MS, false)
+                return Result.success(fresh)
+            } catch (e: Exception) {
+                // A failed start leaves its socket open.
+                runCatching { fresh.stop() }
+                if (!e.isPortTaken()) return Result.failure(e)
+            }
+        }
+        val ports = WebAddress.PORTS
+        return Result.failure(
+            BindException("Ports ${ports.first}-${ports.last} are all in use by other apps")
+        )
+    }
+
+    private fun Exception.isPortTaken(): Boolean =
+        this is BindException &&
+            message.orEmpty().let { it.contains("EADDRINUSE") || it.contains("in use", ignoreCase = true) }
+
+    private fun where(port: Int): String =
+        WebAddress.current()?.let { WebAddress.url(it, port) } ?: "not on a network"
+
+    /** For Settings, under the switch: the exception's own words when it has some. */
+    private fun reasonFor(e: Throwable): String =
+        e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+
+    private fun notification(where: String): Notification {
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
@@ -114,7 +159,6 @@ class WebService : LifecycleService() {
                 ).apply { setShowBadge(false) }
             )
         }
-        val where = address?.let { WebAddress.url(it) } ?: "not on a network"
         return NotificationCompat.Builder(this, CHANNEL)
             .setContentTitle("Roam is serving your library")
             .setContentText(where)

@@ -82,4 +82,10 @@ class WebAddressTest {
         assertEquals("http://192.168.1.42:8080", WebAddress.url("192.168.1.42"))
         assertEquals(8080, WebAddress.PORT)
     }
+
+    @Test
+    fun `the url carries the port the server actually got`() {
+        assertEquals("http://192.168.1.42:8081", WebAddress.url("192.168.1.42", 8081))
+        assertEquals(8080, WebAddress.PORTS.first)
+    }
 }

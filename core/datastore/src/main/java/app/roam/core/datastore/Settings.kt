@@ -112,6 +112,23 @@ data class RoamSettings(
      */
     val webPin: String? = null,
 
+    /**
+     * The port the server last bound. Null until it has started once.
+     *
+     * Written by the server rather than chosen here: it takes the first free
+     * one of `WebAddress.PORTS`, and Settings must print the one that answers.
+     */
+    val webPort: Int? = null,
+
+    /**
+     * Why the server last failed to start, in its own words.
+     *
+     * The switch turns itself back off when the start fails, and a switch
+     * that flicks back with nothing said is indistinguishable from a broken
+     * one. Cleared by the next attempt.
+     */
+    val webError: String? = null,
+
     // How the library is laid out and ordered. These live here rather than in
     // the ViewModel's UI state because they are preferences, not screen state:
     // picking "grid" once should still mean grid tomorrow morning in the car.
@@ -169,6 +186,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val WIFI_ONLY_LARGE = booleanPreferencesKey("wifi_only_large_transfers")
         val WEB_ENABLED = booleanPreferencesKey("web_server_enabled")
         val WEB_PIN = stringPreferencesKey("web_pin")
+        val WEB_PORT = intPreferencesKey("web_port")
+        val WEB_ERROR = stringPreferencesKey("web_error")
 
         val ARTIST_VIEW = stringPreferencesKey("artist_view_mode")
         val ARTIST_ALBUM_VIEW = stringPreferencesKey("artist_album_view_mode")
@@ -205,6 +224,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             wifiOnlyForLargeTransfers = p[K.WIFI_ONLY_LARGE] ?: true,
             webServerEnabled = p[K.WEB_ENABLED] ?: false,
             webPin = p[K.WEB_PIN],
+            webPort = p[K.WEB_PORT],
+            webError = p[K.WEB_ERROR],
             artistViewMode = p[K.ARTIST_VIEW].toEnum(ViewMode.GRID_3),
             artistAlbumViewMode = p[K.ARTIST_ALBUM_VIEW].toEnum(ViewMode.GRID_3),
             trackSort = p[K.TRACK_SORT].toEnum(TrackSort.ARTIST),
@@ -294,7 +315,31 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
     suspend fun setWebServerEnabled(v: Boolean) {
         ctx.dataStore.edit {
             it[K.WEB_ENABLED] = v
+            // A fresh attempt, or the person giving up: either way the last
+            // failure is no longer the news.
+            it.remove(K.WEB_ERROR)
             if (v && it[K.WEB_PIN].isNullOrBlank()) it[K.WEB_PIN] = newPin()
+        }
+    }
+
+    /** The server is up, and this is the port it got. */
+    suspend fun webServerStarted(port: Int) {
+        ctx.dataStore.edit {
+            it[K.WEB_PORT] = port
+            it.remove(K.WEB_ERROR)
+        }
+    }
+
+    /**
+     * The server could not start: the switch goes back off, with the reason.
+     *
+     * One edit for both, so nothing ever sees the switch off without the
+     * explanation, or the explanation beside a switch that is still on.
+     */
+    suspend fun webServerFailed(reason: String) {
+        ctx.dataStore.edit {
+            it[K.WEB_ENABLED] = false
+            it[K.WEB_ERROR] = reason
         }
     }
 

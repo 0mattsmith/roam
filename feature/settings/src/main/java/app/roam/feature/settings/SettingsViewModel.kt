@@ -18,14 +18,12 @@ import app.roam.data.source.drive.DriveAuth
 import app.roam.data.source.drive.DriveSourceProvider
 import app.roam.data.source.drive.DriveSourceProvider.Companion.SOURCE_ID
 import app.roam.update.AvailableUpdate
-import app.roam.update.UpdateChecker
-import app.roam.update.UpdateDownloader
-import app.roam.update.UpdateInstallReceiver
-import app.roam.update.UpdateInstaller
+import app.roam.update.UpdateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -45,6 +43,8 @@ data class WebUiState(
     val enabled: Boolean = false,
     val pin: String? = null,
     val url: String? = null,
+    /** Why the last start failed. The switch is off whenever this is set. */
+    val error: String? = null,
 )
 
 data class SettingsUiState(
@@ -73,6 +73,10 @@ data class SettingsUiState(
     val update: AvailableUpdate? = null,
     val downloadPercent: Int? = null,
     val updateMessage: String? = null,
+    /** Handed to Android and not yet answered, with nothing for the person to do. */
+    val installingUpdate: Boolean = false,
+    /** What the install last said. Shown in place of [updateMessage] while set. */
+    val installMessage: String? = null,
 
     val syncOnLaunch: Boolean = true,
     val autoCheckUpdates: Boolean = true,
@@ -113,9 +117,7 @@ class SettingsViewModel @Inject constructor(
     app: Application,
     private val auth: DriveAuth,
     private val drive: DriveSourceProvider,
-    private val updateChecker: UpdateChecker,
-    private val updateDownloader: UpdateDownloader,
-    private val updateInstaller: UpdateInstaller,
+    private val updates: UpdateRepository,
     private val settings: SettingsRepository,
     private val trackDao: TrackDao,
 ) : AndroidViewModel(app) {
@@ -140,6 +142,27 @@ class SettingsViewModel @Inject constructor(
 
     init {
         restore()
+        watchUpdates()
+    }
+
+    /**
+     * The install lives in UpdateRepository, shared with the banner, so there
+     * is one of it however many buttons offer it. This screen only mirrors it.
+     */
+    private fun watchUpdates() {
+        viewModelScope.launch {
+            updates.available.collect { found -> _state.update { it.copy(update = found) } }
+        }
+        viewModelScope.launch {
+            updates.downloadPercent.collect { pct -> _state.update { it.copy(downloadPercent = pct) } }
+        }
+        viewModelScope.launch {
+            combine(updates.installing, updates.confirming) { installing, confirming -> installing && !confirming }
+                .collect { busy -> _state.update { it.copy(installingUpdate = busy) } }
+        }
+        viewModelScope.launch {
+            updates.message.collect { said -> _state.update { it.copy(installMessage = said) } }
+        }
     }
 
     /** Just the number, for the row that leads to the page listing them. */
@@ -294,7 +317,9 @@ class SettingsViewModel @Inject constructor(
             WebUiState(
                 enabled = s.webServerEnabled,
                 pin = s.webPin,
-                url = WebAddress.current()?.let { WebAddress.url(it) },
+                // The port the server last got, which is not always 8080.
+                url = WebAddress.current()?.let { WebAddress.url(it, s.webPort ?: WebAddress.PORT) },
+                error = s.webError,
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WebUiState())
@@ -428,19 +453,18 @@ class SettingsViewModel @Inject constructor(
 
     // ---- updates ----------------------------------------------------------
 
+    /**
+     * Through the repository, so the banner hears about what this finds. What
+     * it found arrives in `update` by way of [watchUpdates].
+     */
     fun checkForUpdate() = viewModelScope.launch {
-        _state.update { it.copy(checkingUpdate = true, updateMessage = null, update = null) }
-        val ctx = getApplication<Application>()
-        val code = ctx.packageManager.getPackageInfo(ctx.packageName, 0).let {
-            if (android.os.Build.VERSION.SDK_INT >= 28) it.longVersionCode.toInt()
-            else @Suppress("DEPRECATION") it.versionCode
-        }
-        runCatching { updateChecker.check(code, updateInstaller.preferredAbi()) }
+        _state.update { it.copy(checkingUpdate = true, updateMessage = null) }
+        updates.clearMessage()
+        runCatching { updates.check() }
             .onSuccess { found ->
                 _state.update {
                     it.copy(
                         checkingUpdate = false,
-                        update = found,
                         updateMessage = if (found == null) "You're on the latest version." else null,
                     )
                 }
@@ -450,27 +474,9 @@ class SettingsViewModel @Inject constructor(
             }
     }
 
+    /** Through the repository, so this button and the banner share one install. */
     fun installUpdate() = viewModelScope.launch {
-        val update = _state.value.update ?: return@launch
-        val ctx = getApplication<Application>()
-
-        if (!updateInstaller.canInstall()) {
-            ctx.startActivity(updateInstaller.unknownSourcesIntent().addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-            _state.update { it.copy(updateMessage = "Allow installs from Roam, then tap Update again.") }
-            return@launch
-        }
-
-        _state.update { it.copy(downloadPercent = 0, updateMessage = null) }
-        runCatching {
-            val apk = updateDownloader.download(update) { pct ->
-                _state.update { it.copy(downloadPercent = pct) }
-            }
-            updateInstaller.install(apk, UpdateInstallReceiver.pendingIntent(ctx).intentSender)
-        }.onSuccess {
-            _state.update { it.copy(downloadPercent = null, updateMessage = "Confirm the install when prompted.") }
-        }.onFailure { e ->
-            _state.update { it.copy(downloadPercent = null, updateMessage = "Update failed: ${e.message}") }
-        }
+        updates.install(_state.value.update)
     }
 
     fun setSyncOnLaunch(v: Boolean) = viewModelScope.launch {
@@ -508,6 +514,12 @@ class SettingsViewModel @Inject constructor(
         _state.update {
             SettingsUiState(
                 installedVersion = it.installedVersion,
+                // Mirrors of UpdateRepository, which emits only on change, so
+                // a reset here would hide an update until the next one.
+                update = it.update,
+                downloadPercent = it.downloadPercent,
+                installingUpdate = it.installingUpdate,
+                installMessage = it.installMessage,
                 syncOnLaunch = it.syncOnLaunch,
                 autoCheckUpdates = it.autoCheckUpdates,
                 saveArtistPhotos = it.saveArtistPhotos,

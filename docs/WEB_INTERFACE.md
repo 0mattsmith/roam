@@ -103,6 +103,9 @@ album" is a real Tuesday. Stored as a cookie after one successful entry.
 
 **Bound to the local interface, and it says the address.** Settings shows
 `http://192.168.1.x:8080` and the PIN together, so there is nothing to work out.
+When another app already holds 8080 the server takes the next free port up to
+8089, and Settings prints the one it got. A start that fails anyway turns the
+switch back off and says why underneath it.
 
 **A foreground service, with the notification that implies.** Android kills a
 background server, so the toggle's subtitle has to say that a notification is

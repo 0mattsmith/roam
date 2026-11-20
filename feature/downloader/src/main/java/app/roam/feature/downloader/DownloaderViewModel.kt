@@ -17,6 +17,7 @@ import app.roam.data.catalog.metadata.MusicBrainz
 import app.roam.data.catalog.metadata.ReleaseMatch
 import app.roam.data.catalog.metadata.ReleaseSource
 import app.roam.data.catalog.metadata.ReleaseTrack
+import app.roam.feature.player.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -165,10 +166,38 @@ class DownloaderViewModel @Inject constructor(
     private val discogs: Discogs,
     private val settings: SettingsRepository,
     private val identifier: TrackIdentifier,
+    private val player: PlayerController,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
+
+    /** What is playing, so the row it came from can say so. */
+    val nowPlaying = player.nowPlaying
+
+    init {
+        // Idempotent, and free when the library has already connected. Here
+        // because play() below does nothing at all until a controller exists.
+        player.connect()
+    }
+
+    /**
+     * Plays the library results, starting at [track].
+     *
+     * The queue is the list as shown, which is the library's own rule: the
+     * songs the search matched, in the order shown, rather than one song and
+     * then silence. Whether a searched song should play its album instead is
+     * an open question in docs/SEARCH.md.
+     *
+     * Here rather than in a lambda from `:app`, because `:feature:player` is
+     * the one feature a UI feature may depend on. The lambda this replaced was
+     * never passed, so every tap ran its empty default.
+     */
+    fun play(track: TrackListItem) {
+        val shown = _state.value.library.takeIf { list -> list.any { it.id == track.id } }
+            ?: listOf(track)
+        player.play(shown, shown.indexOfFirst { it.id == track.id })
+    }
 
     /**
      * The download queue, straight from WorkManager.
