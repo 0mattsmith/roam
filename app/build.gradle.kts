@@ -26,7 +26,7 @@ android {
         // push.ps1 rewrites these two lines. Keep them on their own line,
         // formatted exactly like this, or the release script will not match them.
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
 
         // CI publishes a release on every green push to main and needs a
         // strictly increasing versionCode. It derives one from the commit count
