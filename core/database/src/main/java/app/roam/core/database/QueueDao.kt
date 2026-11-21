@@ -63,7 +63,7 @@ interface QueueDao {
     @Query(
         """
         SELECT t.id AS id, t.title AS title, ar.name AS artistName,
-               al.title AS albumTitle, t.artworkId AS artworkId, t.year AS year,
+               al.title AS albumTitle, COALESCE(t.artworkId, al.artworkId) AS artworkId, t.year AS year,
                t.genre AS genre, t.tagState AS tagState, t.fileName AS fileName
         FROM tracks t
         JOIN artists ar ON ar.id = t.artistId
@@ -94,7 +94,7 @@ interface QueueDao {
     @Query(
         """
         SELECT t.id AS id, t.title AS title, ar.name AS artistName,
-               al.title AS albumTitle, t.artworkId AS artworkId, t.year AS year,
+               al.title AS albumTitle, COALESCE(t.artworkId, al.artworkId) AS artworkId, t.year AS year,
                t.genre AS genre, t.tagState AS tagState, t.fileName AS fileName
         FROM tracks t
         JOIN artists ar ON ar.id = t.artistId
@@ -119,7 +119,7 @@ interface QueueDao {
     @Query(
         """
         SELECT t.id AS id, t.title AS title, ar.name AS artistName,
-               al.title AS albumTitle, t.artworkId AS artworkId, t.year AS year,
+               al.title AS albumTitle, COALESCE(t.artworkId, al.artworkId) AS artworkId, t.year AS year,
                t.genre AS genre, t.tagState AS tagState, t.fileName AS fileName
         FROM tracks t
         JOIN artists ar ON ar.id = t.artistId
@@ -145,7 +145,7 @@ interface QueueDao {
     @Query(
         """
         SELECT t.id AS id, t.title AS title, ar.name AS artistName,
-               al.title AS albumTitle, t.artworkId AS artworkId, t.year AS year,
+               al.title AS albumTitle, COALESCE(t.artworkId, al.artworkId) AS artworkId, t.year AS year,
                t.genre AS genre, t.tagState AS tagState, t.fileName AS fileName
         FROM tracks t
         JOIN artists ar ON ar.id = t.artistId
@@ -176,7 +176,7 @@ interface QueueDao {
     @Query(
         """
         SELECT t.id AS id, t.title AS title, ar.name AS artistName,
-               al.title AS albumTitle, t.artworkId AS artworkId, t.year AS year,
+               al.title AS albumTitle, COALESCE(t.artworkId, al.artworkId) AS artworkId, t.year AS year,
                t.genre AS genre, t.tagState AS tagState, t.fileName AS fileName
         FROM tracks t
         JOIN artists ar ON ar.id = t.artistId

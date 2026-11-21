@@ -370,7 +370,8 @@ interface TrackDao {
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                al.discTotal AS albumDiscTotal,
                t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
-               t.artworkId AS artworkId, t.loved AS loved,
+               -- Falls back to the album's, as every track list does: a downloaded file carries no picture of its own.
+               COALESCE(t.artworkId, al.artworkId) AS artworkId, t.loved AS loved,
                t.startMs AS startMs, t.endMs AS endMs
         FROM tracks t
         JOIN artists ar  ON ar.id  = t.artistId
@@ -396,6 +397,14 @@ interface TrackDao {
     @RawQuery(observedEntities = [TrackEntity::class, AlbumEntity::class, ArtistEntity::class])
     suspend fun listItemsRaw(query: SupportSQLiteQuery): List<TrackListItem>
 
+    /**
+     * A single number from a raw query -- the search page's "See all 37".
+     * Built from the same fragments as the list it counts, so the two cannot
+     * disagree about what matched.
+     */
+    @RawQuery
+    suspend fun countRaw(query: SupportSQLiteQuery): Int
+
     /** Queue building: same order as the list, but ids and remote ids only. */
     @Query("""
         SELECT t.id AS id, t.remoteId AS remoteId, t.title AS title,
@@ -404,7 +413,8 @@ interface TrackDao {
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                al.discTotal AS albumDiscTotal,
                t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
-               t.artworkId AS artworkId, t.loved AS loved,
+               -- Falls back to the album's, as every track list does: a downloaded file carries no picture of its own.
+               COALESCE(t.artworkId, al.artworkId) AS artworkId, t.loved AS loved,
                t.startMs AS startMs, t.endMs AS endMs
         FROM tracks t
         JOIN artists ar  ON ar.id  = t.artistId

@@ -17,7 +17,6 @@ import app.roam.data.catalog.metadata.MusicBrainz
 import app.roam.data.catalog.metadata.ReleaseMatch
 import app.roam.data.catalog.metadata.ReleaseSource
 import app.roam.data.catalog.metadata.ReleaseTrack
-import app.roam.feature.player.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -135,7 +134,6 @@ data class DownloadStatus(
 
 data class SearchUiState(
     val query: String = "",
-    val library: List<TrackListItem> = emptyList(),
     val youtube: List<YoutubeResult> = emptyList(),
     val searchingYoutube: Boolean = false,
     /** True while "Show more" is waiting on a batch that is not ready yet. */
@@ -166,38 +164,10 @@ class DownloaderViewModel @Inject constructor(
     private val discogs: Discogs,
     private val settings: SettingsRepository,
     private val identifier: TrackIdentifier,
-    private val player: PlayerController,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
-
-    /** What is playing, so the row it came from can say so. */
-    val nowPlaying = player.nowPlaying
-
-    init {
-        // Idempotent, and free when the library has already connected. Here
-        // because play() below does nothing at all until a controller exists.
-        player.connect()
-    }
-
-    /**
-     * Plays the library results, starting at [track].
-     *
-     * The queue is the list as shown, which is the library's own rule: the
-     * songs the search matched, in the order shown, rather than one song and
-     * then silence. Whether a searched song should play its album instead is
-     * an open question in docs/SEARCH.md.
-     *
-     * Here rather than in a lambda from `:app`, because `:feature:player` is
-     * the one feature a UI feature may depend on. The lambda this replaced was
-     * never passed, so every tap ran its empty default.
-     */
-    fun play(track: TrackListItem) {
-        val shown = _state.value.library.takeIf { list -> list.any { it.id == track.id } }
-            ?: listOf(track)
-        player.play(shown, shown.indexOfFirst { it.id == track.id })
-    }
 
     /**
      * The download queue, straight from WorkManager.
@@ -243,7 +213,6 @@ class DownloaderViewModel @Inject constructor(
     fun searchUrlFor(track: ReleaseTrack, albumArtist: String): String =
         "ytsearch1:${track.artist.ifBlank { albumArtist }} ${track.title}"
 
-    private var localJob: Job? = null
     private var remoteJob: Job? = null
     private var albumJob: Job? = null
 
@@ -294,7 +263,6 @@ class DownloaderViewModel @Inject constructor(
         // failed search that changed its mind.
         _state.update { it.copy(query = query, searchingYoutube = query.isNotBlank()) }
 
-        localJob?.cancel()
         remoteJob?.cancel()
 
         remaining = emptyList()
@@ -302,7 +270,6 @@ class DownloaderViewModel @Inject constructor(
         if (query.isBlank()) {
             _state.update {
                 it.copy(
-                    library = emptyList(),
                     youtube = emptyList(),
                     albums = emptyList(),
                     searchingAlbums = false,
@@ -314,15 +281,9 @@ class DownloaderViewModel @Inject constructor(
             return
         }
 
-        // Local search is cheap enough to run on every keystroke after a short
-        // settle; the remote one is not, so it waits noticeably longer.
-        localJob = viewModelScope.launch {
-            delay(LOCAL_DEBOUNCE_MS)
-            _state.update {
-                it.copy(library = tracks.listItemsRaw(LibraryQueries.search(query, TrackSort.ARTIST, LIMIT)))
-            }
-        }
-
+        // Your own music is the search page's now (docs/SEARCH.md), so all
+        // that is left here is what costs a request, and it waits for the
+        // typing to stop.
         albumJob?.cancel()
         albumJob = viewModelScope.launch {
             delay(REMOTE_DEBOUNCE_MS)
@@ -915,7 +876,6 @@ class DownloaderViewModel @Inject constructor(
     }
 
     private companion object {
-        const val LOCAL_DEBOUNCE_MS = 150L
         const val REMOTE_DEBOUNCE_MS = 600L
         const val LIMIT = 60
 

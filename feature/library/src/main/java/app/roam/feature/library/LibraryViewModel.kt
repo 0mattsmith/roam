@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import app.roam.core.database.AlbumDao
 import app.roam.core.database.ArtistDao
@@ -36,12 +37,15 @@ import app.roam.data.catalog.artwork.ArtworkFiles
 import app.roam.feature.player.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -89,10 +93,46 @@ data class LibraryUiState(
     val collapseAlbumsByDefault: Boolean = false,
     /** Albums the user has flipped away from whatever the default is. */
     val toggledAlbums: Set<Long> = emptySet(),
+    /**
+     * The search page is open. It sits UNDER any drill opened from it, so
+     * Back from an album or an artist found there returns to the results.
+     */
+    val searchOpen: Boolean = false,
+    /**
+     * Which See all list the drill is, when it is one. Mirrored out of the
+     * drill, like [focusedAlbum], because the route draws artists and albums
+     * differently from songs and the drill is private.
+     */
+    val searchList: SearchKind? = null,
 ) {
     /** Default XOR flipped: one set, and changing the default costs nothing. */
     fun albumCollapsed(albumId: Long): Boolean =
         collapseAlbumsByDefault != (albumId in toggledAlbums)
+}
+
+/** The three kinds of thing the search page finds, each with its own See all. */
+enum class SearchKind(val label: String) {
+    ARTISTS("Artists"),
+    ALBUMS("Albums"),
+    SONGS("Songs"),
+}
+
+/**
+ * The first few of each kind, and how many there are in all.
+ *
+ * [query] is the term these answer, which is not always what is in the box:
+ * the search settles for a moment after each keystroke.
+ */
+data class SearchResults(
+    val query: String = "",
+    val artists: List<ArtistListItem> = emptyList(),
+    val artistCount: Int = 0,
+    val albums: List<AlbumListItem> = emptyList(),
+    val albumCount: Int = 0,
+    val songs: List<TrackListItem> = emptyList(),
+    val songCount: Int = 0,
+) {
+    val isEmpty: Boolean get() = artistCount == 0 && albumCount == 0 && songCount == 0
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -124,6 +164,10 @@ class LibraryViewModel @Inject constructor(
             val focusArtistId: Long? = null,
         ) : Drill
         data object Loved : Drill
+        /** A See all list from the search page. */
+        data class Search(val query: String, val kind: SearchKind) : Drill {
+            val title: String get() = "${kind.label} matching \u201C$query\u201D"
+        }
     }
 
     private val _state = MutableStateFlow(LibraryUiState())
@@ -166,6 +210,9 @@ class LibraryViewModel @Inject constructor(
                             }
                         }
                         Drill.Loved -> LibraryQueries.lovedTracks(sort)
+                        // Its own order, not the sort menu's: what starts with
+                        // the term comes first, and the menu is hidden here.
+                        is Drill.Search -> LibraryQueries.searchTracks(current.query)
                         null -> LibraryQueries.tracks(sort)
                     }
                 )
@@ -182,6 +229,28 @@ class LibraryViewModel @Inject constructor(
         .distinctUntilChanged()
         .flatMapLatest { sort ->
             Pager(pagingConfig()) { albums.pagedListItemsRaw(LibraryQueries.albums(sort)) }.flow
+        }.cachedIn(viewModelScope)
+
+    /**
+     * See all, for artists and albums: paged like every other list
+     * (invariant 8), so a search for "the" is not cut off at whatever a
+     * single query happened to be limited to. Keyed on the drill, and
+     * distinct, for the same reason as [pagedTracks].
+     */
+    val pagedSearchArtists = drill
+        .map { (it as? Drill.Search)?.takeIf { list -> list.kind == SearchKind.ARTISTS }?.query }
+        .distinctUntilChanged()
+        .flatMapLatest { query ->
+            if (query == null) flowOf(PagingData.empty<ArtistListItem>())
+            else Pager(pagingConfig()) { artists.pagedListItemsRaw(LibraryQueries.searchArtists(query)) }.flow
+        }.cachedIn(viewModelScope)
+
+    val pagedSearchAlbums = drill
+        .map { (it as? Drill.Search)?.takeIf { list -> list.kind == SearchKind.ALBUMS }?.query }
+        .distinctUntilChanged()
+        .flatMapLatest { query ->
+            if (query == null) flowOf(PagingData.empty<AlbumListItem>())
+            else Pager(pagingConfig()) { albums.pagedListItemsRaw(LibraryQueries.searchAlbums(query)) }.flow
         }.cachedIn(viewModelScope)
 
     init {
@@ -229,10 +298,12 @@ class LibraryViewModel @Inject constructor(
     fun selectTab(tab: LibraryTab) {
         closeOpenForms()
         _artistPage.value = null
+        seeAll = null
         drill.value = null
         _state.update {
             it.copy(
                 tab = tab,
+                searchList = null,
                 drillTitle = null,
                 openAlbumId = null, focusedAlbum = false,
                 showingLoved = false,
@@ -289,6 +360,7 @@ class LibraryViewModel @Inject constructor(
         _state.update {
             it.copy(
                 drillTitle = name,
+                searchList = null,
                 openAlbumId = null, focusedAlbum = false,
                 showingLoved = false,
                 trackSort = TrackSort.ALBUM,
@@ -321,6 +393,7 @@ class LibraryViewModel @Inject constructor(
         _state.update {
             it.copy(
                 drillTitle = title,
+                searchList = null,
                 openAlbumId = id,
                 showingLoved = false,
                 collapseAlbumsByDefault = false,
@@ -374,6 +447,7 @@ class LibraryViewModel @Inject constructor(
         _state.update {
             it.copy(
                 drillTitle = "Loved",
+                searchList = null,
                 openAlbumId = null, focusedAlbum = false,
                 showingLoved = true,
                 collapseAlbumsByDefault = false,
@@ -412,8 +486,10 @@ class LibraryViewModel @Inject constructor(
     /**
      * True when it consumed a back press, so the screen knows not to exit.
      *
-     * Two levels: an album opened from an artist page goes back to that page,
-     * and only then does a further press leave for the list.
+     * Layers, from the top: an album, the artist page it was opened from, the
+     * See all list either was opened from, then the search page or the tab.
+     * Returning false means none of those was open -- the search, if it is
+     * up, is closed by the caller, because closing it is not a drill.
      */
     fun closeDrill(): Boolean {
         closeOpenForms()
@@ -425,21 +501,157 @@ class LibraryViewModel @Inject constructor(
             }
             return true
         }
-        if (current == null && _artistPage.value != null) {
-            _artistPage.value = null
-            _state.update { it.copy(drillTitle = null, openAlbumId = null, focusedAlbum = false, showingLoved = false) }
+        if (current == null && _artistPage.value == null) return false
+
+        // Leaving the drill, or the artist page, entirely -- so the loaded
+        // artist page goes with it. Left behind it is state describing a screen
+        // nobody is on, and the route would happily keep rendering it, which is
+        // what made Back appear to do nothing here and then quit the app on the
+        // second press.
+        _artistPage.value = null
+
+        // Opened from a See all list: back to the list, where it was, rather
+        // than past it to the results.
+        val list = seeAll
+        if (list != null && current != list) {
+            drill.value = list
+            _state.update {
+                it.copy(
+                    drillTitle = list.title,
+                    openAlbumId = null, focusedAlbum = false,
+                    showingLoved = false,
+                    searchList = list.kind,
+                )
+            }
             return true
         }
-        if (current == null) return false
 
-        // Leaving the drill entirely, so the loaded artist page goes with it.
-        // Left behind it is state describing a screen nobody is on, and the
-        // route would happily keep rendering it -- which is what made Back
-        // appear to do nothing here and then quit the app on the second press.
+        seeAll = null
         drill.value = null
-        _artistPage.value = null
-        _state.update { it.copy(drillTitle = null, openAlbumId = null, focusedAlbum = false, showingLoved = false) }
+        _state.update {
+            it.copy(
+                drillTitle = null, openAlbumId = null, focusedAlbum = false,
+                showingLoved = false, searchList = null,
+            )
+        }
+        // Whatever was done in there -- a heart, an edit -- may change what the
+        // results show.
+        refreshSearch()
         return true
+    }
+
+    // ---- search -------------------------------------------------------------
+    //
+    // A layer over the tabs and under every drill. Opening an artist or album
+    // from it leaves it in place, which is all it takes for Back to come home
+    // to it with the query and the scroll position as they were.
+
+    private val _searchQuery = MutableStateFlow("")
+    /** What is in the box. Here rather than in the composition, so a rotation keeps it. */
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _searchResults = MutableStateFlow(SearchResults())
+    val searchResults: StateFlow<SearchResults> = _searchResults.asStateFlow()
+
+    private var searchJob: Job? = null
+
+    /**
+     * The See all list a drill was opened from. Apart from [drill] because
+     * opening an artist from the list replaces the drill, and Back still has
+     * to know there is a list to return to.
+     */
+    private var seeAll: Drill.Search? = null
+
+    fun openSearch() {
+        closeOpenForms()
+        _state.update { it.copy(searchOpen = true) }
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+        searchJob?.cancel()
+        if (query.isBlank()) {
+            _searchResults.value = SearchResults()
+            return
+        }
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            _searchResults.value = findInLibrary(query.trim())
+        }
+    }
+
+    /** The results again, when something they show may have changed under them. */
+    private fun refreshSearch() {
+        val query = _searchQuery.value.trim()
+        if (!_state.value.searchOpen || query.isEmpty()) return
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch { _searchResults.value = findInLibrary(query) }
+    }
+
+    private suspend fun findInLibrary(query: String): SearchResults = SearchResults(
+        query = query,
+        artists = artists.listItemsRaw(LibraryQueries.searchArtists(query, ARTISTS_SHOWN)),
+        artistCount = tracks.countRaw(LibraryQueries.searchArtistsCount(query)),
+        albums = albums.listItemsRaw(LibraryQueries.searchAlbums(query, ALBUMS_SHOWN)),
+        albumCount = tracks.countRaw(LibraryQueries.searchAlbumsCount(query)),
+        songs = tracks.listItemsRaw(LibraryQueries.searchTracks(query, SONGS_SHOWN)),
+        songCount = tracks.countRaw(LibraryQueries.searchTracksCount(query)),
+    )
+
+    /**
+     * Closes the search and forgets it.
+     *
+     * Forgotten rather than left lying around, for the reason in CLAUDE.md's
+     * "Back on an artist page quits the app": state describing a screen nobody
+     * is on still gets rendered.
+     */
+    fun closeSearch() {
+        closeOpenForms()
+        searchJob?.cancel()
+        seeAll = null
+        _searchQuery.value = ""
+        _searchResults.value = SearchResults()
+        _state.update { it.copy(searchOpen = false, searchList = null) }
+    }
+
+    /** See all: one kind of result in full, as a drill, so Back returns to the results. */
+    fun openSearchList(kind: SearchKind) {
+        val query = _searchResults.value.query.ifBlank { return }
+        closeOpenForms()
+        val list = Drill.Search(query, kind)
+        seeAll = list
+        drill.value = list
+        _state.update {
+            it.copy(
+                drillTitle = list.title,
+                openAlbumId = null, focusedAlbum = false,
+                showingLoved = false,
+                searchList = kind,
+                collapseAlbumsByDefault = false,
+                toggledAlbums = emptySet(),
+            )
+        }
+    }
+
+    /**
+     * A song from the results: every song of yours that matches, in the order
+     * shown, starting at that one. The library's rule -- the queue mirrors the
+     * list -- with the list being the search.
+     */
+    fun playSearchResult(track: TrackListItem) = viewModelScope.launch {
+        val query = _searchResults.value.query.ifBlank { return@launch }
+        val queue = tracks.listItemsRaw(LibraryQueries.searchTracks(query, QUEUE_LIMIT))
+        val index = queue.indexOfFirst { it.id == track.id }
+        if (index < 0) player.play(listOf(track), 0) else player.play(queue, index)
+    }
+
+    /**
+     * Edit, from a result's sheet: its album, with the editor open over it.
+     * The editor is drawn by the track list, so this is the same route the
+     * download manager's Edit takes -- and Back from the album is the results.
+     */
+    fun editFromSearch(track: TrackListItem) {
+        revealTrack(track.id, openEditor = true)
     }
 
     // ---- sorting ------------------------------------------------------------
@@ -497,6 +709,7 @@ class LibraryViewModel @Inject constructor(
         tracks.setHidden(track.id, hidden = true)
         recount()
         _photoMessage.value = "Removed ${track.title}"
+        refreshSearch()
     }
 
     fun removeAlbum(albumId: Long, title: String) = viewModelScope.launch {
@@ -556,6 +769,7 @@ class LibraryViewModel @Inject constructor(
                 is Drill.Artist -> LibraryQueries.tracksForArtist(current.id, sort)
                 is Drill.Album -> LibraryQueries.tracksForAlbum(current.id)
                 Drill.Loved -> LibraryQueries.lovedTracksLimited(sort, QUEUE_LIMIT)
+                is Drill.Search -> LibraryQueries.searchTracks(current.query, QUEUE_LIMIT)
                 null -> LibraryQueries.tracksLimited(sort, QUEUE_LIMIT)
             }
         )
@@ -569,6 +783,7 @@ class LibraryViewModel @Inject constructor(
             loved = !track.loved,
             at = if (track.loved) null else System.currentTimeMillis(),
         )
+        refreshSearch()
     }
 
     /** True only when every track on the album is loved. */
@@ -741,6 +956,7 @@ class LibraryViewModel @Inject constructor(
     fun setTrackArtwork(track: TrackListItem, picked: Uri) = viewModelScope.launch {
         _photoMessage.value = photos.setTrackArtwork(track.id, picked)
             .fold({ it }, { "Could not update: ${it.message}" })
+        refreshSearch()
     }
 
     // ---- bulk album editing -------------------------------------------------
@@ -936,5 +1152,16 @@ class LibraryViewModel @Inject constructor(
 
         /** Albums in a discography before its headers become the index. */
         const val COLLAPSE_FROM = 4
+
+        /**
+         * Room answers in milliseconds, so this is only long enough not to
+         * query on every keystroke of someone typing fast.
+         */
+        const val SEARCH_DEBOUNCE_MS = 150L
+
+        /** How many of each the results show before See all. A guess until it is on a phone. */
+        const val ARTISTS_SHOWN = 3
+        const val ALBUMS_SHOWN = 3
+        const val SONGS_SHOWN = 5
     }
 }

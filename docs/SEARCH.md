@@ -24,15 +24,15 @@ this page is where it shows up.
 
 Two reasons, and the second is the real one.
 
-- The Library tab's rows called `onPlay`, and `RoamNavHost` never passed it to
-  `DownloaderRoute`, so a tap ran the empty default. Fixed: the rows play
-  through `DownloaderViewModel`, which holds `PlayerController` the way the
-  library does, since `:feature:player` is the one feature a UI feature may
-  depend on. The queue is the results as shown, and the playing row says so.
+- The downloader's Library tab called `onPlay`, and `RoamNavHost` never passed
+  it to `DownloaderRoute`, so a tap ran the empty default.
 - Everything else a result should offer — the track sheet, the editor, Go to
   album, Go to artist — lives in `:feature:library`, and `:feature:downloader`
-  may not depend on another feature. Playing was the only part a wire could
-  fix.
+  may not depend on another feature. Wiring `onPlay` would have fixed playing
+  and nothing else.
+
+So the page lives in `:feature:library`, and that tab is gone. See "Where it
+lives".
 
 So the page lives in `:feature:library`. See "Where it lives".
 
@@ -209,10 +209,28 @@ nothing left in it, `:feature:downloader` goes.
 
 Ordered so each is worth having alone, and the first is the complaint.
 
-1. **Your music, working.** The page, the first group, the rows and their
-   sheets, Back, See all. The magnifying glass opens it. The downloader loses
-   its Library tab and is reached from a button on the search page until
-   stage 4.
+1. **Your music, working. Built.** The page, the first group, the rows and
+   their sheets, Back, See all. The magnifying glass opens it. The downloader
+   has lost its Library tab and is reached from the search page until stage 4
+   -- the button in its bar, the row where the second group will go, or the
+   blank page's own button -- and it is handed the term, so nothing is typed
+   twice. How it came out, where it differs from the plan above:
+   - **The magnifying glass is on the library screen only**, not inside a
+     drill. The search is a layer UNDER drills, so opening it from one would
+     have to take the drill down first, and Back would not return to it.
+   - **Back:** an album or artist opened from the results, or from a See all
+     list, returns to where it was opened; the results keep their scroll
+     position, and go back to the top only for a new term.
+   - **Edit details**, from a song's sheet, opens its album with the editor
+     up -- the editor is drawn by the track list, as the Adding list's Edit
+     already works -- and Back from the album is the results.
+   - **See all songs is one list, not grouped by album.** It is in the
+     search's own order, which puts what STARTS with the term first; grouped,
+     nearly every row would open an album of its own. The sort menu is hidden
+     there for the same reason.
+   - **The results are a snapshot**, re-run when something on them may have
+     changed: a heart or a removal from the sheet, and every return from a
+     drill. They are not a live query.
 2. **Play next and Add to queue.** Small, independent, and useful in every
    list.
 3. **`:data:acquire`.** The move, and no visible change. Its own step, so a
@@ -222,10 +240,10 @@ Ordered so each is worth having alone, and the first is the complaint.
 
 ## Open questions
 
-- **What tapping a song queues.** The library's rule says the matching songs.
-  The alternative is the song's album, starting from that song, which may be
-  what someone searching a title expects. Go to album is one long-press away
-  either way.
+- **What tapping a song queues.** The library's rule says the matching songs,
+  and stage 1 does that, capped at the queue limit. The alternative is the
+  song's album, starting from that song, which may be what someone searching
+  a title expects. Go to album is one long-press away either way.
 - **Does + always ask where it goes?** It does today, because a folder on Drive
   cannot be renamed afterwards without leaving a copy behind (invariant 6d).
   For a song from a catalogue the dialog is nearly always a confirmation, and

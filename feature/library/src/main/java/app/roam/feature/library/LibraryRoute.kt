@@ -51,6 +51,8 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import androidx.paging.PagingData
+import kotlinx.coroutines.flow.Flow
 import app.roam.core.database.AlbumListItem
 import app.roam.core.database.ArtistListItem
 import app.roam.core.database.TrackListItem
@@ -71,7 +73,8 @@ import coil.compose.AsyncImage
 fun LibraryRoute(
     onOpenPlayer: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenDownloader: () -> Unit,
+    /** The downloader, given the term so nobody has to type it twice. Null when there is none. */
+    onOpenDownloader: (String?) -> Unit,
     /** Set when arriving from the download manager. Consumed once. */
     revealTrackId: Long? = null,
     revealForEditing: Boolean = false,
@@ -92,7 +95,12 @@ fun LibraryRoute(
 
     // Back closes a drill-down before it leaves the screen. enabled = false when
     // there is nothing to close, so the system handles it normally.
-    BackHandler(enabled = state.drillTitle != null) { vm.closeDrill() }
+    //
+    // The search page is a layer under every drill opened from it, so a press
+    // closes the drill if there is one and only then the search.
+    BackHandler(enabled = state.drillTitle != null || state.searchOpen) {
+        if (!vm.closeDrill()) vm.closeSearch()
+    }
 
     // Hoisted deliberately. Drilling into an artist swaps ArtistList out of
     // composition entirely, which takes any state remembered inside it -- so
@@ -105,6 +113,20 @@ fun LibraryRoute(
     // positions rather than trying to translate a row index into a cell index.
     val artistsGridState = rememberLazyGridState()
 
+    // The results' place, kept while an artist or album opened from them is on
+    // screen -- the route stays composed, the page does not. Back to the top
+    // for a new term, and only then: keyed on the term the results answer,
+    // which a refresh after returning from a drill leaves alone.
+    val searchState = rememberLazyListState()
+    val searched by vm.searchResults.collectAsStateWithLifecycle()
+    LaunchedEffect(searched.query) { searchState.scrollToItem(0) }
+    // See all lists keep their place the same way, one per kind, and start
+    // fresh for a new term.
+    val seeAllLists = remember(searched.query) {
+        SearchKind.entries.associateWith { LazyListState() }
+    }
+    val seeAllGrid = remember(searched.query) { LazyGridState() }
+
     val snackbars = remember { SnackbarHostState() }
     LaunchedEffect(photoMessage) {
         photoMessage?.let {
@@ -116,7 +138,15 @@ fun LibraryRoute(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbars) },
         topBar = {
-            TopAppBar(
+            if (state.searchOpen && state.drillTitle == null) {
+                val query by vm.searchQuery.collectAsStateWithLifecycle()
+                SearchTopBar(
+                    query = query,
+                    onQueryChange = vm::onSearchQueryChanged,
+                    onBack = vm::closeSearch,
+                    onFindElsewhere = { onOpenDownloader(query.trim().ifEmpty { null }) },
+                )
+            } else TopAppBar(
                 title = { Text(state.drillTitle ?: "Roam") },
                 navigationIcon = {
                     if (state.drillTitle != null) {
@@ -133,8 +163,14 @@ fun LibraryRoute(
                             state.drillTitle != null,
                     )
                     SortMenu(state, vm)
-                    IconButton(onClick = onOpenDownloader) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search")
+                    // The library screen's own, as docs/SEARCH.md has it. Not
+                    // offered inside a drill: the search is a layer UNDER
+                    // drills, so opening it from one would have to take the
+                    // drill down first, and Back would then not return to it.
+                    if (state.drillTitle == null) {
+                        IconButton(onClick = vm::openSearch) {
+                            Icon(Icons.Filled.Search, contentDescription = "Search")
+                        }
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
@@ -158,7 +194,7 @@ fun LibraryRoute(
         Column(Modifier.padding(padding).fillMaxSize()) {
             // Tabs are hidden inside a drill-down: the list is no longer "all
             // tracks", so a highlighted Tracks tab would be a lie.
-            if (state.drillTitle == null) {
+            if (state.drillTitle == null && !state.searchOpen) {
                 PrimaryTabRow(selectedTabIndex = state.tab.ordinal) {
                     LibraryTab.entries.forEach { tab ->
                         Tab(
@@ -210,13 +246,34 @@ fun LibraryRoute(
                 // Keyed on the drill target so each one starts at its own top:
                 // opening an album should show its first track, not wherever
                 // the previously opened album happened to be scrolled to.
-                state.drillTitle != null ->
+                state.drillTitle != null -> when (state.searchList) {
+                    // See all, from the search page. The tabs' own lists over
+                    // a different source, so a row does what it does there.
+                    SearchKind.ARTISTS -> ArtistList(
+                        vm,
+                        seeAllLists.getValue(SearchKind.ARTISTS),
+                        seeAllGrid,
+                        state.artistViewMode,
+                        source = vm.pagedSearchArtists,
+                    )
+                    SearchKind.ALBUMS -> AlbumList(
+                        vm,
+                        seeAllLists.getValue(SearchKind.ALBUMS),
+                        source = vm.pagedSearchAlbums,
+                    )
+                    SearchKind.SONGS -> TrackList(vm, seeAllLists.getValue(SearchKind.SONGS))
                     // Keyed on identity too: two albums can share a title, and
                     // keying on the title alone would hand the second one the
                     // first one's scroll position.
-                    key(state.openAlbumId, state.drillTitle) {
+                    null -> key(state.openAlbumId, state.drillTitle) {
                         TrackList(vm, rememberLazyListState())
                     }
+                }
+                state.searchOpen -> SearchHost(
+                    vm = vm,
+                    listState = searchState,
+                    onFindElsewhere = { onOpenDownloader(searched.query.ifEmpty { null }) },
+                )
                 state.tab == LibraryTab.TRACKS -> TrackList(vm, tracksState)
                 state.tab == LibraryTab.ARTISTS ->
                     ArtistList(vm, artistsState, artistsGridState, state.artistViewMode)
@@ -233,6 +290,11 @@ private fun SortMenu(state: LibraryUiState, vm: LibraryViewModel) {
 
     // Playlists is a fixed list of one; nothing to order.
     if (state.tab == LibraryTab.PLAYLISTS && state.drillTitle == null) return
+    // Nor See all, which keeps the search's own order -- what starts with the
+    // term first -- and nothing in the menu would change it.
+    if (state.searchList != null) return
+    // Nor the results page, which is not a list of one kind.
+    if (state.searchOpen && state.drillTitle == null) return
 
     IconButton(onClick = { open = true }) {
         Icon(Icons.Filled.Sort, contentDescription = "Sort")
@@ -412,7 +474,11 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
     // Album-major orderings get one big cover per album instead of the same
     // thumbnail repeated down every row. The sort says whether it is one, so a
     // new album-major order needs no change here.
-    val grouped = state.trackSort.groupByAlbum || state.drillTitle != null
+    //
+    // Never on a See all list: it is in the search's order, where nearly every
+    // row would start an album of its own.
+    val grouped = state.searchList == null &&
+        (state.trackSort.groupByAlbum || state.drillTitle != null)
 
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
@@ -619,8 +685,10 @@ private fun ArtistList(
     listState: LazyListState,
     gridState: LazyGridState,
     viewMode: ViewMode,
+    /** The tab's list, or a search's See all. */
+    source: Flow<PagingData<ArtistListItem>> = vm.pagedArtists,
 ) {
-    val artists = vm.pagedArtists.collectAsLazyPagingItems()
+    val artists = source.collectAsLazyPagingItems()
 
     // Long-press target. Held here rather than in the ViewModel because it is
     // pure view state -- it should not survive a rotation mid-gesture.
@@ -689,8 +757,13 @@ private fun ArtistList(
 }
 
 @Composable
-private fun AlbumList(vm: LibraryViewModel, listState: LazyListState) {
-    val albums = vm.pagedAlbums.collectAsLazyPagingItems()
+private fun AlbumList(
+    vm: LibraryViewModel,
+    listState: LazyListState,
+    /** The tab's list, or a search's See all. */
+    source: Flow<PagingData<AlbumListItem>> = vm.pagedAlbums,
+) {
+    val albums = source.collectAsLazyPagingItems()
 
     var sheetFor by remember { mutableStateOf<AlbumListItem?>(null) }
     var viewing by remember { mutableStateOf<AlbumListItem?>(null) }
@@ -726,7 +799,7 @@ private fun AlbumList(vm: LibraryViewModel, listState: LazyListState) {
     }
 }
 
-private fun ArtistListItem.asTarget(): ArtworkTarget {
+internal fun ArtistListItem.asTarget(): ArtworkTarget {
     // Captured locally: Kotlin will not smart-cast a property declared in
     // another module, because it cannot prove the getter is stable.
     val logo = logoArtworkId
@@ -747,7 +820,7 @@ private fun ArtistListItem.asTarget(): ArtworkTarget {
 private fun ArtistListItem.displayArtworkId(): String? =
     if (preferLogo) logoArtworkId ?: artworkId else artworkId ?: logoArtworkId
 
-private fun AlbumListItem.asTarget() =
+internal fun AlbumListItem.asTarget() =
     ArtworkTarget(title = title, subtitle = artistName, artworkId = artworkId, noun = "cover")
 
 @Composable
@@ -780,13 +853,18 @@ private fun PlaylistList(vm: LibraryViewModel) {
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun TrackRow(
+internal fun TrackRow(
     track: TrackListItem,
     isCurrent: Boolean,
     showArtwork: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onToggleLoved: () -> Unit,
+    /**
+     * In place of the heart. The search page puts what the row can do there,
+     * so the column reads the same all the way down its groups.
+     */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     ListItem(
         modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
@@ -822,13 +900,17 @@ private fun TrackRow(
             }
         },
         trailingContent = {
-            IconButton(onClick = onToggleLoved) {
-                Icon(
-                    if (track.loved) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    contentDescription = if (track.loved) "Remove from Loved" else "Add to Loved",
-                    tint = if (track.loved) MaterialTheme.colorScheme.primary
-                           else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            if (trailing != null) {
+                trailing()
+            } else {
+                IconButton(onClick = onToggleLoved) {
+                    Icon(
+                        if (track.loved) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = if (track.loved) "Remove from Loved" else "Add to Loved",
+                        tint = if (track.loved) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
     )
@@ -836,10 +918,11 @@ private fun TrackRow(
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun ArtistRow(
+internal fun ArtistRow(
     artist: ArtistListItem,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     ListItem(
         modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
@@ -848,6 +931,7 @@ private fun ArtistRow(
             Text("${artist.albumCount} albums · ${artist.trackCount} tracks")
         },
         leadingContent = { Artwork(artist.displayArtworkId(), circular = true) },
+        trailingContent = trailing,
     )
 }
 
@@ -918,10 +1002,11 @@ private fun ArtistCell(
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-private fun AlbumRow(
+internal fun AlbumRow(
     album: AlbumListItem,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     ListItem(
         modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
@@ -937,6 +1022,7 @@ private fun AlbumRow(
                  maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         leadingContent = { Artwork(album.artworkId) },
+        trailingContent = trailing,
     )
 }
 

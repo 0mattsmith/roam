@@ -22,7 +22,11 @@ object LibraryQueries {
                al.id AS albumId, al.artworkId AS albumArtworkId, al.year AS albumYear,
                al.discTotal AS albumDiscTotal,
                t.trackNo AS trackNo, t.discNo AS discNo, t.durationMs AS durationMs,
-               t.artworkId AS artworkId, t.loved AS loved,
+               -- A track with no picture of its own shows its album's. A cover
+               -- that came from the folder (every download's) lands on the ALBUM
+               -- row only, so without this a downloaded track drew nothing in a
+               -- list, in Now Playing or in the car, though its album had one.
+               COALESCE(t.artworkId, al.artworkId) AS artworkId, t.loved AS loved,
                t.startMs AS startMs, t.endMs AS endMs
         FROM tracks t
         JOIN artists ar  ON ar.id  = t.artistId
@@ -284,6 +288,104 @@ object LibraryQueries {
             arrayOf(like, like, like),
         )
     }
+
+    // ---- the search page ------------------------------------------------------
+    //
+    // One term, three kinds of row, each with a count for its See all. The term
+    // is BOUND, never interpolated, and escaped as well: a percent sign or an
+    // underscore someone types is a character to find, not a wildcard.
+    //
+    // Each list puts what STARTS with the term first. Typing a title should
+    // find that song, and in plain artist order a search for "wonder" buries
+    // Wonderwall under everyone alphabetically ahead of Oasis who used the word.
+
+    /** Every track the term matches, by title, artist or album. */
+    fun searchTracks(term: String, limit: Int? = null): SupportSQLiteQuery {
+        val anywhere = containing(term)
+        return SimpleSQLiteQuery(
+            "$TRACK_COLUMNS AND $TRACK_MATCH " +
+                "ORDER BY CASE WHEN t.title LIKE ? ESCAPE '\\' THEN 0 " +
+                "WHEN t.title LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END, " +
+                "${TrackSort.ARTIST.orderBy}${limitClause(limit)}",
+            arrayOf(anywhere, anywhere, anywhere, startingWith(term), anywhere),
+        )
+    }
+
+    fun searchTracksCount(term: String): SupportSQLiteQuery {
+        val anywhere = containing(term)
+        return SimpleSQLiteQuery(
+            "SELECT COUNT(*) FROM ($TRACK_COLUMNS AND $TRACK_MATCH)",
+            arrayOf(anywhere, anywhere, anywhere),
+        )
+    }
+
+    /**
+     * Top-level artists, as the Artists tab lists them, matched on their own
+     * name or on the name of anyone grouped into them. Searching an alias
+     * finds whoever it was folded into, rather than nothing.
+     */
+    fun searchArtists(term: String, limit: Int? = null): SupportSQLiteQuery {
+        val anywhere = containing(term)
+        return SimpleSQLiteQuery(
+            "$ARTIST_COLUMNS WHERE ar.groupArtistId IS NULL AND $HAS_SOMETHING_TO_SHOW " +
+                "AND $ARTIST_MATCH " +
+                "ORDER BY CASE WHEN ar.name LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, " +
+                "${ArtistSort.NAME.orderBy}${limitClause(limit)}",
+            arrayOf(anywhere, anywhere, startingWith(term)),
+        )
+    }
+
+    fun searchArtistsCount(term: String): SupportSQLiteQuery {
+        val anywhere = containing(term)
+        return SimpleSQLiteQuery(
+            "SELECT COUNT(*) FROM artists ar " +
+                "WHERE ar.groupArtistId IS NULL AND $HAS_SOMETHING_TO_SHOW AND $ARTIST_MATCH",
+            arrayOf(anywhere, anywhere),
+        )
+    }
+
+    /**
+     * Albums by their own title or by whoever they are credited to. An album
+     * with every track removed is left out: opening it would show nothing.
+     */
+    fun searchAlbums(term: String, limit: Int? = null): SupportSQLiteQuery {
+        val anywhere = containing(term)
+        return SimpleSQLiteQuery(
+            "$ALBUM_COLUMNS WHERE al.trackCount > 0 AND $ALBUM_MATCH " +
+                "ORDER BY CASE WHEN al.title LIKE ? ESCAPE '\\' THEN 0 " +
+                "WHEN al.title LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END, " +
+                "${AlbumSort.ARTIST.orderBy}${limitClause(limit)}",
+            arrayOf(anywhere, anywhere, startingWith(term), anywhere),
+        )
+    }
+
+    fun searchAlbumsCount(term: String): SupportSQLiteQuery {
+        val anywhere = containing(term)
+        return SimpleSQLiteQuery(
+            "SELECT COUNT(*) FROM albums al JOIN artists ar ON ar.id = al.artistId " +
+                "WHERE al.trackCount > 0 AND $ALBUM_MATCH",
+            arrayOf(anywhere, anywhere),
+        )
+    }
+
+    private const val TRACK_MATCH =
+        "(t.title LIKE ? ESCAPE '\\' OR ar.name LIKE ? ESCAPE '\\' OR al.title LIKE ? ESCAPE '\\')"
+
+    private const val ARTIST_MATCH =
+        "(ar.name LIKE ? ESCAPE '\\' OR ar.id IN " +
+            "(SELECT groupArtistId FROM artists WHERE name LIKE ? ESCAPE '\\'))"
+
+    private const val ALBUM_MATCH = "(al.title LIKE ? ESCAPE '\\' OR ar.name LIKE ? ESCAPE '\\')"
+
+    /** The term with LIKE's own characters taken literally, under the ESCAPE '\\' above. */
+    private fun escaped(term: String): String =
+        term.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    private fun containing(term: String): String = "%${escaped(term)}%"
+
+    private fun startingWith(term: String): String = "${escaped(term)}%"
+
+    private fun limitClause(limit: Int?): String = limit?.let { " LIMIT $it" }.orEmpty()
 
     /** Single row lookups, for resolving one browse node. */
     fun tracksForTrack(trackId: Long): SupportSQLiteQuery =

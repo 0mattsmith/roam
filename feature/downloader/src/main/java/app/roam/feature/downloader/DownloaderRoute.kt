@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,18 +45,20 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkInfo
 import app.roam.core.database.TrackListItem
-import app.roam.feature.player.NowPlaying
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 /**
- * One search box over three different questions.
+ * One search box over two different questions.
  *
- * "Do I already have this" (Library), "what does this record contain" (Albums)
- * and "where can I get this" (YouTube) want different answers, and interleaving
- * them makes all three harder to read. Library answers from Room as you type;
+ * "What does this record contain" (Albums) and "where can I get this" (YouTube)
+ * want different answers, and interleaving them makes both harder to read.
  * Albums asks Discogs and MusicBrainz; YouTube costs a round trip through a
  * native binary, so it waits longer before asking and says so while it works.
+ *
+ * "Do I already have this" was a third tab, and is the library's search page
+ * now (docs/SEARCH.md, stage 1), which hands its term over when it sends
+ * someone here.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,12 +68,13 @@ fun DownloaderRoute(
     onOpenTrack: (Long, Boolean) -> Unit = { _, _ -> },
     /** A YouTube video id shared in from another app, queued once on arrival. */
     sharedVideoId: String? = null,
+    /** What was typed on the search page, searched for on arrival. */
+    initialQuery: String? = null,
     onSharedHandled: () -> Unit = {},
     vm: DownloaderViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val pending by vm.pending.collectAsStateWithLifecycle()
-    val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
 
     // Asked before anything is written, because the worker cannot ask later:
     // all it has by then is a search result, and a channel name is not an
@@ -118,9 +120,18 @@ fun DownloaderRoute(
     //
     // Except when a share brought us here: the queue is the thing to look at,
     // and a keyboard covering it is just in the way.
+    //
+    // Nor when the search page sent a term along: the results are what to look
+    // at, and they are already on their way.
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        if (sharedVideoId == null) runCatching { focus.requestFocus() }
+        if (sharedVideoId == null && initialQuery.isNullOrBlank()) runCatching { focus.requestFocus() }
+    }
+
+    // Once, and only into an empty box: after a rotation the box already holds
+    // whatever was typed since, and that is what the person wants searched.
+    LaunchedEffect(initialQuery) {
+        if (!initialQuery.isNullOrBlank() && state.query.isBlank()) vm.onQueryChanged(initialQuery)
     }
 
     Scaffold(
@@ -203,14 +214,13 @@ fun DownloaderRoute(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             PrimaryTabRow(selectedTabIndex = tab) {
-                Tab(tab == 0, onClick = { tab = 0 }, text = { Text("Library") })
-                Tab(tab == 1, onClick = { tab = 1 }, text = { Text("Albums") })
-                Tab(tab == 2, onClick = { tab = 2 }, text = { Text("YouTube") })
+                Tab(tab == 0, onClick = { tab = 0 }, text = { Text("Albums") })
+                Tab(tab == 1, onClick = { tab = 1 }, text = { Text("YouTube") })
             }
 
             // Only on the Albums tab, where it changes what is searched rather
             // than filtering what came back.
-            if (tab == 1) {
+            if (tab == 0) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -228,19 +238,16 @@ fun DownloaderRoute(
             // changing, which is exactly how the last two attempts at this
             // failed. This bar depends on one boolean and nothing else.
             val busy = when (tab) {
-                1 -> state.searchingAlbums
-                2 -> state.searchingYoutube || state.loadingMore
-                else -> false
+                0 -> state.searchingAlbums
+                else -> state.searchingYoutube || state.loadingMore
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
 
             when {
                 state.query.isBlank() ->
-                    Hint("Search your library, an album, or YouTube for something new")
+                    Hint("Search for an album, or YouTube, to add something new")
 
-                tab == 0 -> LibraryResults(state.library, nowPlaying, vm::play)
-
-                tab == 1 -> when {
+                tab == 0 -> when {
                     state.searchingAlbums -> Hint("Searching Discogs and MusicBrainz…")
                     state.albums.isEmpty() -> Hint(
                         if (state.compilationsOnly) {
@@ -655,52 +662,6 @@ private fun DownloadRow(
 private val PROGRESS_TEAL = Color(0xFF00897B)
 private val DONE_GREEN = Color(0xFF2E7D32)
 private val FAILED_RED = Color(0xFFC62828)
-
-@Composable
-private fun LibraryResults(
-    tracks: List<TrackListItem>,
-    nowPlaying: NowPlaying,
-    onPlay: (TrackListItem) -> Unit,
-) {
-    if (tracks.isEmpty()) {
-        Hint("Nothing in your library matches")
-        return
-    }
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(tracks.size, key = { tracks[it].id }) { index ->
-            val track = tracks[index]
-            // This screen has no mini-player, so the row is the only thing
-            // that can show a tap did anything.
-            val current = track.id == nowPlaying.trackId
-            val sounding = current && nowPlaying.isPlaying
-            ListItem(
-                modifier = Modifier.clickable { onPlay(track) },
-                headlineContent = {
-                    Text(
-                        track.title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (current) MaterialTheme.colorScheme.primary else Color.Unspecified,
-                    )
-                },
-                supportingContent = {
-                    Text(
-                        "${track.artistName} · ${track.albumTitle}",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                trailingContent = {
-                    Icon(
-                        if (sounding) Icons.Filled.GraphicEq else Icons.Filled.PlayArrow,
-                        contentDescription = if (sounding) "Playing" else "Play",
-                        tint = if (current) MaterialTheme.colorScheme.primary else LocalContentColor.current,
-                    )
-                },
-            )
-        }
-    }
-}
 
 /**
  * A result drawn as the track it is: title, then artist, then album and year.

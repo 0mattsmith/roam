@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -92,6 +94,11 @@ fun TrackActionSheet(
     onRevert: () -> Unit,
     onRemove: () -> Unit,
     onArtworkPicked: (Uri) -> Unit,
+    /**
+     * Offered where the row has no heart of its own: the search page, whose
+     * rows end in what they can do instead.
+     */
+    onToggleLoved: (() -> Unit)? = null,
 ) {
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
@@ -115,6 +122,23 @@ fun TrackActionSheet(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
             )
+
+            onToggleLoved?.let { toggle ->
+                ListItem(
+                    modifier = Modifier.clickable(onClick = toggle),
+                    headlineContent = {
+                        Text(if (track.loved) "Remove from Loved" else "Add to Loved")
+                    },
+                    leadingContent = {
+                        Icon(
+                            if (track.loved) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = null,
+                            tint = if (track.loved) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+            }
 
             ListItem(
                 modifier = Modifier.clickable(onClick = onGoToAlbum),

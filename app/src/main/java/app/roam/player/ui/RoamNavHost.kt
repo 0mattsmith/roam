@@ -1,5 +1,6 @@
 package app.roam.player.ui
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,10 @@ object Routes {
     const val LIBRARY_AT = "library?track={track}&edit={edit}"
     fun libraryAt(trackId: Long, edit: Boolean) = "library?track=$trackId&edit=$edit"
     const val DOWNLOADER = "downloader"
+    /** The downloader, handed a term from the search page. The argument is optional. */
+    const val DOWNLOADER_AT = "downloader?q={q}"
+    fun downloader(query: String?): String =
+        if (query.isNullOrBlank()) DOWNLOADER else "downloader?q=${Uri.encode(query)}"
     const val SETTINGS = "settings"
     const val REMOVED = "settings/removed"
     const val FROZEN = "settings/frozen"
@@ -102,7 +107,7 @@ fun RoamNavHost(
                         revealForEditing = entry.arguments?.getBoolean("edit") == true,
                         onOpenPlayer = { playerExpanded = true },
                         onOpenSettings = { go(Routes.SETTINGS) },
-                        onOpenDownloader = { go(Routes.DOWNLOADER) },
+                        onOpenDownloader = { query -> go(Routes.downloader(query)) },
                     )
 
                     if (playerExpanded) {
@@ -113,11 +118,17 @@ fun RoamNavHost(
                     }
                 }
             }
-            composable(Routes.DOWNLOADER) {
+            composable(
+                Routes.DOWNLOADER_AT,
+                arguments = listOf(
+                    navArgument("q") { type = NavType.StringType; nullable = true; defaultValue = null },
+                ),
+            ) { entry ->
                 DownloaderRoute(
                     onBack = back,
                     sharedVideoId = sharedVideoId,
                     onSharedHandled = onSharedHandled,
+                    initialQuery = entry.arguments?.getString("q"),
                     // popUpTo so the library is not stacked twice: this is a
                     // jump back to where you already were, not a new screen.
                     onOpenTrack = { id, edit ->
