@@ -22,6 +22,7 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import app.roam.core.database.TrackDao
 import app.roam.core.datastore.PlaybackStateStore
+import app.roam.core.datastore.SettingsRepository
 import app.roam.core.datastore.SavedPlayback
 import app.roam.core.model.SourceType
 import androidx.sqlite.db.SupportSQLiteQuery
@@ -67,6 +68,7 @@ class RoamLibraryService : MediaLibraryService() {
     @Inject lateinit var shuffleEngine: ShuffleEngine
     @Inject lateinit var tracks: TrackDao
     @Inject lateinit var playbackState: PlaybackStateStore
+    @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var cache: SimpleCache
     @Inject lateinit var providers: Map<SourceType, @JvmSuppressWildcards Provider<SourceProvider>>
 
@@ -79,6 +81,13 @@ class RoamLibraryService : MediaLibraryService() {
      */
     private val serviceJob = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + serviceJob)
+
+    /** The player's own thread, for what has to touch it: the volume leveller. */
+    private val mainScope = CoroutineScope(Dispatchers.Main.immediate + serviceJob)
+
+    /** Hears everything played, for Even out volume (docs/VOLUME.md). */
+    private val meter = LoudnessMeter()
+    private var leveller: VolumeLeveller? = null
 
     private fun <T> CoroutineScope.future(block: suspend () -> T): ListenableFuture<T> {
         val settable = SettableFuture.create<T>()
@@ -104,7 +113,9 @@ class RoamLibraryService : MediaLibraryService() {
             .setUpstreamDataSourceFactory(drive.dataSourceFactory())
             .setFlags(PlayerModule.CACHE_FLAGS)
 
-        val player = ExoPlayer.Builder(this)
+        // The default renderers, with a loudness meter in the audio chain. It
+        // changes nothing it hears; see MeteringAudioProcessor.
+        val player = ExoPlayer.Builder(this, MeteringRenderersFactory(this, meter))
             .setMediaSourceFactory(DefaultMediaSourceFactory(cacheFactory))
             .setHandleAudioBecomingNoisy(true)
             .setAudioAttributes(
@@ -121,6 +132,10 @@ class RoamLibraryService : MediaLibraryService() {
         // rather than an empty Now Playing screen.
         player.addListener(SaveOnChange())
         player.addListener(CountPlays())
+        leveller = VolumeLeveller(player, meter, tracks, settings, mainScope).also {
+            player.addListener(it)
+            it.start()
+        }
         startSaveLoop(player)
         scope.launch { restoreQueue(player) }
 
@@ -148,6 +163,8 @@ class RoamLibraryService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        leveller?.release()
+        leveller = null
         serviceJob.cancel()
         session?.run { player.release(); release() }
         session = null

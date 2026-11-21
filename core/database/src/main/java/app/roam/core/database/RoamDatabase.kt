@@ -19,7 +19,7 @@ import javax.inject.Singleton
         SourceEntity::class, ArtistEntity::class, AlbumEntity::class,
         TrackEntity::class, ArtworkEntity::class, DocRevisionEntity::class,
     ],
-    version = 19,
+    version = 20,
     exportSchema = true,
 )
 @TypeConverters(RoamConverters::class)
@@ -273,6 +273,18 @@ val MIGRATION_18_19 = object : Migration(18, 19) {
     }
 }
 
+/**
+ * Even out volume (docs/VOLUME.md): what each track measured, and each track's
+ * own adjustment. Null and 0 for every existing row -- nothing has been
+ * measured yet, and nobody has turned anything up or down.
+ */
+val MIGRATION_19_20 = object : Migration(19, 20) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tracks ADD COLUMN loudnessLufs REAL")
+        db.execSQL("ALTER TABLE tracks ADD COLUMN volumePercent INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -285,7 +297,7 @@ object DatabaseModule {
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                 MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
                 MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
-                MIGRATION_18_19,
+                MIGRATION_18_19, MIGRATION_19_20,
             )
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()

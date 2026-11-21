@@ -44,11 +44,13 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -75,6 +77,8 @@ import app.roam.core.database.TrackListItem
 import app.roam.core.model.TagFormat
 import app.roam.core.model.TagMap
 import app.roam.core.model.TagState
+import app.roam.core.model.TrackVolume
+import kotlin.math.roundToInt
 import app.roam.data.catalog.MetadataSource
 import app.roam.data.catalog.TrackEdits
 
@@ -296,6 +300,7 @@ fun TrackEditDialog(
     var advancedOpen by rememberSaveable { mutableStateOf(false) }
     var startAt by rememberSaveable(trackId) { mutableStateOf(formatClip(initial.startMs)) }
     var endAt by rememberSaveable(trackId) { mutableStateOf(formatClip(initial.endMs)) }
+    var volume by rememberSaveable(trackId) { mutableIntStateOf(initial.volumePercent) }
     var lyrics by rememberSaveable(trackId) { mutableStateOf(initial.lyrics.orEmpty()) }
     var fetchingLyrics by remember(trackId) { mutableStateOf(false) }
     var lyricNote by rememberSaveable(trackId) { mutableStateOf<String?>(null) }
@@ -330,6 +335,7 @@ fun TrackEditDialog(
         startMs = parseClip(startAt),
         endMs = parseClip(endAt),
         lyrics = lyrics,
+        volumePercent = volume,
     )
 
     // Nothing typed means nothing to save, and the button says so rather than
@@ -469,6 +475,7 @@ fun TrackEditDialog(
                     groupArtist = groupArtist, onGroupArtist = { groupArtist = it },
                     startAt = startAt, onStartAt = { startAt = it },
                     endAt = endAt, onEndAt = { endAt = it },
+                    volume = volume, onVolume = { volume = it },
                 )
 
                 AlbumArtBlock(
@@ -681,6 +688,7 @@ private fun AdvancedOptions(
     groupArtist: String, onGroupArtist: (String) -> Unit,
     startAt: String, onStartAt: (String) -> Unit,
     endAt: String, onEndAt: (String) -> Unit,
+    volume: Int, onVolume: (Int) -> Unit,
 ) {
     Column {
         Row(
@@ -738,8 +746,9 @@ private fun AdvancedOptions(
             Text(
                 // Worth saying plainly: these do not travel. Somebody relying on
                 // a trim point should know no other player will honour it.
-                "No tag format has a name for these, so they live in Roam and in " +
-                    "the metadata files, and no other player will see them.",
+                "No tag format has a name for these, so they live in Roam — the " +
+                    "playback window in the metadata files too — and no other " +
+                    "player will see them.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -760,8 +769,61 @@ private fun AdvancedOptions(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            VolumeField(volume, onVolume)
         }
     }
+}
+
+/**
+ * The track's own volume, -100% to +100% of its level (docs/VOLUME.md).
+ *
+ * On top of Even out volume, for the track that still sounds wrong after it,
+ * and on its own when that is off. Stepped in fives, so the thumb can find
+ * zero again, and with Reset for when it cannot.
+ */
+@Composable
+private fun VolumeField(volume: Int, onVolume: (Int) -> Unit) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Volume",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                volumeLabel(volume),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (volume == 0) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.primary,
+            )
+            if (volume != 0) {
+                TextButton(onClick = { onVolume(0) }) { Text("Reset") }
+            }
+        }
+        Slider(
+            value = volume.toFloat(),
+            onValueChange = {
+                val step = TrackVolume.STEP_PERCENT
+                onVolume(TrackVolume.clamp((it / step).roundToInt() * step))
+            },
+            valueRange = TrackVolume.MIN_PERCENT.toFloat()..TrackVolume.MAX_PERCENT.toFloat(),
+            steps = (TrackVolume.MAX_PERCENT - TrackVolume.MIN_PERCENT) / TrackVolume.STEP_PERCENT - 1,
+        )
+        Text(
+            "Added to Even out volume, or used alone when that is off. -100% is " +
+                "silent, +100% doubles the level.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** "+25% (+1.9 dB)": the percentage someone chose, and what it does in the unit the ear uses. */
+private fun volumeLabel(percent: Int): String {
+    if (percent == 0) return "No change"
+    val db = TrackVolume.gainDb(percent) ?: return "Silent"
+    return "%+d%% (%+.1f dB)".format(percent, db)
 }
 
 /**

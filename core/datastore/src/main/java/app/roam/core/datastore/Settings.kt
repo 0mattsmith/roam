@@ -72,6 +72,16 @@ data class RoamSettings(
     val showLyrics: Boolean = true,
 
     /**
+     * Even out volume: every track brought to one level (docs/VOLUME.md), so
+     * a quiet old master is not drowned out by the loud new one after it.
+     *
+     * On by default. It is the reason the setting exists, it changes nothing
+     * until a track has been measured, and switching it off puts everything
+     * back exactly -- the measurements are kept either way.
+     */
+    val levelVolume: Boolean = true,
+
+    /**
      * Write found lyrics back beside the track as .lrc / .txt.
      *
      * Same bargain as saveArtistPhotosToDrive: it makes the words survive a
@@ -182,6 +192,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
         val DISCOGS_TOKEN = stringPreferencesKey("discogs_token")
         val JAMENDO_CLIENT_ID = stringPreferencesKey("jamendo_client_id")
         val SHOW_LYRICS = booleanPreferencesKey("show_lyrics")
+        val LEVEL_VOLUME = booleanPreferencesKey("level_volume")
         val SAVE_LYRICS = booleanPreferencesKey("save_lyrics_to_drive")
         val WIFI_ONLY_LARGE = booleanPreferencesKey("wifi_only_large_transfers")
         val WEB_ENABLED = booleanPreferencesKey("web_server_enabled")
@@ -220,6 +231,7 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
             discogsToken = p[K.DISCOGS_TOKEN],
             jamendoClientId = p[K.JAMENDO_CLIENT_ID],
             showLyrics = p[K.SHOW_LYRICS] ?: true,
+            levelVolume = p[K.LEVEL_VOLUME] ?: true,
             saveLyricsToDrive = p[K.SAVE_LYRICS] ?: true,
             wifiOnlyForLargeTransfers = p[K.WIFI_ONLY_LARGE] ?: true,
             webServerEnabled = p[K.WEB_ENABLED] ?: false,
@@ -297,6 +309,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val ctx
 
     suspend fun setShowLyrics(v: Boolean) {
         ctx.dataStore.edit { it[K.SHOW_LYRICS] = v }
+    }
+
+    suspend fun setLevelVolume(v: Boolean) {
+        ctx.dataStore.edit { it[K.LEVEL_VOLUME] = v }
     }
 
     suspend fun setSaveLyricsToDrive(v: Boolean) {

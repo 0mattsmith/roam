@@ -9,6 +9,7 @@ import app.roam.core.database.TrackDao
 import app.roam.core.model.Genres
 import app.roam.core.model.Ids
 import app.roam.core.model.TagState
+import app.roam.core.model.TrackVolume
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -88,6 +89,13 @@ data class TrackEdits(
      * and stop the tag pass ever refreshing it.
      */
     val lyrics: String? = null,
+    /**
+     * The track's own volume, -100 to +100 percent of its level, on top of
+     * levelling (docs/VOLUME.md). A playback preference like the trim points,
+     * and written the same way: separately, and without marking the track
+     * edited.
+     */
+    val volumePercent: Int = 0,
 )
 
 /**
@@ -189,6 +197,7 @@ class TrackEditor @Inject constructor(
             startMs = track.startMs,
             endMs = track.endMs,
             lyrics = track.lyrics,
+            volumePercent = track.volumePercent,
         )
         TrackEditState(
             edits = edits,
@@ -213,6 +222,7 @@ class TrackEditor @Inject constructor(
             // right, and marking the track edited would stop the tag pass ever
             // refreshing it again.
             tracks.setClip(trackId, edits.startMs, edits.endMs)
+            tracks.setVolumePercent(trackId, TrackVolume.clamp(edits.volumePercent))
 
             // Same reasoning, same separation: lyrics are not tags. Stamping
             // lyricsAttemptedAt is what stops the automatic lookup coming along

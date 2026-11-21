@@ -57,7 +57,7 @@ Multi-module, offline-first. `:app` wires everything; nothing else depends on it
 :data:source-drive  Drive OAuth, files.list, changes.list, ranged reads
 :data:catalog       SyncWorker, TagExtractor, ArtworkStore, ArtworkProvider
 :data:acquire       DownloadWorker, YoutubeSource, matching, tagging, Holdings, AddLedger
-:feature:player     MediaLibraryService, browse tree, shuffle, prefetch
+:feature:player     MediaLibraryService, browse tree, shuffle, prefetch, levelling
 :feature:library    phone browse UI, the search page, adding music (docs/SEARCH.md)
 :feature:nowplaying phone player UI
 :feature:settings   settings UI
@@ -81,7 +81,7 @@ other — route between them through `:app`.
    `ArtworkProvider.uri(...)`.
 
 3. **Sync never writes user state.** `loved`, `lovedAt`, `playCount`,
-   `skipCount`, `lastPlayedAt`, `hidden` belong to the user. Sync owns
+   `skipCount`, `lastPlayedAt`, `hidden`, `volumePercent` belong to the user. Sync owns
    file-derived columns only. Getting this wrong wipes someone's loved list on
    a re-scan.
 
@@ -235,6 +235,14 @@ other — route between them through `:app`.
     query, and the person's choice wins. Nothing ever persists an empty queue,
     because the player is briefly empty while the service starts and letting
     that land would wipe the state the restore is about to read.
+
+13. **Volume is changed where the audio is heard, never where it is decoded.**
+    Even out volume lowers through the player's volume and lifts through a
+    `LoudnessEnhancer` on its audio session, both set at
+    `onMediaItemTransition`. A gain inside the audio pipeline meets the next
+    track up to a second before it is heard and opens every track at the last
+    one's level. The one processor in the chain, `MeteringAudioProcessor`,
+    measures and changes nothing (docs/VOLUME.md).
 
 ## Phase plan
 
@@ -446,6 +454,11 @@ argued about mid-flight:
 | A track shows a filename-derived title forever | `userEdited` on a row whose tags were never read. The flag stops the tag pass writing metadata, so it is frozen on whatever it showed when the flag landed. `frozenOnGuess` counts them, the banner says so, and "Needs a look" hands them back — Roam must not repair these silently, because the flag records that an edit happened, never why |
 | A tag read that failed once never gets retried | By design — `FAILED` is what stops a file with no tags being re-read every sync. `retryFailedTags` is the way back, and Settings → Read tags is the only one |
 | The Save button never lights up | `comparable()` is not normalising a field. Blank and absent mean the same thing to this form but are different values, and clip times must be round-tripped through `formatClip` or a non-whole-second value reads as changed on open |
+| Every track opens at the last one's volume for a moment | The gain was put in an `AudioProcessor`. The processor runs before the AudioTrack's buffer and meets the next track up to a second early. Levelling lowers through the player's volume and lifts through a `LoudnessEnhancer`, both set at `onMediaItemTransition`, where the audio is heard (docs/VOLUME.md). `MeteringAudioProcessor` only measures |
+| Even out volume does nothing to a track | It has not been measured. A track is measured by being listened to, and kept once three quarters of it, or four minutes, was heard -- a skip measures nothing. Until then it takes its album's average, and a track from an album never played through plays as it is. If a track that DID play through is still unmeasured, the leveller never got its length: the stored duration is 0 before the tag pass, which is why it takes `player.duration` once READY |
+| Quiet tracks are lowered but never lifted, on one phone | The device would not give Roam a `LoudnessEnhancer` on that audio session. Lowering goes through the player's volume and still works. By design, not a bug to fix by retrying |
+| A replaced file plays at the old file's level | `loudnessLufs` is a fact about the bytes. `updateFileFacts` clears it when the revision changes -- and only then, so a file that merely moved keeps its measurement |
+| Mono tracks are lifted 3 dB too far | The meter counted the one channel once. BS.1770's dual-mono weighting counts it twice, because it plays out of both speakers (`LoudnessMeter.weightsFor`) |
 | The last second is clipped off every track | `endMs` fell back to the stored duration. Unset means `C.TIME_END_OF_SOURCE`, not a number |
 | A removed track comes back after a sync | Its row was deleted instead of flagged, so the crawl found the file as new |
 | A removed track still shows in one list | That query used `WHERE` after `TRACK_COLUMNS` instead of `AND`, dropping the hidden filter — or it needs brackets, since `AND` binds tighter than `OR` |

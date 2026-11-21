@@ -221,6 +221,19 @@ data class TrackEntity(
      */
     val startMs: Long? = null,
     val endMs: Long? = null,
+    /**
+     * How loud the audio is, in LUFS, as measured the first time most of the
+     * track was heard (docs/VOLUME.md). A fact about the FILE rather than user
+     * state: sync clears it when the file's bytes change, and nothing else
+     * writes over it once it is there.
+     */
+    val loudnessLufs: Float? = null,
+    /**
+     * The track's own volume, -100 (silent) to +100 (twice the level), on top
+     * of levelling. User state, like the trim points: neither sync nor the tag
+     * pass may write it.
+     */
+    val volumePercent: Int = 0,
     val loved: Boolean = false,
     val lovedAt: Long? = null,
     val playCount: Int = 0,

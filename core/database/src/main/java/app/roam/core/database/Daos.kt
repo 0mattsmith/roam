@@ -36,10 +36,17 @@ interface TrackDao {
      * pass is the only thing that ever learns a duration, a corrected file's
      * duration stayed 0 forever.
      */
+    //
+    // loudnessLufs is a measurement of the old bytes, so it goes when they do.
+    // Compared against the stored revision rather than cleared outright: SET
+    // reads the row as it was, and a file that only MOVED keeps its revision,
+    // and its measurement with it.
     @Query("""
         UPDATE tracks SET remoteRevision = :remoteRevision, mimeType = :mimeType,
                           sizeBytes = :sizeBytes, fileName = :fileName,
-                          folderPath = :folderPath, tagState = :tagState
+                          folderPath = :folderPath, tagState = :tagState,
+                          loudnessLufs = CASE WHEN remoteRevision IS :remoteRevision
+                                              THEN loudnessLufs ELSE NULL END
         WHERE id = :id
     """)
     suspend fun updateFileFacts(
@@ -483,6 +490,35 @@ interface TrackDao {
     @Query("UPDATE tracks SET startMs = :startMs, endMs = :endMs WHERE id = :id")
     suspend fun setClip(id: Long, startMs: Long?, endMs: Long?)
 
+    /** A track's own volume. A playback preference, like [setClip]: no userEdited. */
+    @Query("UPDATE tracks SET volumePercent = :percent WHERE id = :id")
+    suspend fun setVolumePercent(id: Long, percent: Int)
+
+    /**
+     * What the player needs to level one track (docs/VOLUME.md): its own
+     * measurement, or while it has none its album's average. An album is
+     * mastered as a whole, so the first track heard stands for the rest until
+     * they have been heard themselves. Observed, so an adjustment made in the
+     * editor while the track plays is heard straight away.
+     */
+    @Query("""
+        SELECT COALESCE(t.loudnessLufs,
+                   (SELECT AVG(o.loudnessLufs) FROM tracks o
+                    WHERE o.albumId = t.albumId AND o.loudnessLufs IS NOT NULL)) AS loudnessLufs,
+               t.volumePercent AS volumePercent
+        FROM tracks t
+        WHERE t.id = :id
+    """)
+    fun levelFor(id: Long): Flow<TrackLevel?>
+
+    /**
+     * A measurement, kept once. A track already measured is not measured over:
+     * the first full hearing is as good as any later one, and a stable number
+     * is what stops its level wandering from play to play.
+     */
+    @Query("UPDATE tracks SET loudnessLufs = :lufs WHERE id = :id AND loudnessLufs IS NULL")
+    suspend fun setLoudnessIfMissing(id: Long, lufs: Float)
+
     /**
      * Caches a lookup, hit or miss.
      *
@@ -779,6 +815,12 @@ data class TrackListItem(
 )
 
 data class ShuffleRow(val id: Long, val loved: Boolean, val skipCount: Int, val lastPlayedAt: Long?)
+
+/** One track's levelling: its loudness, measured or its album's, and its own adjustment. */
+data class TrackLevel(
+    val loudnessLufs: Float?,
+    val volumePercent: Int,
+)
 
 /**
  * What the crawl compares a file against: its bytes, and where its row is filed.

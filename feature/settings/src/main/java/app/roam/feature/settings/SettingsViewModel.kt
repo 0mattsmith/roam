@@ -243,6 +243,14 @@ class SettingsViewModel @Inject constructor(
         _tagMessage.value = null
     }
 
+    val levelVolume = settings.settings
+        .map { it.levelVolume }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    fun setLevelVolume(v: Boolean) = viewModelScope.launch {
+        settings.setLevelVolume(v)
+    }
+
     val showLyrics = settings.settings
         .map { it.showLyrics }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)

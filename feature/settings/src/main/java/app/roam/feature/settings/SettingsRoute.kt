@@ -191,6 +191,23 @@ fun SettingsRoute(
             )
 
             Spacer(Modifier.height(24.dp))
+            SectionHeader("Playback")
+
+            val levelVolume by vm.levelVolume.collectAsStateWithLifecycle()
+            SwitchRow(
+                title = "Even out volume",
+                // Straight about the first play: nothing is downloaded to
+                // measure a track, so it is measured by being listened to.
+                subtitle = "Plays quiet tracks louder and loud ones quieter, so " +
+                    "everything sits at one level. A track is measured the first " +
+                    "time it plays through, and until then it takes its album's " +
+                    "level. Any track can be turned up or down in Edit details, " +
+                    "under Advanced options.",
+                checked = levelVolume,
+                onChange = vm::setLevelVolume,
+            )
+
+            Spacer(Modifier.height(24.dp))
             SectionHeader("Now playing")
 
             val showLyrics by vm.showLyrics.collectAsStateWithLifecycle()
