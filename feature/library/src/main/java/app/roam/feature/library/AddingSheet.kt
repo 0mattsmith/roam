@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
@@ -42,6 +43,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,6 +90,23 @@ internal fun AddMusicHost(
         }
     }
 
+    // The discography's place, out here rather than in the sheet: the sheet
+    // leaves the composition while an album opened from it is up, and Back
+    // from the album should land where you were.
+    //
+    // Started over for a new order, a new filter or a new artist. The rows
+    // are keyed, and a keyed LazyColumn keeps its FIRST VISIBLE row in view
+    // through a reorder -- so flipping Newest first to Oldest first used to
+    // follow the newest release down to the bottom of the list. Saveable, so
+    // a rotation keeps the place all the same.
+    val discographyList = rememberSaveable(
+        artist?.name,
+        artist?.source,
+        artist?.sort,
+        artist?.includeCompilations,
+        saver = LazyListState.Saver,
+    ) { LazyListState() }
+
     // The artist sheet waits under an album opened from it, and comes back
     // when the album is put away: Back returns, here as on the page.
     val discography = artist
@@ -98,6 +117,7 @@ internal fun AddMusicHost(
             onOpenRelease = addVm::openArtistRelease,
             onSort = addVm::setReleaseSort,
             onIncludeCompilations = addVm::setIncludeCompilations,
+            listState = discographyList,
         )
     }
 

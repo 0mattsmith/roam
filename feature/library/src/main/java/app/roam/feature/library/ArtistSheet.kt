@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
@@ -40,6 +41,12 @@ internal fun ArtistSheet(
     onOpenRelease: (ReleaseMatch) -> Unit,
     onSort: (ReleaseSort) -> Unit,
     onIncludeCompilations: (Boolean) -> Unit,
+    /**
+     * The discography's place. Held by the caller, because this sheet leaves
+     * the composition while an album opened from it is up, and the caller
+     * starts it over whenever the order changes.
+     */
+    listState: LazyListState,
 ) {
     var sortOpen by remember { mutableStateOf(false) }
 
@@ -178,7 +185,7 @@ internal fun ArtistSheet(
                 }
             }
 
-            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+            LazyColumn(Modifier.heightIn(max = 420.dp), state = listState) {
                 items(artist.releases.size, key = { artist.releases[it].id }) { index ->
                     val release = artist.releases[index]
                     ListItem(
