@@ -137,6 +137,7 @@ dependencies {
     implementation(projects.data.sourceApi)
     implementation(projects.data.sourceDrive)
     implementation(projects.data.catalog)
+    implementation(projects.data.acquire)
     implementation(projects.feature.player)
     implementation(projects.feature.library)
     implementation(projects.feature.nowplaying)

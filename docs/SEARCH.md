@@ -238,8 +238,11 @@ Ordered so each is worth having alone, and the first is the complaint.
      drill. They are not a live query.
 2. **Play next and Add to queue. Built.** In every track sheet, and on an
    album header's sheet for the whole album. See the section above.
-3. **`:data:acquire`.** The move, and no visible change. Its own step, so a
-   broken build points at the move and not at a feature.
+3. **`:data:acquire`. Built.** The move, and no visible change. Its own step,
+   so a broken build points at the move and not at a feature. Everything that
+   runs without a screen went: the worker and its request, `YoutubeSource`,
+   `AlbumPlacement`, the matching and tagging behind them, and `DownloadStatus`.
+   The held check and `resolveTrackId` became `Holdings`.
 4. **Music you do not have.** The second group, the + and its states, the held
    rules, the sheets moving across. The downloader screen retires.
 

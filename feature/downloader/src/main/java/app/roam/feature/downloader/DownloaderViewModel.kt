@@ -1,5 +1,16 @@
 package app.roam.feature.downloader
 
+import app.roam.data.acquire.AlbumPlacement
+import app.roam.data.acquire.DownloadRequest
+import app.roam.data.acquire.DownloadStatus
+import app.roam.data.acquire.DownloadWorker
+import app.roam.data.acquire.Holdings
+import app.roam.data.acquire.PendingDownload
+import app.roam.data.acquire.TrackIdentifier
+import app.roam.data.acquire.VideoIdentity
+import app.roam.data.acquire.YoutubeResult
+import app.roam.data.acquire.YoutubeSource
+
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -109,29 +120,6 @@ data class ArtistUiState(
         }
 }
 
-/** One row of the download queue. */
-data class DownloadStatus(
-    val id: String,
-    val title: String,
-    val artist: String,
-    /** Null only if the tag could not be decoded; without it, retry is impossible. */
-    val request: DownloadRequest?,
-    val state: WorkInfo.State,
-    val progress: Float,
-    /**
-     * Why it failed, when the worker knew. A refused duration match is not a
-     * network problem and retrying will not fix it, so saying so is the whole
-     * difference between a useful row and a mysterious one.
-     */
-    val error: String? = null,
-) {
-    val finished: Boolean get() = state.isFinished
-    val running: Boolean get() = state == WorkInfo.State.RUNNING
-    val failed: Boolean
-        get() = state == WorkInfo.State.FAILED || state == WorkInfo.State.CANCELLED
-    val succeeded: Boolean get() = state == WorkInfo.State.SUCCEEDED
-}
-
 data class SearchUiState(
     val query: String = "",
     val youtube: List<YoutubeResult> = emptyList(),
@@ -164,6 +152,7 @@ class DownloaderViewModel @Inject constructor(
     private val discogs: Discogs,
     private val settings: SettingsRepository,
     private val identifier: TrackIdentifier,
+    private val holdings: Holdings,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SearchUiState())
@@ -179,22 +168,7 @@ class DownloaderViewModel @Inject constructor(
     val downloads: StateFlow<List<DownloadStatus>> =
         WorkManager.getInstance(app)
             .getWorkInfosByTagFlow(DownloadWorker.TAG_ALL)
-            .map { infos ->
-                infos.map { info ->
-                    val request = DownloadWorker.requestOf(info)
-                    DownloadStatus(
-                        id = info.id.toString(),
-                        title = request?.title ?: "Track",
-                        artist = request?.artist.orEmpty(),
-                        request = request,
-                        state = info.state,
-                        // Absent until the worker reports any, which for a
-                        // queued job is never.
-                        progress = info.progress.getFloat(DownloadWorker.KEY_PROGRESS, 0f),
-                        error = info.outputData.getString(DownloadWorker.KEY_ERROR),
-                    )
-                }
-            }
+            .map { infos -> infos.map(DownloadStatus::of) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
@@ -626,12 +600,7 @@ class DownloaderViewModel @Inject constructor(
     ): List<AlbumTrackRow> {
         if (release.isEmpty()) return emptyList()
 
-        val held = runCatching {
-            tracks.listItemsRaw(LibraryQueries.search(albumTitle, TrackSort.ALBUM, LIMIT))
-        }.getOrDefault(emptyList())
-            .filter { Ids.normalise(it.albumTitle) == Ids.normalise(albumTitle) }
-            .map { Ids.normalise(it.title) }
-            .toSet()
+        val held = holdings.heldTitles(albumTitle)
 
         return release.map { AlbumTrackRow(it, inLibrary = Ids.normalise(it.title) in held) }
     }
@@ -830,20 +799,7 @@ class DownloaderViewModel @Inject constructor(
      * library" are minutes apart and the UI has to say so rather than opening
      * nothing.
      */
-    suspend fun resolveTrackId(request: DownloadRequest): Long? {
-        val matches = runCatching {
-            tracks.listItemsRaw(LibraryQueries.search(request.title, TrackSort.ARTIST, LIMIT))
-        }.getOrDefault(emptyList())
-
-        val wantedTitle = Ids.normalise(request.title)
-        val wantedAlbum = Ids.normalise(request.album)
-        return matches.firstOrNull {
-            Ids.normalise(it.title) == wantedTitle && Ids.normalise(it.albumTitle) == wantedAlbum
-        }?.id
-            // The album can differ if the tags disagreed with what was queued;
-            // a title match alone is still better than refusing to open.
-            ?: matches.firstOrNull { Ids.normalise(it.title) == wantedTitle }?.id
-    }
+    suspend fun resolveTrackId(request: DownloadRequest): Long? = holdings.resolveTrackId(request)
 
     fun reportNotInLibrary() {
         _state.update { it.copy(message = "Not in your library yet — it appears after the next sync") }

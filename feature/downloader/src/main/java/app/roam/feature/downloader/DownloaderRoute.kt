@@ -1,5 +1,8 @@
 package app.roam.feature.downloader
 
+import app.roam.data.acquire.DownloadStatus
+import app.roam.data.acquire.YoutubeResult
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable

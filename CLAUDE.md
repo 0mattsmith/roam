@@ -56,6 +56,7 @@ Multi-module, offline-first. `:app` wires everything; nothing else depends on it
 :data:source-api    SourceProvider — the sync/stream contract
 :data:source-drive  Drive OAuth, files.list, changes.list, ranged reads
 :data:catalog       SyncWorker, TagExtractor, ArtworkStore, ArtworkProvider
+:data:acquire       DownloadWorker, YoutubeSource, matching, tagging, Holdings
 :feature:player     MediaLibraryService, browse tree, shuffle, prefetch
 :feature:library    phone browse UI
 :feature:nowplaying phone player UI

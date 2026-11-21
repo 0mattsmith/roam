@@ -15,7 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.activity.enableEdgeToEdge
 import app.roam.core.designsystem.RoamTheme
-import app.roam.feature.downloader.YoutubeLink
+import app.roam.data.acquire.YoutubeLink
 import app.roam.player.ui.RoamNavHost
 import dagger.hilt.android.AndroidEntryPoint
 

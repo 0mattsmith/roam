@@ -27,6 +27,7 @@ dependencies {
     implementation(projects.core.database)
     implementation(projects.core.datastore)
     implementation(projects.data.catalog)
+    implementation(projects.data.acquire)
     implementation(projects.feature.player)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
