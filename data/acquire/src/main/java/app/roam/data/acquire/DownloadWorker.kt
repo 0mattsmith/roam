@@ -21,7 +21,10 @@ import app.roam.data.source.SourceProvider
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -118,9 +121,24 @@ class DownloadWorker @AssistedInject constructor(
         // and two downloads sharing a directory would each pick up the other's
         // file. `id` is WorkManager's, so it is unique and stable across a retry.
         val staging = applicationContext.cacheDir.resolve("downloads/$id")
-        val file = youtube.download(source.url, staging, source.fileExtension) { progress ->
-            setProgressAsync(workDataOf(KEY_PROGRESS to progress))
-        }.getOrElse { cause ->
+
+        // Progress goes out through setProgress, the suspending call, from a
+        // coroutine of its own. The callback fires on yt-dlp's thread, where
+        // nothing can suspend, and the *Async form returns a ListenableFuture,
+        // which this module cannot compile against (CLAUDE.md). Through a
+        // StateFlow it is conflated too: a burst of callbacks is one write.
+        val progress = MutableStateFlow(0f)
+        val fetched = coroutineScope {
+            val reporter = launch {
+                progress.collect { setProgress(workDataOf(KEY_PROGRESS to it)) }
+            }
+            try {
+                youtube.download(source.url, staging, source.fileExtension) { progress.value = it }
+            } finally {
+                reporter.cancel()
+            }
+        }
+        val file = fetched.getOrElse { cause ->
             val why = cause.message ?: "Could not fetch the audio"
 
             // A 403 is not a network problem, it is a STALE EXTRACTOR. YouTube

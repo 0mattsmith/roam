@@ -47,10 +47,6 @@ dependencies {
     // api: DownloadStatus exposes WorkInfo.State, and the screens observing
     // the Adding list read WorkManager directly.
     api(libs.work.runtime)
-    // setProgressAsync returns a ListenableFuture, and WorkManager does not put
-    // that class on the compile classpath. The worker used to get it by
-    // accident, through :feature:player's media3; this module has no media3.
-    implementation(libs.guava.listenablefuture)
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)
     implementation(libs.okhttp)

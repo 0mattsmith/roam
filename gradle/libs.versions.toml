@@ -78,11 +78,6 @@ hilt-work             = { module = "androidx.hilt:hilt-work",                 ve
 hilt-work-compiler    = { module = "androidx.hilt:hilt-compiler",             version.ref = "hiltWork" }
 
 work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
-# The ListenableFuture class alone, for compiling against WorkManager's *Async
-# calls -- WorkManager carries it at runtime only. Wherever full Guava is also
-# present (media3 brings it), Gradle resolves this to Guava's empty
-# "9999.0-empty-to-avoid-conflict-with-guava" stand-in, so it never duplicates.
-guava-listenablefuture = { module = "com.google.guava:listenablefuture", version = "1.0" }
 datastore    = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 paging-runtime = { module = "androidx.paging:paging-runtime-ktx", version.ref = "paging" }
 paging-compose = { module = "androidx.paging:paging-compose", version.ref = "pagingCompose" }
