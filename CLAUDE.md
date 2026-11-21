@@ -56,11 +56,10 @@ Multi-module, offline-first. `:app` wires everything; nothing else depends on it
 :data:source-api    SourceProvider — the sync/stream contract
 :data:source-drive  Drive OAuth, files.list, changes.list, ranged reads
 :data:catalog       SyncWorker, TagExtractor, ArtworkStore, ArtworkProvider
-:data:acquire       DownloadWorker, YoutubeSource, matching, tagging, Holdings
+:data:acquire       DownloadWorker, YoutubeSource, matching, tagging, Holdings, AddLedger
 :feature:player     MediaLibraryService, browse tree, shuffle, prefetch
-:feature:library    phone browse UI
+:feature:library    phone browse UI, the search page, adding music (docs/SEARCH.md)
 :feature:nowplaying phone player UI
-:feature:downloader yt-dlp + FFmpeg + metadata enrichment
 :feature:settings   settings UI
 :feature:webui      NanoHTTPD + browser front end (docs/WEB_INTERFACE.md)
 :update             GitHub Releases self-updater
@@ -337,11 +336,13 @@ argued about mid-flight:
   it lands on Drive and appears like anything else. **Download** is reserved for
   the phase 5 feature that pins a track you ALREADY own to the device for
   offline play. Both would have been called "download", and then neither name
-  would mean anything. The module, `DownloadWorker` and `DownloadRequest` keep
-  their names for now -- renaming a module is churn with no user-visible payoff
-  -- so the split lives in the STRINGS, and this note is what stops the two
-  being reunited by accident. When offline pinning lands, the acquire path
-  should be renamed to match its labels.
+  would mean anything. `DownloadWorker` and `DownloadRequest` keep their names
+  for now -- renaming them is churn with no user-visible payoff -- so the split
+  lives in the STRINGS and in `:data:acquire`, the one module that was new
+  enough to be named right, and this note is what stops the two being reunited
+  by accident. When offline pinning lands, the classes should be renamed to
+  match their labels. The same goes for "queue": it is what plays next, and
+  what is on its way to the library is the **Adding** list (docs/SEARCH.md).
 
 - **Anything a person can type into uses `rememberSaveable`, not `remember`.**
   A rotation recreates the activity, and `remember` does not survive it. The
@@ -403,13 +404,22 @@ argued about mid-flight:
 | A menu opens miles from the button that owns it | `DropdownMenu` anchors to its PARENT layout node, not to the button beside it. Wrap the button and the menu in a small Box and align THAT — aligning only the button leaves the menu at the big parent's origin |
 | The APK is suddenly 100 MB | Built for more than one ABI. yt-dlp ships a Python runtime and an FFmpeg build per ABI; `roam.abis` defaults to `arm64-v8a` alone for exactly this reason |
 | Roam will not install on a device | That device is not arm64. Rebuild with `-Proam.abis=arm64-v8a,armeabi-v7a` |
-| Downloader silently stops working | Stale yt-dlp; call `YoutubeDL.updateYoutubeDL()` |
+| The search page stops finding songs, or adds start failing | Stale yt-dlp. Update yt-dlp in the search page's overflow, which calls `YoutubeDL.updateYoutubeDL()` |
 | Every search AND the update fail together | `YoutubeDL.init()` threw. Almost always `useLegacyPackaging = true` missing from `:app` — the library unzips a Python runtime out of its .so files, and modern AGP leaves native libs unextracted so there is nothing to unzip |
 | "class X is not a concrete class" from a search | R8 shrank a class that is only ever built reflectively. commons-compress needs `-keep`, not just `-dontwarn`; `-dontobfuscate` alone does not help because this is shrinking, not renaming |
 | A release-only failure with a two-letter class name | Obfuscation. Release builds set `-dontobfuscate` for exactly this reason — debug builds do not minify, so this class of bug never appears in testing |
 | Back from an album opened on the search page lands on the tabs | The search is a layer UNDER the drills, held by `searchOpen` and, for See all, `seeAll`. `closeDrill` returns false only when nothing is open, and only then does Back close the search -- a drill that clears `searchOpen` on its way out takes the results with it |
 | A See all list draws an album header over nearly every row | It is in the search's order, not an album-major one. `grouped` must be false whenever `searchList` is set |
 | A heart from the search page's sheet does not show next time it is opened | The results are a snapshot, not a live query. Anything that changes a row on them -- `toggleLoved`, `removeTrack`, `setTrackArtwork`, leaving a drill -- calls `refreshSearch()` |
+| Typing one letter on the search page asks YouTube | It must not. `MIN_REMOTE_CHARS` holds the second group back below two characters, and `REMOTE_DEBOUNCE_MS` until the typing stops -- MusicBrainz allows one request a second |
+| Album rows jump about while the search page fills | Each catalogue answers at its own pace. `mergeReleases` is append-only: a pressing joins its album's row, a new album goes at the end, and whether an album is wholly yours is decided once, when it first appears |
+| One album shows five times on the search page | MusicBrainz answers with every country's pressing. `ReleaseGroup` folds them into one row by normalised title and album artist; the pressings are the album sheet's list to choose from |
+| A song you own shows a + in the second group | The flat YouTube row did not match -- a channel called "Oasis - Topic" is not the artist Oasis. The enriched row is checked again and turns into Play where it stands (`heldSongs`); it is not removed, because a row vanishing under a thumb is how the wrong one gets tapped |
+| A row's ring spins for ever | It cannot by design. Once the sync that followed an add has finished and `Holdings.resolveTrackId` still finds nothing, `AddLedger` says `NotFound` -- a tick. A ring that sticks means `syncPending` is not reading `SyncWorker.NAME_ONESHOT` |
+| A row that turned into Play goes back to + | "Clear finished" prunes the jobs the ledger reads. `AddMusicViewModel` keeps what each URL resolved to for the life of the screen, not of the job, and `AddLedger` falls back to it |
+| A cleared failure is back after a restart | WorkManager cannot forget one finished job, only all of them. `ClearedDownloads` keeps dismissed ids on disk, and the Adding list and the rows both filter them out |
+| A retried compilation track files under its performer | A retry is built from the request on the job's TAG, which did not carry the placement. `DownloadWorker.tagFor` writes album artist, year and compilation now, and `DownloadTagTest` pins it |
+| A shared video is offered again after rotating | The activity is recreated with the SAME intent, so clearing the state in `onSharedHandled` is not enough. `MainActivity` reads the share only when `savedInstanceState == null` |
 | Searching produces an error while typing | Two yt-dlp processes at once. `execute` blocks rather than suspends and cancelling the coroutine does not kill it, so calls are serialised behind `runLock` |
 | A YouTube Music search returns nothing | The results are shelves, not videos — walk `entries` recursively, and treat any id that is not 11 characters as a browse id rather than a track |
 | `[ksp] not a valid name: <x>` | A `@Provides`/`@Binds` function named after a **Java** reserved word — Dagger mirrors it into a generated Java factory. Rename it (`default` → `defaultDispatcher`) |
@@ -483,7 +493,7 @@ argued about mid-flight:
 | Queued downloads never start and nothing says why | Not a network constraint — check for a job stuck in `retry`. Uncapped retry backs off to five hours and is indistinguishable from waiting. `MAX_ATTEMPTS` exists so it fails visibly instead |
 | One bad download stalls the whole queue | Downloads must be independent unique jobs, never an appended chain. A chain leaves everything behind a retrying job BLOCKED, and `APPEND_OR_REPLACE` resolves a failed chain by deleting the queue behind it |
 | Adding an album queues everything, then they all fail | Two yt-dlp processes at once. `download` must take `runLock` like `searchIds` and `enrich` do -- independent WorkManager jobs run CONCURRENTLY, so one native binary got four callers. A download blocking search is the intended trade |
-| A queue row says "Failed" and nothing else | A `Result.failure()` with no `KEY_ERROR`. Every failure path must carry a reason, including the one that gives up after `MAX_ATTEMPTS` -- that is exactly when someone starts wondering |
+| An Adding row says "Failed" and nothing else | A `Result.failure()` with no `KEY_ERROR`. Every failure path must carry a reason, including the one that gives up after `MAX_ATTEMPTS` -- that is exactly when someone starts wondering |
 | Two downloads pick up each other's file | Shared staging directory. It is keyed on the WorkManager job id for exactly this reason |
 | Lyrics are a second late against the voice | Position is polled, and 500ms is too coarse to highlight a line. The Now Playing poll drops to 200ms while a SYNCED lyric is on screen and nowhere else |
 | Every line of an LRC lights up at once | `[ar:]`, `[ti:]` and `[al:]` look exactly like timestamps. The minutes field must be digits, which no metadata tag is |

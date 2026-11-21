@@ -73,12 +73,14 @@ import coil.compose.AsyncImage
 fun LibraryRoute(
     onOpenPlayer: () -> Unit,
     onOpenSettings: () -> Unit,
-    /** The downloader, given the term so nobody has to type it twice. Null when there is none. */
-    onOpenDownloader: (String?) -> Unit,
-    /** Set when arriving from the download manager. Consumed once. */
+    /** Set when arriving from a track in Settings that needs a look. Consumed once. */
     revealTrackId: Long? = null,
     revealForEditing: Boolean = false,
+    /** A YouTube video id shared in from another app, offered for adding once on arrival. */
+    sharedVideoId: String? = null,
+    onSharedHandled: () -> Unit = {},
     vm: LibraryViewModel = hiltViewModel(),
+    addVm: AddMusicViewModel = hiltViewModel(),
 ) {
     // Keyed on the id so returning with a different track works, but not
     // re-run on every recomposition -- this navigates and opens a dialog.
@@ -93,13 +95,33 @@ fun LibraryRoute(
     // whether an artist page is open to decide which layout its button flips.
     val artistPage by vm.artistPage.collectAsStateWithLifecycle()
 
+    // Both halves of the page close together: music you do not have is asked
+    // for by the same box, and a search left running behind a closed page
+    // still costs requests.
+    val closeSearch: () -> Unit = {
+        vm.closeSearch()
+        addVm.onQueryChanged("")
+    }
+
+    // Keyed on the id so a SECOND share is acted on too, and cleared at once
+    // so a rotation does not offer the same video again. The search page opens
+    // under the Adding list unless a drill is up, which a share should not
+    // take down -- the list and its question open over whatever is there.
+    LaunchedEffect(sharedVideoId) {
+        val id = sharedVideoId ?: return@LaunchedEffect
+        if (state.drillTitle == null) vm.openSearch()
+        addVm.showAdding()
+        addVm.addSharedVideo(id)
+        onSharedHandled()
+    }
+
     // Back closes a drill-down before it leaves the screen. enabled = false when
     // there is nothing to close, so the system handles it normally.
     //
     // The search page is a layer under every drill opened from it, so a press
     // closes the drill if there is one and only then the search.
     BackHandler(enabled = state.drillTitle != null || state.searchOpen) {
-        if (!vm.closeDrill()) vm.closeSearch()
+        if (!vm.closeDrill()) closeSearch()
     }
 
     // Hoisted deliberately. Drilling into an artist swaps ArtistList out of
@@ -134,17 +156,32 @@ fun LibraryRoute(
             vm.clearPhotoMessage()
         }
     }
+    val addMessage by addVm.message.collectAsStateWithLifecycle()
+    LaunchedEffect(addMessage) {
+        addMessage?.let {
+            snackbars.showSnackbar(it)
+            addVm.clearMessage()
+        }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbars) },
         topBar = {
             if (state.searchOpen && state.drillTitle == null) {
                 val query by vm.searchQuery.collectAsStateWithLifecycle()
+                val downloads by addVm.downloads.collectAsStateWithLifecycle()
                 SearchTopBar(
                     query = query,
-                    onQueryChange = vm::onSearchQueryChanged,
-                    onBack = vm::closeSearch,
-                    onFindElsewhere = { onOpenDownloader(query.trim().ifEmpty { null }) },
+                    // One box, two searches: your own music answers as you
+                    // type, the catalogues once you stop.
+                    onQueryChange = {
+                        vm.onSearchQueryChanged(it)
+                        addVm.onQueryChanged(it)
+                    },
+                    onBack = closeSearch,
+                    adding = downloads.count { !it.finished },
+                    onOpenAdding = addVm::showAdding,
+                    onUpdateYtDlp = { addVm.updateYtDlp() },
                 )
             } else TopAppBar(
                 title = { Text(state.drillTitle ?: "Roam") },
@@ -271,8 +308,8 @@ fun LibraryRoute(
                 }
                 state.searchOpen -> SearchHost(
                     vm = vm,
+                    addVm = addVm,
                     listState = searchState,
-                    onFindElsewhere = { onOpenDownloader(searched.query.ifEmpty { null }) },
                 )
                 state.tab == LibraryTab.TRACKS -> TrackList(vm, tracksState)
                 state.tab == LibraryTab.ARTISTS ->
@@ -282,6 +319,12 @@ fun LibraryRoute(
             }
         }
     }
+
+    AddMusicHost(
+        addVm = addVm,
+        onPlayTrack = { vm.playAlbumFrom(it) },
+        onOpenTrack = { id, edit -> vm.revealTrack(id, edit) },
+    )
 }
 
 @Composable

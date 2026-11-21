@@ -1,5 +1,4 @@
-package app.roam.feature.downloader
-
+package app.roam.feature.library
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,7 +34,7 @@ import coil.compose.AsyncImage
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ArtistSheet(
+internal fun ArtistSheet(
     artist: ArtistUiState,
     onDismiss: () -> Unit,
     onOpenRelease: (ReleaseMatch) -> Unit,

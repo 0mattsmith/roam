@@ -647,6 +647,22 @@ class LibraryViewModel @Inject constructor(
     }
 
     /**
+     * A track of yours by id, played in its album from that track -- the
+     * album sheet's rule, and the search page's second group's, where a row
+     * that turns out to be yours is a track id and nothing more.
+     *
+     * [fromStart] plays the whole album instead, for a release row: the
+     * track only says which album.
+     */
+    fun playAlbumFrom(trackId: Long, fromStart: Boolean = false) = viewModelScope.launch {
+        val track = tracks.listItemsRaw(LibraryQueries.tracksForTrack(trackId)).firstOrNull()
+            ?: return@launch
+        val album = tracks.listItemsRaw(LibraryQueries.tracksForAlbum(track.albumId))
+        val index = if (fromStart) 0 else album.indexOfFirst { it.id == trackId }
+        if (album.isEmpty() || index < 0) player.play(listOf(track), 0) else player.play(album, index)
+    }
+
+    /**
      * Edit, from a result's sheet: its album, with the editor open over it.
      * The editor is drawn by the track list, so this is the same route the
      * download manager's Edit takes -- and Back from the album is the results.

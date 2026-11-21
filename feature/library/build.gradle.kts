@@ -28,6 +28,9 @@ dependencies {
     implementation(projects.core.database)
     implementation(projects.core.datastore)
     implementation(projects.data.catalog)
+    // Adding music you do not have, from the search page: the worker and its
+    // request, the yt-dlp search and what the library already holds.
+    implementation(projects.data.acquire)
     implementation(projects.feature.player)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

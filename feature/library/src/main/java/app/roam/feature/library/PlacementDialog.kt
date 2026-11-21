@@ -1,4 +1,4 @@
-package app.roam.feature.downloader
+package app.roam.feature.library
 
 import app.roam.data.acquire.AlbumPlacement
 
@@ -37,7 +37,7 @@ import app.roam.core.model.FolderNames
  *
  * A confirmation rather than a form. Discogs and MusicBrainz already answered
  * all five questions for anything queued from an album page, so the usual
- * interaction is reading one line and pressing Download -- and the fields are
+ * interaction is reading one line and pressing Add -- and the fields are
  * there for the times the catalogue is wrong or a single track came from a
  * search with nothing behind it.
  *
@@ -47,7 +47,7 @@ import app.roam.core.model.FolderNames
  * artist folders.
  */
 @Composable
-fun PlacementDialog(
+internal fun PlacementDialog(
     initial: AlbumPlacement,
     /** How many tracks this covers, so the button can say what it will do. */
     trackCount: Int,

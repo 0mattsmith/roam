@@ -1,6 +1,5 @@
 package app.roam.player.ui
 
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +19,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import app.roam.feature.library.LibraryRoute
 import app.roam.feature.nowplaying.NowPlayingRoute
-import app.roam.feature.downloader.DownloaderRoute
 import app.roam.feature.settings.FrozenTracksRoute
 import app.roam.feature.settings.RemovedTracksRoute
 import app.roam.feature.settings.SettingsRoute
@@ -30,11 +28,6 @@ object Routes {
     /** The library, told to jump to one track. Both arguments optional. */
     const val LIBRARY_AT = "library?track={track}&edit={edit}"
     fun libraryAt(trackId: Long, edit: Boolean) = "library?track=$trackId&edit=$edit"
-    const val DOWNLOADER = "downloader"
-    /** The downloader, handed a term from the search page. The argument is optional. */
-    const val DOWNLOADER_AT = "downloader?q={q}"
-    fun downloader(query: String?): String =
-        if (query.isNullOrBlank()) DOWNLOADER else "downloader?q=${Uri.encode(query)}"
     const val SETTINGS = "settings"
     const val REMOVED = "settings/removed"
     const val FROZEN = "settings/frozen"
@@ -57,11 +50,14 @@ fun RoamNavHost(
 ) {
     val nav = rememberNavController()
 
-    // A share jumps straight to the downloader, wherever the app happened to
-    // be. launchSingleTop so sharing twice does not stack the screen on itself.
+    // A share comes home to the library wherever the app happened to be: the
+    // search page and its Adding list are part of it (docs/SEARCH.md). Popped
+    // back to rather than navigated to, because the library is the start
+    // destination and already on the stack -- a second copy would sit behind
+    // whatever was open.
     LaunchedEffect(sharedVideoId) {
         if (sharedVideoId != null) {
-            nav.navigate(Routes.DOWNLOADER) { launchSingleTop = true }
+            nav.popBackStack(Routes.LIBRARY_AT, inclusive = false)
         }
     }
 
@@ -107,7 +103,8 @@ fun RoamNavHost(
                         revealForEditing = entry.arguments?.getBoolean("edit") == true,
                         onOpenPlayer = { playerExpanded = true },
                         onOpenSettings = { go(Routes.SETTINGS) },
-                        onOpenDownloader = { query -> go(Routes.downloader(query)) },
+                        sharedVideoId = sharedVideoId,
+                        onSharedHandled = onSharedHandled,
                     )
 
                     if (playerExpanded) {
@@ -117,26 +114,6 @@ fun RoamNavHost(
                         NowPlayingRoute(onCollapse = { playerExpanded = false })
                     }
                 }
-            }
-            composable(
-                Routes.DOWNLOADER_AT,
-                arguments = listOf(
-                    navArgument("q") { type = NavType.StringType; nullable = true; defaultValue = null },
-                ),
-            ) { entry ->
-                DownloaderRoute(
-                    onBack = back,
-                    sharedVideoId = sharedVideoId,
-                    onSharedHandled = onSharedHandled,
-                    initialQuery = entry.arguments?.getString("q"),
-                    // popUpTo so the library is not stacked twice: this is a
-                    // jump back to where you already were, not a new screen.
-                    onOpenTrack = { id, edit ->
-                        nav.navigate(Routes.libraryAt(id, edit)) {
-                            popUpTo(Routes.LIBRARY_AT) { inclusive = true }
-                        }
-                    },
-                )
             }
             composable(Routes.SETTINGS) {
                 SettingsRoute(
@@ -152,10 +129,9 @@ fun RoamNavHost(
                     // Straight into the editor for that track. Roam has
                     // nothing left to offer these files; a person does.
                     //
-                    // popUpTo, exactly as the downloader does it: the library is
-                    // the start destination and already on the stack, so
-                    // launchSingleTop would not match it and a second copy would
-                    // be pushed behind Settings.
+                    // popUpTo: the library is the start destination and
+                    // already on the stack, so launchSingleTop would not match
+                    // it and a second copy would be pushed behind Settings.
                     onOpenTrack = { id ->
                         nav.navigate(Routes.libraryAt(id, edit = true)) {
                             popUpTo(Routes.LIBRARY_AT) { inclusive = true }

@@ -34,8 +34,6 @@ Two reasons, and the second is the real one.
 So the page lives in `:feature:library`, and that tab is gone. See "Where it
 lives".
 
-So the page lives in `:feature:library`. See "Where it lives".
-
 ## A row says what you can do with it
 
 Every row ends in one icon, and the icon is the row's state:
@@ -190,8 +188,8 @@ The page belongs to `:feature:library`, because every action on music you own
 is already there. The magnifying glass opens it inside `LibraryRoute`, the way
 the drills open, instead of navigating to the downloader.
 
-The + is the problem. Adding lives in `:feature:downloader`, which the library
-may not depend on, so the acquire path moves down into a new data module,
+The + was the problem. Adding lived in `:feature:downloader`, which the library
+may not depend on, so the acquire path moved down into a new data module,
 **`:data:acquire`**:
 
 - `DownloadRequest`, `DownloadWorker` and what it uses, `YoutubeSource`,
@@ -203,12 +201,13 @@ A worker in a data module is not new: `SyncWorker` is in `:data:catalog`. The
 classes keep their names until offline pinning lands, per CLAUDE.md's naming
 note. The module is new, so it can have the right name from the start.
 
-The downloader's screens move into the search page: the album sheet, the
+The downloader's screens moved into the search page: the album sheet, the
 artist sheet, the placement dialog, the Adding list and the overflow menu
 (Update yt-dlp). `MUSIC_SEARCH.md` already planned this — "one screen and one
-ViewModel replacing the search pane, album sheet and artist sheet". A YouTube
-link shared into Roam then opens the search page with the Adding list up. With
-nothing left in it, `:feature:downloader` goes.
+ViewModel replacing the search pane, album sheet and artist sheet" — and the
+ViewModel is `AddMusicViewModel`, beside `LibraryViewModel` rather than inside
+it. A YouTube link shared into Roam opens the search page with the Adding list
+up. With nothing left in it, `:feature:downloader` went.
 
 ## The stages
 
@@ -243,8 +242,49 @@ Ordered so each is worth having alone, and the first is the complaint.
    runs without a screen went: the worker and its request, `YoutubeSource`,
    `AlbumPlacement`, the matching and tagging behind them, and `DownloadStatus`.
    The held check and `resolveTrackId` became `Holdings`.
-4. **Music you do not have.** The second group, the + and its states, the held
-   rules, the sheets moving across. The downloader screen retires.
+4. **Music you do not have. Built.** The second group, the + and its states,
+   the held rules, the sheets moving across; the downloader screen is gone. How
+   it came out, where it differs from the plan above:
+   - **The second group is in the first one's order** -- artists, albums,
+     songs -- so the page reads the same way twice. Nothing is asked for a
+     single letter (`MIN_REMOTE_CHARS`), and nothing until the typing stops.
+   - **Artists come from one catalogue**, Discogs when it has a token and
+     MusicBrainz otherwise: both list the same acts, and two of every name is
+     noise. An act the library already lists is left out by name.
+   - **An album is one row, however many pressings answered.** MusicBrainz
+     returns every country's CD and reissue of a record; `ReleaseGroup` folds
+     them by normalised title and album artist, says how many, and hands them
+     all to the album sheet's own list of releases. The first four show, then
+     "Show all". Compilations only is a chip on the Albums heading.
+   - **Rows never move once drawn.** Each catalogue draws as it answers, and
+     a later answer only adds rows at the end. Whether an album is wholly yours
+     is decided when it first appears. A song that YouTube's fuller answer
+     shows to be yours turns into Play where it stands rather than leaving --
+     the flat row's "Oasis - Topic" is not the artist Oasis, so the first check
+     misses some.
+   - **What Play plays.** A song: its album, from that song, as the album
+     sheet plays a track. A release: its album from the top.
+   - **A release's + adds what is missing.** The tracklist is fetched on the
+     tap, not when the row is drawn, and goes through the same question as the
+     album sheet's "Add N missing" -- one answer for the batch.
+   - **The states are `AddLedger`'s**, in `:data:acquire` and tested. A release
+     is the sum of its tracks' jobs, found by album and album artist: amber
+     while any is on its way, filling as they land; red once all have settled
+     with one failed; Play once sync has made a row of any.
+   - **Red opens a dialog**: the reason, Retry and Clear. Clear lasts:
+     WorkManager can only forget every finished job at once, so dismissed
+     failures are remembered on disk (`ClearedDownloads`) and filtered out.
+   - **The album sheet's rows end in the same icon.** A track you have plays.
+   - **The Adding list is the button beside the search box**, badged with
+     what is still on its way, and its tabs are Adding, Failed and Added. Its
+     colours are the rows': amber on its way, teal yours, red needs you.
+   - **The sheets and the placement question are drawn by the route**, over
+     whatever is on screen, so a share that arrives while an album is open is
+     still asked about. A share opens the search page under the Adding list
+     unless a drill is up, which it leaves alone.
+   - **A retry lands where the first attempt would have.** The job's tag now
+     carries the album artist, year and compilation flag; without them a
+     retried compilation track filed under its own performer.
 
 ## Open questions
 

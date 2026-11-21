@@ -1,12 +1,10 @@
-package app.roam.feature.downloader
-
+package app.roam.feature.library
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.*
@@ -22,9 +20,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.roam.data.acquire.AddLedger
+import app.roam.data.acquire.AddState
+import app.roam.data.acquire.DownloadStatus
 import app.roam.data.catalog.metadata.MetadataSource
+import app.roam.data.catalog.metadata.ReleaseMatch
 import app.roam.data.catalog.metadata.ReleaseTrack
-import androidx.compose.ui.graphics.Color
 import coil.compose.AsyncImage
 
 /**
@@ -34,22 +35,29 @@ import coil.compose.AsyncImage
  * and year, then the tracks in order with disc headings. Someone looking at
  * this and at their own library should not have to work out which is which.
  *
- * The tracklist is MusicBrainz's, so tracks Roam does not have still appear.
+ * The tracklist is the catalogue's, so tracks Roam does not have still appear.
  * That is the point: an album you own nine tenths of should look like an album
  * with one track missing, not like a complete album that is nine tracks long.
+ *
+ * Every row ends in the search page's one icon (docs/SEARCH.md): Play for a
+ * track you have, + for one you do not, and the rings in between.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlbumSheet(
+internal fun AlbumSheet(
     album: AlbumUiState,
+    /** What every add is doing, so each row can say. */
+    ledger: AddLedger,
     onDismiss: () -> Unit,
-    onDownloadMissing: () -> Unit,
-    onDownloadTrack: (ReleaseTrack) -> Unit,
-    onSelectRelease: (String) -> Unit,
+    onAddMissing: () -> Unit,
+    onAddTrack: (ReleaseTrack) -> Unit,
+    onSelectRelease: (ReleaseMatch) -> Unit,
     onSelectSource: (MetadataSource) -> Unit,
-    /** Download URLs already queued, so a tapped row can show a tick. */
-    queuedUrls: Set<String>,
+    /** The URL a track is queued under, which is what its state is read by. */
     urlFor: (ReleaseTrack, String) -> String,
+    onPlayTrack: (Long) -> Unit,
+    onFound: (List<DownloadStatus>) -> Unit,
+    onFailed: (AddState.Failed) -> Unit,
 ) {
     var pickingRelease by remember(album.selectedId) { mutableStateOf(false) }
 
@@ -155,7 +163,7 @@ fun AlbumSheet(
                 if (pickingRelease) {
                     album.candidates.forEach { candidate ->
                         ListItem(
-                            modifier = Modifier.clickable { onSelectRelease(candidate.id) },
+                            modifier = Modifier.clickable { onSelectRelease(candidate) },
                             headlineContent = {
                                 Text(
                                     candidate.title,
@@ -168,8 +176,8 @@ fun AlbumSheet(
                             },
                             leadingContent = {
                                 RadioButton(
-                                    selected = candidate.id == album.selectedId,
-                                    onClick = { onSelectRelease(candidate.id) },
+                                    selected = album.isSelected(candidate),
+                                    onClick = { onSelectRelease(candidate) },
                                 )
                             },
                         )
@@ -180,11 +188,17 @@ fun AlbumSheet(
             Spacer(Modifier.height(12.dp))
 
             if (album.tracks.isNotEmpty()) {
-                // Counts what is neither owned nor already queued, so pressing
-                // it twice does not offer to fetch the same tracks again.
-                val missing = album.missing.count { urlFor(it, album.artist) !in queuedUrls }
+                // Counts what is neither owned nor already on its way, so
+                // pressing it twice does not offer to fetch the same tracks
+                // again. A failure counts as missing: adding it is its retry.
+                val missing = album.missing.count {
+                    when (ledger.forUrl(urlFor(it, album.artist))) {
+                        AddState.NotAdded, is AddState.Failed -> true
+                        else -> false
+                    }
+                }
                 Button(
-                    onClick = onDownloadMissing,
+                    onClick = onAddMissing,
                     enabled = missing > 0,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                 ) {
@@ -193,7 +207,7 @@ fun AlbumSheet(
                     Text(
                         when {
                             missing > 0 -> "Add $missing missing"
-                            album.missing.isNotEmpty() -> "All queued"
+                            album.missing.isNotEmpty() -> "All on its way"
                             else -> "Nothing missing"
                         }
                     )
@@ -277,28 +291,19 @@ fun AlbumSheet(
                             )
                         },
                         trailingContent = {
-                            // A tick where the button would be, so the rows
-                            // stay aligned and the difference is the icon
-                            // rather than a gap. Two different ticks: grey for
-                            // "you already own this", green for "queued just
-                            // now" -- they mean different things and the
-                            // second is the one you are waiting to see.
-                            val queued = urlFor(track, album.artist) in queuedUrls
-                            when {
-                                row.inLibrary -> Icon(
-                                    Icons.Filled.CheckCircle,
-                                    contentDescription = "Already in your library",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                queued -> Icon(
-                                    Icons.Filled.CheckCircle,
-                                    contentDescription = "In your library",
-                                    tint = QUEUED_GREEN,
-                                )
-                                else -> IconButton(onClick = { onDownloadTrack(track) }) {
-                                    Icon(Icons.Filled.Add, contentDescription = "Add to library")
-                                }
-                            }
+                            // What you have plays; what you do not says where
+                            // it is on its way to being yours. The held check
+                            // wins, because a track found in the library is
+                            // playable whatever any job says.
+                            val url = urlFor(track, album.artist)
+                            val held = row.heldId
+                            AddStateButton(
+                                state = if (held != null) AddState.Ready(held) else ledger.forUrl(url),
+                                onAdd = { onAddTrack(track) },
+                                onPlay = onPlayTrack,
+                                onFound = { onFound(ledger.jobsForUrl(url)) },
+                                onFailed = onFailed,
+                            )
                         },
                     )
                 }
@@ -309,5 +314,3 @@ fun AlbumSheet(
     }
 }
 
-/** Matches the download manager's green, so a tick means one thing. */
-private val QUEUED_GREEN = Color(0xFF2E7D32)

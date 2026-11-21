@@ -40,7 +40,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         startup   // touch it so the ViewModel is created
         requestNotificationPermission()
-        sharedVideoId = YoutubeLink.videoId(sharedText(intent))
+        // Only on a fresh start. A rotation recreates the activity with the
+        // SAME intent, so reading it again would offer a share that was
+        // already handled -- clearing the state in onSharedHandled cannot
+        // reach an intent the system hands back.
+        if (savedInstanceState == null) sharedVideoId = YoutubeLink.videoId(sharedText(intent))
 
         setContent {
             RoamTheme {

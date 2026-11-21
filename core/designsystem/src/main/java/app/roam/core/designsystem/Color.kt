@@ -16,6 +16,10 @@ val TealCore     = Color(0xFF14B8A6)
 val TealDeep     = Color(0xFF0D9488)
 val TealWash     = Color(0x1A14B8A6)
 
+// Something on its way: a track being added. Amber is on its way, teal is
+// yours, red needs you (docs/SEARCH.md) -- the same amber as the web mockup.
+val Amber        = Color(0xFFFBBF24)
+
 // Text
 val TextHi  = Color(0xFFE8EFF0)
 val TextMid = Color(0xFF9AAAB0)

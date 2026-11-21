@@ -339,54 +339,19 @@ class DownloadWorker @AssistedInject constructor(
         /** yt-dlp's "search and take the best one" form, which carries no id. */
         const val SEARCH_PREFIX = "ytsearch1:"
 
-        /**
-         * The whole request rides along as a tag.
-         *
-         * WorkInfo exposes state, progress, tags and output -- but NOT the
-         * input data it was given. So a failed job cannot be retried from its
-         * WorkInfo alone, and a queued one cannot even say what it is for.
-         * Encoding the request into a tag is what makes both possible without
-         * keeping a parallel copy of the queue in Room.
-         */
-        const val TAG_REQUEST = "req:"
-        private const val SEP = "\u001F"
+        /** Every request tag starts with this; see [DownloadTag]. */
+        const val TAG_REQUEST = DownloadTag.PREFIX
 
-        fun requestOf(info: androidx.work.WorkInfo): DownloadRequest? {
-            val raw = info.tags.firstOrNull { it.startsWith(TAG_REQUEST) }
-                ?.removePrefix(TAG_REQUEST)
-                ?: return null
-            val parts = raw.split(SEP)
-            if (parts.size < 4) return null
-            return DownloadRequest(
-                url = parts[0],
-                title = parts[1],
-                artist = parts[2],
-                album = parts[3],
-                trackNo = parts.getOrNull(4)?.toIntOrNull(),
-                // getOrNull throughout: a job queued by an older build has a
-                // shorter tag, and it must still be listable and retryable
-                // rather than vanishing from the manager.
-                durationMs = parts.getOrNull(5)?.toLongOrNull(),
-                coverUrl = parts.getOrNull(6)?.takeIf { it.isNotBlank() },
-            )
-        }
+        fun requestOf(info: androidx.work.WorkInfo): DownloadRequest? =
+            info.tags.firstOrNull { it.startsWith(TAG_REQUEST) }?.let(DownloadTag::decode)
 
         /**
          * @param wifiOnly wait for an unmetered network before starting.
          */
         fun enqueue(ctx: Context, request: DownloadRequest, wifiOnly: Boolean) {
-            // A unit separator, because titles legitimately contain every
-            // punctuation mark anyone would reach for as a delimiter.
-            val encoded = listOf(
-                request.url, request.title, request.artist, request.album,
-                request.trackNo?.toString().orEmpty(),
-                request.durationMs?.toString().orEmpty(),
-                request.coverUrl.orEmpty(),
-            ).joinToString(SEP)
-
             val work = OneTimeWorkRequestBuilder<DownloadWorker>()
                 .addTag(TAG_ALL)
-                .addTag("$TAG_REQUEST$encoded")
+                .addTag(DownloadTag.encode(request))
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(
