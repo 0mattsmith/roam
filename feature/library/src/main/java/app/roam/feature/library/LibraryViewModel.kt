@@ -35,6 +35,7 @@ import app.roam.core.database.AlbumListItem
 import app.roam.data.catalog.artwork.ArtworkEditor
 import app.roam.data.catalog.artwork.ArtworkFiles
 import app.roam.feature.player.PlayerController
+import app.roam.feature.player.Queued
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -775,6 +776,41 @@ class LibraryViewModel @Inject constructor(
         )
         val index = queue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
         player.play(queue, index)
+    }
+
+    // ---- the queue -----------------------------------------------------------
+    //
+    // "Queue" is the play queue and nothing else (docs/SEARCH.md, "Words").
+
+    fun playNext(track: TrackListItem) {
+        enqueue(listOf(track), track.title, next = true)
+    }
+
+    fun addToQueue(track: TrackListItem) {
+        enqueue(listOf(track), track.title, next = false)
+    }
+
+    /** A whole album, from its header's sheet, in its own track order. */
+    fun playAlbumNext(albumId: Long, title: String) = viewModelScope.launch {
+        enqueue(tracks.listItemsRaw(LibraryQueries.tracksForAlbum(albumId)), title, next = true)
+    }
+
+    fun addAlbumToQueue(albumId: Long, title: String) = viewModelScope.launch {
+        enqueue(tracks.listItemsRaw(LibraryQueries.tracksForAlbum(albumId)), title, next = false)
+    }
+
+    /**
+     * Says which happened. Into an empty player both just play, and a message
+     * claiming "added to the queue" over music that started would be a lie.
+     */
+    private fun enqueue(items: List<TrackListItem>, what: String, next: Boolean) {
+        if (items.isEmpty()) return
+        val done = if (next) player.playNext(items) else player.addToQueue(items)
+        _photoMessage.value = when (done) {
+            Queued.PLAYING -> "Playing $what"
+            Queued.QUEUED -> if (next) "$what plays next" else "$what added to the queue"
+            Queued.NO_PLAYER -> "The player is still starting. Try again in a moment."
+        }
     }
 
     fun toggleLoved(track: TrackListItem) = viewModelScope.launch {

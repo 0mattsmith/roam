@@ -41,6 +41,17 @@ object CarConstants {
     const val ACTION_SHUFFLE_QUEUE = "app.roam.SHUFFLE_QUEUE"
     const val ACTION_REPEAT = "app.roam.REPEAT"
 
+    /**
+     * From the phone, never shown in the car: queue tracks straight after the
+     * one playing, or after everything still to play. Commands rather than a
+     * controller's addMediaItems, because with shuffle on only the service can
+     * say where in the PLAY order they go.
+     */
+    const val ACTION_PLAY_NEXT = "app.roam.PLAY_NEXT"
+    const val ACTION_ADD_TO_QUEUE = "app.roam.ADD_TO_QUEUE"
+    /** The tracks for either, as a LongArray, in the order they should play. */
+    const val EXTRA_TRACK_IDS = "app.roam.TRACK_IDS"
+
     /** Android Auto truncates long lists while moving. Page rather than dump. */
     const val PAGE_SIZE = 100
 }

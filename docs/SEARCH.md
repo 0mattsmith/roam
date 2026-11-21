@@ -154,7 +154,12 @@ quits the app": state describing a screen nobody is on still gets rendered.
 
 ## Play next and Add to queue
 
-New on `PlayerController`, which today can only replace the queue (`play`).
+Built (stage 2). On `PlayerController` as `playNext` and `addToQueue`, sent to
+`RoamLibraryService` as `ACTION_PLAY_NEXT` and `ACTION_ADD_TO_QUEUE` with the
+track ids, and offered in every track sheet and on an album header's sheet for
+the whole album. The snackbar says which happened, because into an empty
+player both just play. Where the new items go in a shuffled order is
+`ShuffleInsert`, which is pure and tested.
 
 - **Shuffle is the hard part.** Roam shuffles with Media3's own
   `shuffleModeEnabled`, and the default shuffle order puts an inserted item at
@@ -231,8 +236,8 @@ Ordered so each is worth having alone, and the first is the complaint.
    - **The results are a snapshot**, re-run when something on them may have
      changed: a heart or a removal from the sheet, and every return from a
      drill. They are not a live query.
-2. **Play next and Add to queue.** Small, independent, and useful in every
-   list.
+2. **Play next and Add to queue. Built.** In every track sheet, and on an
+   album header's sheet for the whole album. See the section above.
 3. **`:data:acquire`.** The move, and no visible change. Its own step, so a
    broken build points at the move and not at a feature.
 4. **Music you do not have.** The second group, the + and its states, the held

@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.QueuePlayNext
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.HelpOutline
@@ -88,6 +90,8 @@ fun TrackActionSheet(
     track: TrackListItem,
     edited: Boolean,
     onDismiss: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
     onGoToAlbum: () -> Unit,
     onGoToArtist: () -> Unit,
     onEdit: () -> Unit,
@@ -121,6 +125,20 @@ fun TrackActionSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+            )
+
+            // First, because they are what a long-press in a music app is
+            // usually for. "Queue" is the play queue and nothing else; adding
+            // music you do not have is "Add to library", never this.
+            ListItem(
+                modifier = Modifier.clickable(onClick = onPlayNext),
+                headlineContent = { Text("Play next") },
+                leadingContent = { Icon(Icons.Filled.QueuePlayNext, contentDescription = null) },
+            )
+            ListItem(
+                modifier = Modifier.clickable(onClick = onAddToQueue),
+                headlineContent = { Text("Add to queue") },
+                leadingContent = { Icon(Icons.Filled.PlaylistAdd, contentDescription = null) },
             )
 
             onToggleLoved?.let { toggle ->

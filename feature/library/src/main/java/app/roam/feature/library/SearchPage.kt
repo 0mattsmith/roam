@@ -189,6 +189,8 @@ internal fun SearchHost(
             track = track,
             edited = trackEdited,
             onDismiss = { trackSheet = null },
+            onPlayNext = { trackSheet = null; vm.playNext(track) },
+            onAddToQueue = { trackSheet = null; vm.addToQueue(track) },
             // The row's trailing slot holds the play button here rather than
             // the heart, so the heart moves into the sheet.
             onToggleLoved = { trackSheet = null; vm.toggleLoved(track) },

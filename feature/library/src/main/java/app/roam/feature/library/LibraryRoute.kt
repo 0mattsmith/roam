@@ -569,6 +569,8 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
             track = track,
             edited = sheetEdited,
             onDismiss = { sheetFor = null },
+            onPlayNext = { sheetFor = null; vm.playNext(track) },
+            onAddToQueue = { sheetFor = null; vm.addToQueue(track) },
             onGoToAlbum = { sheetFor = null; vm.openAlbum(track.albumId, track.albumTitle) },
             onGoToArtist = { sheetFor = null; vm.openArtistByName(track.artistName) },
             onEdit = { sheetFor = null; vm.openTrackEditor(track) },
@@ -622,6 +624,8 @@ private fun TrackList(vm: LibraryViewModel, listState: LazyListState) {
         AlbumHeaderSheet(
             track = track,
             onDismiss = { headerSheetFor = null },
+            onPlayNext = { headerSheetFor = null; vm.playAlbumNext(track.albumId, track.albumTitle) },
+            onAddToQueue = { headerSheetFor = null; vm.addAlbumToQueue(track.albumId, track.albumTitle) },
             onOpenAlbum = { headerSheetFor = null; vm.openAlbum(track.albumId, track.albumTitle) },
             onGoToArtist = { headerSheetFor = null; vm.openArtistByName(track.albumArtistName) },
             onBulkEdit = { headerSheetFor = null; vm.openAlbumBulkEditor(track) },

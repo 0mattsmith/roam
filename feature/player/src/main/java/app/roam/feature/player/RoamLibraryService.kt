@@ -11,6 +11,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
@@ -293,6 +294,8 @@ class RoamLibraryService : MediaLibraryService() {
                 .buildUpon()
                 .add(SessionCommand(CarConstants.ACTION_LOVE, Bundle.EMPTY))
                 .add(SessionCommand(CarConstants.ACTION_SHUFFLE_QUEUE, Bundle.EMPTY))
+                .add(SessionCommand(CarConstants.ACTION_PLAY_NEXT, Bundle.EMPTY))
+                .add(SessionCommand(CarConstants.ACTION_ADD_TO_QUEUE, Bundle.EMPTY))
                 .build()
 
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -313,6 +316,13 @@ class RoamLibraryService : MediaLibraryService() {
             }
             CarConstants.ACTION_SHUFFLE_QUEUE -> scope.future {
                 reshuffleQueueTail()
+                SessionResult(SessionResult.RESULT_SUCCESS)
+            }
+            CarConstants.ACTION_PLAY_NEXT, CarConstants.ACTION_ADD_TO_QUEUE -> scope.future {
+                enqueue(
+                    ids = args.getLongArray(CarConstants.EXTRA_TRACK_IDS)?.toList().orEmpty(),
+                    next = customCommand.customAction == CarConstants.ACTION_PLAY_NEXT,
+                )
                 SessionResult(SessionResult.RESULT_SUCCESS)
             }
             else -> Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
@@ -702,6 +712,77 @@ class RoamLibraryService : MediaLibraryService() {
             player.setMediaItems(items, index, position)
             player.prepare()
         }
+    }
+
+    /**
+     * Play next and Add to queue.
+     *
+     * Here rather than on the controller because shuffle is the hard part.
+     * Media3's default shuffle order puts an inserted item at a RANDOM point of
+     * the shuffled order, so with shuffle on a naive Play next plays the song
+     * at some point, which is not next -- and setShuffleOrder belongs to
+     * ExoPlayer, which a MediaController cannot reach.
+     *
+     * Nothing new is needed to keep them: SaveOnChange already listens to
+     * timeline changes, so a queued track survives a restart.
+     */
+    private suspend fun enqueue(ids: List<Long>, next: Boolean) {
+        val items = queueBuilder.itemsForIds(ids)
+        if (items.isEmpty()) return
+        withContext(Dispatchers.Main) {
+            val player = session?.player ?: return@withContext
+
+            // An empty queue has no "next", and queueing silently into one
+            // looks like nothing happened, so both just play.
+            if (player.mediaItemCount == 0) {
+                player.setMediaItems(items, 0, 0L)
+                player.prepare()
+                player.play()
+                return@withContext
+            }
+
+            val at = if (next) player.currentMediaItemIndex + 1 else player.mediaItemCount
+            val ended = player.playbackState == Player.STATE_ENDED
+            player.addMediaItems(at, items)
+
+            val exo = player as? ExoPlayer
+            if (exo != null && player.shuffleModeEnabled) {
+                val order = ShuffleInsert.reorder(
+                    order = shuffledOrder(player.currentTimeline),
+                    inserted = at until at + items.size,
+                    current = player.currentMediaItemIndex,
+                    next = next,
+                )
+                // Only an order that covers the whole playlist: ExoPlayer
+                // refuses one of the wrong length, and Media3's own random
+                // placement is a better fallback than a crash.
+                if (order.size == player.mediaItemCount) {
+                    exo.setShuffleOrder(
+                        ShuffleOrder.DefaultShuffleOrder(order.toIntArray(), System.nanoTime())
+                    )
+                }
+            }
+
+            // A queue that had finished has nothing left but what was just
+            // asked for, so that plays rather than sitting behind the end.
+            if (ended) {
+                player.seekToDefaultPosition(at)
+                player.prepare()
+                player.play()
+            }
+        }
+    }
+
+    /** The order the player will play the playlist in, shuffled, as playlist indices. */
+    private fun shuffledOrder(timeline: Timeline): List<Int> {
+        if (timeline.isEmpty) return emptyList()
+        val order = ArrayList<Int>(timeline.windowCount)
+        var index = timeline.getFirstWindowIndex(/* shuffleModeEnabled = */ true)
+        while (index != C.INDEX_UNSET && order.size < timeline.windowCount) {
+            order += index
+            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, /* shuffleModeEnabled = */ true)
+        }
+        return order
     }
 
     private companion object {

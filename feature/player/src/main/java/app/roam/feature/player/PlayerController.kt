@@ -2,11 +2,13 @@ package app.roam.feature.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import app.roam.core.database.TrackListItem
 import app.roam.data.catalog.artwork.ArtworkProvider
@@ -38,6 +40,15 @@ data class NowPlaying(
     val shuffleEnabled: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
 )
+
+/** What Play next or Add to queue did, so the screen can say which. */
+enum class Queued {
+    /** The player was empty, so it is playing them now. */
+    PLAYING,
+    QUEUED,
+    /** Not connected to the service yet. */
+    NO_PLAYER,
+}
 
 /**
  * The UI's handle on playback.
@@ -91,6 +102,33 @@ class PlayerController @Inject constructor(
         c.setMediaItems(tracks.map { it.toMediaItem(ctx) }, startIndex, 0L)
         c.prepare()
         c.play()
+    }
+
+    /**
+     * After the current track, ahead of the rest of the queue.
+     *
+     * Sent to the service as a command rather than inserted here: with shuffle
+     * on, where an item lands in the PLAY order is set on the player itself,
+     * which a MediaController cannot reach. Into an empty player both of these
+     * just play, because an empty queue has no "next".
+     */
+    fun playNext(tracks: List<TrackListItem>): Queued = enqueue(CarConstants.ACTION_PLAY_NEXT, tracks)
+
+    /** After everything still to play. */
+    fun addToQueue(tracks: List<TrackListItem>): Queued = enqueue(CarConstants.ACTION_ADD_TO_QUEUE, tracks)
+
+    private fun enqueue(action: String, tracks: List<TrackListItem>): Queued {
+        val c = controller ?: return Queued.NO_PLAYER
+        if (tracks.isEmpty()) return Queued.NO_PLAYER
+        if (c.mediaItemCount == 0) {
+            play(tracks, 0)
+            return Queued.PLAYING
+        }
+        val args = Bundle().apply {
+            putLongArray(CarConstants.EXTRA_TRACK_IDS, tracks.map { it.id }.toLongArray())
+        }
+        c.sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args)
+        return Queued.QUEUED
     }
 
     fun togglePlayPause() {

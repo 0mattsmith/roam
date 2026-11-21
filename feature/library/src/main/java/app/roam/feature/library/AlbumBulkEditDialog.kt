@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.QueuePlayNext
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -61,6 +63,9 @@ import app.roam.data.catalog.AlbumBulkEdits
 fun AlbumHeaderSheet(
     track: TrackListItem,
     onDismiss: () -> Unit,
+    /** The whole album, in its own order. */
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
     onOpenAlbum: () -> Unit,
     onGoToArtist: () -> Unit,
     onBulkEdit: () -> Unit,
@@ -90,6 +95,19 @@ fun AlbumHeaderSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+            )
+
+            ListItem(
+                modifier = Modifier.clickable(onClick = onPlayNext),
+                headlineContent = { Text("Play next") },
+                supportingContent = { Text("The whole album, after this track") },
+                leadingContent = { Icon(Icons.Filled.QueuePlayNext, contentDescription = null) },
+            )
+            ListItem(
+                modifier = Modifier.clickable(onClick = onAddToQueue),
+                headlineContent = { Text("Add to queue") },
+                supportingContent = { Text("The whole album, after everything else") },
+                leadingContent = { Icon(Icons.Filled.PlaylistAdd, contentDescription = null) },
             )
 
             // Lives here because tapping the header collapses it now. Opening
